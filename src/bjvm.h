@@ -233,7 +233,7 @@ typedef struct {
 		// constant pool index or local variable index or branch target (instruction index)
 		uint32_t index;
 		// Integer or long immediate
-		long integer_imm;
+		int64_t integer_imm;
 		// Float immediate
 		float f_imm;
 		// Double immediate
@@ -286,7 +286,7 @@ typedef enum {
 typedef struct {
 	uint16_t max_stack;
 	uint16_t max_locals;
-	uint32_t insn_count;
+	int insn_count;
 	int max_pc;
 
 	bjvm_bytecode_insn *code;
@@ -350,6 +350,7 @@ typedef struct {
 
 char* parse_classfile(uint8_t* bytes, size_t len, bjvm_classfile** result);
 void bjvm_free_classfile(bjvm_classfile *cf);
+void bjvm_free_attribute(bjvm_attribute *attribute);
 
 #ifdef __cplusplus
 }

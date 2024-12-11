@@ -135,8 +135,8 @@ TEST_CASE("Test classfile parsing") {
   // list all java files in the jre8 directory
   auto files = ListDirectory("jre8", true);
   double total_millis = 0;
-  std::string longest;
 
+#pragma omp parallel for
   for (const auto& file : files) {
     if (!EndsWith(file, ".class")) {
       continue;
@@ -150,32 +150,30 @@ TEST_CASE("Test classfile parsing") {
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
       free(error);
-      return;
+      abort();
     }
     if (cf) {
       bjvm_free_classfile(cf);
     }
 
     if (fuzz) {
+      std::cerr << "Fuzzing classfile: " << file << '\n';
+
       for (int i = 0; i < read.size(); ++i) {
         for (int j = 0; j < 256; ++j) {
           read[i] += 1;
           char* error = parse_classfile(read.data(), read.size(), &cf);
           if (error) {
-            std::cerr << "Error parsing classfile: " << error << '\n';
             free(error);
           } else {
             bjvm_free_classfile(cf);
           }
         }
       }
-
-      break;
     }
 
     total_millis += get_time() - start;
   }
 
   std::cout << "Total time: " << total_millis << "ms\n";
-  std::cout << "Longest: " << longest << "\n";
 }

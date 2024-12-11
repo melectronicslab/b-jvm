@@ -107,23 +107,32 @@ void bjvm_free_constant_pool_entry(bjvm_constant_pool_entry *entry) {
 	}
 }
 
-void bjvm_free_method(bjvm_cp_method *method);
-void bjvm_free_field(bjvm_cp_field *method);
+void free_method(bjvm_cp_method *method);
+void free_field(bjvm_cp_field *field);
 
 void bjvm_free_constant_pool(bjvm_constant_pool *pool) {
 	for (int i = 0; i < pool->entries_len; ++i) {
 		bjvm_free_constant_pool_entry(&pool->entries[i]);
 	}
+	free(pool);
 }
 
 void bjvm_free_classfile(bjvm_classfile *cf) {
 	bjvm_free_constant_pool(cf->pool);
+	free(cf->interfaces);
+	for (int i = 0; i < cf->attributes_count; ++i) {
+		bjvm_free_attribute(&cf->attributes[i]);
+	}
 	for (int i = 0; i < cf->methods_count; ++i) {
-		bjvm_free_method(&cf->methods[i]);
+		free_method(&cf->methods[i]);
 	}
 	for (int i = 0; i < cf->fields_count; ++i) {
-		bjvm_free_field(&cf->fields[i]);
+		free_field(&cf->fields[i]);
 	}
+	free(cf->fields);
+	free(cf->methods);
+	free(cf->attributes);
+	free(cf);
 }
 
 /**
@@ -134,11 +143,6 @@ void bjvm_free_classfile(bjvm_classfile *cf) {
 bjvm_constant_pool_entry *get_constant_pool_entry(bjvm_constant_pool *pool, int index) {
 	BJVM_DCHECK(index >= 0 && index < pool->entries_len);
 	return &pool->entries[index];
-}
-
-void init_lookupswitch_data(struct bjvm_bc_lookupswitch_data *data, int count) {
-	data->keys = calloc(count, sizeof(int));
-	data->keys_count = count;
 }
 
 void free_lookupswitch_data(struct bjvm_bc_lookupswitch_data *data) {
@@ -155,20 +159,23 @@ void bjvm_free_attribute(bjvm_attribute *attribute) {
 			free_code_attribute(&attribute->code);
 			break;
 		case BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE:
+		case BJVM_ATTRIBUTE_KIND_UNKNOWN:
 			break;
 	}
 }
 
-void bjvm_free_field(bjvm_cp_field* field) {
+void free_field(bjvm_cp_field* field) {
 	for (int i = 0; i < field->attributes_count; ++i) {
 		bjvm_free_attribute(&field->attributes[i]);
 	}
+	free(field->attributes);
 }
 
-void bjvm_free_method(bjvm_cp_method *method) {
+void free_method(bjvm_cp_method *method) {
 	for (int i = 0; i < method->attributes_count; ++i) {
 		bjvm_free_attribute(&method->attributes[i]);
 	}
+	free(method->attributes);
 }
 
 typedef struct {
@@ -264,10 +271,26 @@ typedef struct {
 } bjvm_classfile_parse_ctx;
 
 /**
+ * Used to unmark an otherwise to-be-freed pointer in the verify context.
+ */
+typedef struct {
+	bjvm_classfile_parse_ctx *ctx;
+	size_t offset;
+} ctx_free_ticket;
+
+void free_ticket(ctx_free_ticket ticket) {
+	ticket.ctx->free_on_error[ticket.offset] = NULL;
+}
+
+/**
  * Record that this pointer needs to be freed if we encounter a VerifyError while parsing the classfile.
  */
-void needs_free_on_verify_error(bjvm_classfile_parse_ctx *ctx, void *ptr) {
+ctx_free_ticket needs_free_on_verify_error(bjvm_classfile_parse_ctx *ctx, void *ptr) {
 	*VECTOR_PUSH(ctx->free_on_error, ctx->free_on_error_count, ctx->free_on_error_cap) = ptr;
+	return (ctx_free_ticket) {
+		.ctx = ctx,
+		.offset = ctx->free_on_error_count - 1
+	};
 }
 
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
@@ -576,7 +599,7 @@ bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_cla
 	int default_target = checked_pc(original_pc, reader_next_i32(reader, "tableswitch default target"), ctx);
 	int low = reader_next_i32(reader, "tableswitch low");
 	int high = reader_next_i32(reader, "tableswitch high");
-	int targets_count = high - low + 1;
+	long targets_count = (long)high - low + 1;
 
 	if (targets_count > 1 << 15) { // preposterous, won't fit in the code segment
 		verify_error("tableswitch instruction is too large");
@@ -586,7 +609,6 @@ bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_cla
 	}
 
 	int *targets = malloc(targets_count * sizeof(int));
-	needs_free_on_verify_error(ctx, targets);
 	for (int i = 0; i < targets_count; ++i) {
 		targets[i] = checked_pc(original_pc, reader_next_i32(reader, "tableswitch target"), ctx);
 	}
@@ -1600,7 +1622,7 @@ char* insn_to_string(const bjvm_bytecode_insn* insn, int insn_index) {
 	} else if (insn->kind <= bjvm_bc_insn_ifnull) {  // indexes into the instruction array
 		write += snprintf(write, end - write, "-> inst %d", insn->index);
 	} else if (insn->kind == bjvm_bc_insn_lconst || insn->kind == bjvm_bc_insn_iconst) {
-		write += snprintf(write, end - write, "%d", insn->integer_imm);
+		write += snprintf(write, end - write, "%lld", insn->integer_imm);
 	} else if (insn->kind == bjvm_bc_insn_dconst || insn->kind == bjvm_bc_insn_fconst) {
 		write += snprintf(write, end - write, "%.15g", insn->f_imm);
 	} else { // TODO
@@ -1684,8 +1706,8 @@ bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfil
 	ctx->current_code_max_pc = code_length;
 
 	int* pc_to_insn = malloc(code_length * sizeof(int));  // -1 = no corresponding instruction to that PC
+	ctx_free_ticket ticket = needs_free_on_verify_error(ctx, pc_to_insn);
 	memset(pc_to_insn, -1, code_length * sizeof(int));
-	needs_free_on_verify_error(ctx, pc_to_insn);
 
 	int insn_count = 0;
 	while (code_reader.len > 0) {
@@ -1695,20 +1717,37 @@ bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfil
 		++insn_count;
 	}
 
-	bjvm_attribute_code c = (bjvm_attribute_code){
-		.max_stack = max_stack,
-		.max_locals = max_locals,
-		.insn_count = insn_count,
-		.code = code
-	};
-
 	convert_pc_offsets_to_insn_offsets(code, insn_count, pc_to_insn, code_length);
+	free(pc_to_insn);
+	free_ticket(ticket);
+
 	return (bjvm_attribute_code){
 		.max_stack = max_stack,
 		.max_locals = max_locals,
 		.insn_count = insn_count,
 		.code = code
 	};
+}
+
+void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx, bjvm_attribute *attr) {
+	uint16_t index = reader_next_u16(reader, "method attribute name");
+	attr->name = checked_get_utf8_entry(ctx->cp, index, "method attribute name");
+	attr->length = reader_next_u32(reader, "method attribute length");
+
+	cf_byteslice attr_reader = reader_get_slice(reader, attr->length, "Attribute data");
+	if (compare_utf8_entry(attr->name, "Code")) {
+		attr->kind = BJVM_ATTRIBUTE_KIND_CODE;
+		attr->code = parse_code_attribute(attr_reader, ctx);
+	} else if (compare_utf8_entry(attr->name, "ConstantValue")) {
+		attr->kind = BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE;
+		attr->constant_value = checked_get_constant_pool_entry(
+			ctx->cp,
+			reader_next_u16(&attr_reader, "constant value index"),
+			BJVM_CP_KIND_STRING | BJVM_CP_KIND_INTEGER | BJVM_CP_KIND_FLOAT | BJVM_CP_KIND_LONG | BJVM_CP_KIND_DOUBLE,
+			"constant value");
+	} else {
+		attr->kind = BJVM_ATTRIBUTE_KIND_UNKNOWN;
+	}
 }
 
 bjvm_cp_method parse_method(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx) {
@@ -1723,17 +1762,7 @@ bjvm_cp_method parse_method(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx)
 	needs_free_on_verify_error(ctx, method.attributes);
 
 	for (int i = 0; i < method.attributes_count; i++) {
-		bjvm_attribute *attr = method.attributes + i;
-
-		uint16_t index = reader_next_u16(reader, "method attribute name");
-		attr->name = checked_get_utf8_entry(ctx->cp, index, "method attribute name");
-		attr->length = reader_next_u32(reader, "method attribute length");
-
-		cf_byteslice attr_reader = reader_get_slice(reader, attr->length, "Attribute data");
-		if (compare_utf8_entry(attr->name, "Code")) {
-			attr->kind = BJVM_ATTRIBUTE_KIND_CODE;
-			attr->code = parse_code_attribute(attr_reader, ctx);
-		}
+		parse_attribute(reader, ctx, method.attributes + i);
 	}
 
 	return method;
@@ -1750,22 +1779,7 @@ bjvm_cp_field read_field(cf_byteslice * reader, bjvm_classfile_parse_ctx * ctx) 
 	needs_free_on_verify_error(ctx, field.attributes);
 
 	for (int i = 0; i < field.attributes_count; i++) {
-		bjvm_attribute* attr = field.attributes + i;
-		attr->kind = BJVM_ATTRIBUTE_KIND_UNKNOWN;
-
-		uint16_t index = reader_next_u16(reader, "field attribute name");
-		attr->name = checked_get_utf8_entry(ctx->cp, index, "field attribute name");
-		attr->length = reader_next_u32(reader, "field attribute length");
-
-		cf_byteslice attr_reader = reader_get_slice(reader, attr->length, "Attribute data");
-		if (compare_utf8_entry(attr->name, "ConstantValue")) {
-			attr->kind = BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE;
-			attr->constant_value = checked_get_constant_pool_entry(
-				ctx->cp,
-				reader_next_u16(&attr_reader, "constant value index"),
-				BJVM_CP_KIND_STRING | BJVM_CP_KIND_INTEGER | BJVM_CP_KIND_FLOAT | BJVM_CP_KIND_LONG | BJVM_CP_KIND_DOUBLE,
-				"constant value");
-		}
+		parse_attribute(reader, ctx, field.attributes + i);
 	}
 
 	return field;
@@ -1793,6 +1807,7 @@ char *parse_classfile(uint8_t *bytes, size_t len, bjvm_classfile **result) {
 		for (int i = 0; i < ctx.free_on_error_count; i++) {
 			free(ctx.free_on_error[i]);
 		}
+		free(ctx.free_on_error);
 		return verify_error_needs_free ? verify_error_msg : strdup(verify_error_msg);
 	}
 
@@ -1843,6 +1858,16 @@ char *parse_classfile(uint8_t *bytes, size_t len, bjvm_classfile **result) {
 	for (int i = 0; i < cf->methods_count; ++i) {
 		cf->methods[i] = parse_method(&reader, &ctx);
 	}
+
+	// Parse attributes
+	cf->attributes_count = reader_next_u16(&reader, "class attributes count");
+	cf->attributes = malloc(cf->attributes_count * sizeof(bjvm_attribute));
+	needs_free_on_verify_error(&ctx, cf->attributes);
+
+	for (int i = 0; i < cf->attributes_count; i++) {
+		parse_attribute(&reader, &ctx, cf->attributes + i);
+	}
+
 	free(ctx.free_on_error); // we made it :)
 	return NULL;
 }
