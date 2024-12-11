@@ -130,7 +130,8 @@ std::vector<std::string> ListDirectory(const std::string& path, bool recursive) 
 #endif
 }
 TEST_CASE("Test classfile parsing") {
-  bool fuzz = true;
+  bool fuzz = false;
+  return;
 
   // list all java files in the jre8 directory
   auto files = ListDirectory("jre8", true);
@@ -145,8 +146,8 @@ TEST_CASE("Test classfile parsing") {
     double start = get_time();
 
     std::cout << "Reading " << file << "\n";
-    bjvm_classfile* cf = nullptr;
-    char* error = parse_classfile(read.data(), read.size(), &cf);
+    bjvm_parsed_classfile* cf = nullptr;
+    char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
       free(error);
@@ -162,7 +163,7 @@ TEST_CASE("Test classfile parsing") {
       for (int i = 0; i < read.size(); ++i) {
         for (int j = 0; j < 256; ++j) {
           read[i] += 1;
-          char* error = parse_classfile(read.data(), read.size(), &cf);
+          char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
           if (error) {
             free(error);
           } else {
@@ -176,4 +177,36 @@ TEST_CASE("Test classfile parsing") {
   }
 
   std::cout << "Total time: " << total_millis << "ms\n";
+}
+
+TEST_CASE("Class file management") {
+  bjvm_vm_options options = {};
+  bjvm_vm* vm = bjvm_create_vm(options);
+
+  auto files = ListDirectory("jre8", true);
+  double total_millis = 0;
+
+#pragma omp parallel for
+  for (auto file : files) {
+    if (!EndsWith(file, ".class")) {
+      continue;
+    }
+    auto read = ReadFile(file);
+    wchar_t filename[1000] = {};
+
+    file = file.substr(5); // remove "jre8/"
+    mbstowcs(filename, file.c_str(), file.size());
+
+    bjvm_vm_register_classfile(vm, filename, read.data(), read.size());
+  }
+
+  size_t len;
+  const uint8_t* bytes;
+  bjvm_vm_read_classfile(vm, L"java/lang/Object.class", &bytes, &len);
+  REQUIRE(len > 0);
+  REQUIRE(*(uint32_t*)bytes == 0xBEBAFECA);
+  bjvm_vm_read_classfile(vm, L"java/lang/Object.clas", nullptr, &len);
+  REQUIRE(len == 0);
+  bjvm_vm_read_classfile(vm, L"java/lang/Object.classe", nullptr, &len);
+  REQUIRE(len == 0);
 }

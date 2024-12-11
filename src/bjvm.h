@@ -97,10 +97,8 @@ struct bjvm_bc_invokeinterface_data {
 	uint8_t count;
 };
 
-/** Java character type. */
-typedef uint16_t bjvm_char_t;
 typedef struct {
-	bjvm_char_t *chars;
+	wchar_t *chars;
 	int len;
 } bjvm_cp_utf8_entry;
 
@@ -116,13 +114,13 @@ typedef struct bjvm_cp_name_and_type {
 typedef struct {
 	bjvm_cp_class_info *class_info;
 	bjvm_cp_name_and_type *name_and_type;
-} bjvm_cp_fieldref_info;
+} bjvm_cp_field_info;
 
 // Used by both methodref and interface methodref
 typedef struct {
 	bjvm_cp_class_info *class_info;
 	bjvm_cp_name_and_type *name_and_type;
-} bjvm_cp_methodref_info;
+} bjvm_cp_method_info;
 
 typedef struct {
 	bjvm_cp_utf8_entry *chars;
@@ -194,7 +192,7 @@ typedef enum {
 	BJVM_CP_KIND_INVOKE_DYNAMIC = 1 << 13,
 } bjvm_cp_entry_kind;
 
-typedef struct bjvm_constant_pool_entry {
+typedef struct bjvm_cp_entry {
 	bjvm_cp_entry_kind kind;
 
 	union {
@@ -207,13 +205,13 @@ typedef struct bjvm_constant_pool_entry {
 		bjvm_cp_name_and_type name_and_type;
 		bjvm_cp_class_info class_info;
 
-		bjvm_cp_fieldref_info fieldref_info;
-		bjvm_cp_methodref_info methodref_info;
+		bjvm_cp_field_info fieldref_info;
+		bjvm_cp_method_info methodref_info;
 		bjvm_cp_method_handle_info method_handle_info;
 		bjvm_cp_method_type_info method_type_info;
 		bjvm_cp_invoke_dynamic_info invoke_dynamic_info;
 	} data;
-} bjvm_constant_pool_entry;
+} bjvm_cp_entry;
 
 struct bjvm_multianewarray_data {
 	bjvm_cp_class_info *entry;
@@ -246,14 +244,14 @@ typedef struct {
 		// multianewarray
 		struct bjvm_multianewarray_data multianewarray;
 		// non-owned pointer into the constant pool
-		bjvm_constant_pool_entry *cp;
+		bjvm_cp_entry *cp;
 	};
 } bjvm_bytecode_insn;
 
 
 typedef struct bjvm_constant_pool {
 	int entries_len;
-	bjvm_constant_pool_entry entries[];
+	bjvm_cp_entry entries[];
 } bjvm_constant_pool;
 
 typedef enum {
@@ -296,7 +294,7 @@ typedef struct bjvm_attribute {
 
 	union {
 		bjvm_attribute_code code;
-		bjvm_constant_pool_entry* constant_value;
+		bjvm_cp_entry* constant_value;
 	};
 } bjvm_attribute;
 
@@ -318,6 +316,8 @@ typedef struct {
 
 	int attributes_count;
 	bjvm_attribute* attributes;
+	// Offset of the field in the static or instance data area
+	int byte_offset;
 } bjvm_cp_field;
 
 typedef struct {
@@ -342,13 +342,100 @@ typedef struct {
 	int attributes_count;
 	bjvm_attribute* attributes;
 
-	// Whether this classfile corresponds to the primordial object class
+	// Whether this class corresponds to the primordial object class
 	bool is_primordial_object;
-} bjvm_classfile;
+} bjvm_parsed_classfile;
 
-char* parse_classfile(uint8_t* bytes, size_t len, bjvm_classfile** result);
-void bjvm_free_classfile(bjvm_classfile *cf);
-void bjvm_free_attribute(bjvm_attribute *attribute);
+typedef uint64_t bjvm_mark_word_t;
+
+typedef struct bjvm_klass bjvm_klass;
+
+// Equivalent to HotSpot's Klass
+typedef struct bjvm_klass {
+	// Superclass of this klass
+	bjvm_klass* super;
+	// Access flags
+	bjvm_access_flags access_flags;
+	// Size in bytes of an instance (ignoring array data)
+	uint32_t instance_size;
+	// Name of this class (e.g. "java/lang/Object")
+	bjvm_cp_utf8_entry* name;
+} bjvm_klass;
+
+typedef struct bjvm_array_klass {
+	bjvm_klass* base;
+
+	int dimensions;
+	bjvm_klass* base_component;
+} bjvm_array_class;
+
+// Equivalent to HotSpot's InstanceKlass
+typedef struct bjvm_ordinary_class {
+	bjvm_klass base;
+
+	int arrays_count;
+	bjvm_array_class* arrays;
+
+	int fields_count;
+	bjvm_cp_field* fields;
+
+	int methods_count;
+	bjvm_cp_method* methods;
+} bjvm_instance_klass;
+
+// Appears at the top of every object -- corresponds to HotSpot's oopDesc
+typedef struct {
+	volatile bjvm_mark_word_t mark_word;
+	bjvm_klass* descriptor;
+} bjvm_obj_header;
+
+typedef struct bjvm_class_loader bjvm_class_loader;
+
+typedef struct bjvm_class_loader {
+	bjvm_obj_header obj_header;
+	// Compare: https://github.com/openjdk/jdk8/blob/master/jdk/src/share/classes/java/lang/ClassLoader.java
+	bjvm_class_loader* parent;
+	// Used to synchronize class loading (instance of ConcurrentHashMap)
+	bjvm_obj_header* parallelLockMap;
+	// Whether this class loader is the bootstrap class loader
+	bool is_bootstrap;
+} bjvm_class_loader;
+
+typedef struct {
+	bjvm_class_loader* bootstrap_class_loader;
+
+	void* classpath_manager;
+} bjvm_vm;
+
+typedef struct {
+	// TODO
+} bjvm_vm_options;
+
+bjvm_vm *bjvm_create_vm(bjvm_vm_options options);
+
+/**
+ * Add the given classfile as accessible to the VM (but don't necessarily load it yet).
+ */
+int bjvm_vm_register_classfile(bjvm_vm* vm, const wchar_t* filename, const uint8_t* bytes, size_t len);
+
+/**
+ * Read the classfile in the class path. Returns -1 on failure to find the classfile. Writes a pointer to the classfile
+ * bytes and the length of the classfile to the given pointers.
+ */
+int bjvm_vm_read_classfile(bjvm_vm* vm, const wchar_t* filename, const uint8_t** bytes, size_t* len);
+
+void bjvm_vm_list_classfiles(bjvm_vm* vm, wchar_t** strings, size_t* count);
+
+/**
+ * Parse the given classfile. Writes a pointer to the parsed classfile into result. Returns an error message if the
+ * parsing failed. It is the caller's responsibility to free the error message.
+ */
+char* bjvm_parse_classfile(uint8_t* bytes, size_t len, bjvm_parsed_classfile** result);
+
+/**
+ * Free the classfile.
+ */
+void bjvm_free_classfile(bjvm_parsed_classfile *cf);
 
 #ifdef __cplusplus
 }
