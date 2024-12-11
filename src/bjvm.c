@@ -809,6 +809,7 @@ const char *insn_code_name(bjvm_insn_code_kind code) {
 		case bjvm_bc_insn_tableswitch: return "tableswitch";
 		case bjvm_bc_insn_lookupswitch: return "lookupswitch";
 	}
+	BJVM_UNREACHABLE();
 }
 
 bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, uint32_t pc, bjvm_classfile_parse_ctx *ctx) {
