@@ -637,7 +637,7 @@ bjvm_bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, bjvm_cl
 	int default_target = checked_pc(original_pc, reader_next_i32(reader, "lookupswitch default target"), ctx);
 	int pairs_count = reader_next_i32(reader, "lookupswitch pairs count");
 
-	if (pairs_count > 1 << 15) {
+	if (pairs_count > 1 << 15 || pairs_count < 0) {
 		verify_error("lookupswitch instruction is too large");
 	}
 
