@@ -97,25 +97,21 @@ struct bjvm_bc_invokeinterface_data {
 	uint8_t count;
 };
 
-typedef struct bjvm_cp_class_info bjvm_cp_class_info;
-
-struct bjvm_multianewarray_data {
-	bjvm_cp_class_info *entry;
-	uint8_t dimensions;
-};
-
+/** Java character type. */
 typedef uint16_t bjvm_char_t;
-
 typedef struct {
 	bjvm_char_t *chars;
 	int len;
 } bjvm_cp_utf8_entry;
 
-typedef struct bjvm_cp_class_info {
+typedef struct {
 	bjvm_cp_utf8_entry *name;
 } bjvm_cp_class_info;
 
-typedef struct bjvm_cp_name_and_type bjvm_cp_name_and_type;
+typedef struct bjvm_cp_name_and_type {
+	bjvm_cp_utf8_entry *name;
+	bjvm_cp_utf8_entry *descriptor;
+} bjvm_cp_name_and_type;
 
 typedef struct {
 	bjvm_cp_class_info *class_info;
@@ -131,11 +127,6 @@ typedef struct {
 typedef struct {
 	bjvm_cp_utf8_entry *chars;
 } bjvm_cp_string_info;
-
-typedef struct bjvm_cp_name_and_type {
-	bjvm_cp_utf8_entry *name;
-	bjvm_cp_utf8_entry *descriptor;
-} bjvm_cp_name_and_type;
 
 typedef struct {
 	// Sign extended if original entry was an Integer
@@ -185,7 +176,6 @@ typedef struct {
 	bjvm_cp_name_and_type *name_and_type;
 } bjvm_cp_invoke_dynamic_info;
 
-
 typedef enum {
 	BJVM_CP_KIND_INVALID = 0,
 	BJVM_CP_KIND_UTF8 = 1 << 0,
@@ -224,6 +214,11 @@ typedef struct bjvm_constant_pool_entry {
 		bjvm_cp_invoke_dynamic_info invoke_dynamic_info;
 	} data;
 } bjvm_constant_pool_entry;
+
+struct bjvm_multianewarray_data {
+	bjvm_cp_class_info *entry;
+	uint8_t dimensions;
+};
 
 typedef struct {
 	bjvm_insn_code_kind kind;
@@ -347,6 +342,7 @@ typedef struct {
 	int attributes_count;
 	bjvm_attribute* attributes;
 
+	// Whether this classfile corresponds to the primordial object class
 	bool is_primordial_object;
 } bjvm_classfile;
 

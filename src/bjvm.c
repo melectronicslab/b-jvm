@@ -34,11 +34,6 @@ const char *bjvm_primitive_kind_to_string(bjvm_primitive_kind kind) {
 	BJVM_UNREACHABLE();
 }
 
-/**
- * Parse primitive type
- * @param c
- * @return
- */
 int bjvm_parse_primitive_type(char c) {
 	switch (c) {
 		case 'Z': return BJVM_PRIMITIVE_BOOLEAN;
@@ -84,23 +79,23 @@ bool compare_utf8_entry(bjvm_cp_utf8_entry *entry, const char *str) {
 	return true;
 }
 
-bjvm_cp_utf8_entry bjvm_init_utf8_entry(int len) {
+bjvm_cp_utf8_entry init_utf8_entry(int len) {
 	return (bjvm_cp_utf8_entry){
-		.chars = calloc(len, sizeof(bjvm_char_t)),
+		.chars = malloc(len * sizeof(bjvm_char_t)),
 		.len = len
 	};
 }
 
-void bjvm_free_utf8_entry(bjvm_cp_utf8_entry *entry) {
+void free_utf8_entry(bjvm_cp_utf8_entry *entry) {
 	free(entry->chars);
 	entry->chars = NULL;
 	entry->len = 0;
 }
 
-void bjvm_free_constant_pool_entry(bjvm_constant_pool_entry *entry) {
+void free_constant_pool_entry(bjvm_constant_pool_entry *entry) {
 	switch (entry->kind) {
 		case BJVM_CP_KIND_UTF8:
-			bjvm_free_utf8_entry(&entry->data.utf8);
+			free_utf8_entry(&entry->data.utf8);
 			break;
 		default: // TODO will need to add more as we resolve descriptors
 			break;
@@ -112,7 +107,7 @@ void free_field(bjvm_cp_field *field);
 
 void bjvm_free_constant_pool(bjvm_constant_pool *pool) {
 	for (int i = 0; i < pool->entries_len; ++i) {
-		bjvm_free_constant_pool_entry(&pool->entries[i]);
+		free_constant_pool_entry(&pool->entries[i]);
 	}
 	free(pool);
 }
@@ -295,7 +290,7 @@ ctx_free_ticket needs_free_on_verify_error(bjvm_classfile_parse_ctx *ctx, void *
 
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
 bjvm_cp_utf8_entry parse_modified_utf8(const uint8_t *bytes, int len) {
-	bjvm_cp_utf8_entry result = bjvm_init_utf8_entry(len); // conservatively large
+	bjvm_cp_utf8_entry result = init_utf8_entry(len); // conservatively large
 	int j = 0;
 	for (int i = 0; i < len; ++i) {
 		// "Code points in the range '\u0001' to '\u007F' are represented by a single byte"
@@ -321,7 +316,7 @@ bjvm_cp_utf8_entry parse_modified_utf8(const uint8_t *bytes, int len) {
 	result.len = j;
 	return result;
 inval:
-	bjvm_free_utf8_entry(&result);
+	free_utf8_entry(&result);
 	verify_error("Invalid UTF-8 sequence");
 }
 
@@ -588,7 +583,7 @@ int checked_pc(uint32_t insn_pc, int offset, bjvm_classfile_parse_ctx *ctx) {
 }
 
 bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_classfile_parse_ctx *ctx) {
-	int original_pc = pc - 1;
+	int original_pc = pc++;
 
 	// consume u8s until pc = 0 mod 4
 	while (pc % 4 != 0) {
@@ -627,8 +622,7 @@ bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_cla
 }
 
 bjvm_bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, bjvm_classfile_parse_ctx *ctx) {
-	int original_pc = pc - 1;
-
+	int original_pc = pc++;
 	while (pc % 4 != 0) {
 		reader_next_u8(reader, "tableswitch padding");
 		pc++;
@@ -1310,10 +1304,10 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, uint32_t pc, bjvm_class
 				.kind = bjvm_bc_insn_ret, .index = reader_next_u8(reader, "ret index")
 			};
 		case tableswitch: {
-			return parse_tableswitch_insn(reader, pc + 1, ctx);
+			return parse_tableswitch_insn(reader, pc, ctx);
 		}
 		case lookupswitch: {
-			return parse_lookupswitch_insn(reader, pc + 1, ctx);
+			return parse_lookupswitch_insn(reader, pc, ctx);
 		}
 		case ireturn: return (bjvm_bytecode_insn){.kind = bjvm_bc_insn_ireturn};
 		case lreturn: return (bjvm_bytecode_insn){.kind = bjvm_bc_insn_lreturn};
