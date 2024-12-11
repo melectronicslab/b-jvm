@@ -7,6 +7,5 @@
 #include "bjvm.h"
 
 int main() {
-	printf("%d\n", hello());
 	return 0;
 }

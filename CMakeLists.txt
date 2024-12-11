@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.29)
 project(bjvm)
 
 set(CMAKE_C_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 Include(FetchContent)
 
 FetchContent_Declare(
@@ -12,17 +13,24 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "-O0 -fexceptions -fwasm-exceptions -Wall")
-set(EmscriptenFlags "-g -s EXPORTED_FUNCTIONS=\"['_malloc','_main']\" -s TOTAL_MEMORY=1024MB")
+# If doing emscripten
+if (EMSCRIPTEN)
+    set(CMAKE_C_FLAGS "-O0 -fexceptions -fwasm-exceptions -Wall -Wextra")
+    set(CMAKE_CXX_FLAGS "-O0 -fexceptions -fwasm-exceptions -Wall")
+    set(EmscriptenFlags "-s EXPORTED_FUNCTIONS=\"['_malloc','_main']\" -s TOTAL_MEMORY=1024MB")
+else()
+    set(CMAKE_C_FLAGS "-O0 -Wall -Wextra -g -fsanitize=address,undefined")
+    set(CMAKE_CXX_FLAGS "-O0 -Wall -g -fsanitize=address,undefined")
+    set(EmscriptenFlags "")
+endif()
 
-add_library(bjvm OBJECT src/bjvm.c)
+add_library(bjvm OBJECT src/bjvm.h src/bjvm.c)
 
-add_executable(bjvm_main src/bjvm.h src/main.c)
+add_executable(bjvm_main src/main.c)
 target_link_libraries(bjvm_main PRIVATE bjvm)
 set_target_properties(bjvm_main PROPERTIES LINK_FLAGS "${EmscriptenFlags}")
 
-add_executable(tests test/tests.cc src/bjvm.h src/main.c)
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
+add_executable(tests test/tests.cc)
 target_link_libraries(tests PRIVATE bjvm)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 set_target_properties(tests PROPERTIES LINK_FLAGS "${EmscriptenFlags}")
