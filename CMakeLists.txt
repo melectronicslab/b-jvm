@@ -24,7 +24,7 @@ elseif(APPLE)
     set(EmscriptenFlags "")
 else()
     set(CMAKE_C_FLAGS "-O3 -Wall -Wextra -g -fsanitize=address,undefined")
-    set(CMAKE_CXX_FLAGS "-O3 -Wall -g -fsanitize=address,undefined -openmp -lomp")
+    set(CMAKE_CXX_FLAGS "-O3 -Wall -g -fsanitize=address,undefined -fopenmp")
     set(EmscriptenFlags "")
 endif()
 
