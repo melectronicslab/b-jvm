@@ -5,6 +5,8 @@
 #ifndef BJVM_H
 #define BJVM_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
