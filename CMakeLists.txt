@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 project(bjvm)
 
 set(CMAKE_C_STANDARD 23)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 Include(FetchContent)
 
 FetchContent_Declare(
@@ -15,12 +15,12 @@ FetchContent_MakeAvailable(Catch2)
 
 # If doing emscripten
 if (EMSCRIPTEN)
-    set(CMAKE_C_FLAGS "-O0 -fexceptions -fwasm-exceptions -Wall -Wextra")
-    set(CMAKE_CXX_FLAGS "-O0 -fexceptions -fwasm-exceptions -Wall")
+    set(CMAKE_C_FLAGS "-O3 -fexceptions -fwasm-exceptions -Wall -Wextra -g -Wpedantic")
+    set(CMAKE_CXX_FLAGS "-O3 -fexceptions -fwasm-exceptions -Wall -g -Wpedantic")
     set(EmscriptenFlags "-s EXPORTED_FUNCTIONS=\"['_malloc','_main']\" -s TOTAL_MEMORY=1024MB")
 elseif(APPLE)
-    set(CMAKE_C_FLAGS "-O3 -Wall -Wextra -g -fsanitize=address,undefined -Wpedantic")
-    set(CMAKE_CXX_FLAGS "-O3 -Wall -g -fsanitize=address,undefined -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
+    set(CMAKE_C_FLAGS "-O3 -Wall -Wextra -g -Wpedantic")
+    set(CMAKE_CXX_FLAGS "-O3 -Wall -g") # -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
     set(EmscriptenFlags "")
 else()
     set(CMAKE_C_FLAGS "-O3 -Wall -Wextra -g -fsanitize=address,undefined")

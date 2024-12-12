@@ -8,6 +8,7 @@
 #include <fstream>
 #include <climits>
 
+#include "../cmake-build-debug-llvm17/_deps/catch2-src/src/catch2/benchmark/catch_benchmark.hpp"
 #include "../src/bjvm.h"
 
 bool EndsWith(const std::string& s, const std::string& suffix) {
@@ -131,7 +132,7 @@ std::vector<std::string> ListDirectory(const std::string& path, bool recursive) 
 #endif
 }
 TEST_CASE("Test classfile parsing") {
-  bool fuzz = true;
+  bool fuzz = false;
 
   // list all java files in the jre8 directory
   auto files = ListDirectory("jre8", true);
@@ -150,7 +151,7 @@ TEST_CASE("Test classfile parsing") {
     auto read = ReadFile(file);
     double start = get_time();
 
-    std::cout << "Reading " << file << "\n";
+    // std::cout << "Reading " << file << "\n";
     bjvm_parsed_classfile* cf = nullptr;
     char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
@@ -167,6 +168,7 @@ TEST_CASE("Test classfile parsing") {
 
 #pragma omp parallel for
       for (int i = 0; i < read.size(); ++i) {
+        std::cout << "Done with " << i << '\n';
         bjvm_parsed_classfile* cf = nullptr;
         auto copy = read;
         for (int j = 0; j < 256; ++j) {
@@ -185,6 +187,17 @@ TEST_CASE("Test classfile parsing") {
   }
 
   std::cout << "Total time: " << total_millis << "ms\n";
+
+  BENCHMARK_ADVANCED("Parse classfile") (Catch::Benchmark::Chronometer meter) {
+    auto read = ReadFile("./jre8/sun/security/tools/keytool/Main.class");
+    bjvm_parsed_classfile* cf = nullptr;
+
+    meter.measure([&] {
+      char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
+      if (error) abort();
+      bjvm_free_classfile(cf);
+    });
+  };
 }
 
 int register_classes(bjvm_vm* vm) {

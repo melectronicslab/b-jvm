@@ -17,6 +17,14 @@
 #include <string.h>
 #include <wchar.h>
 
+#ifdef __ARM_NEON__
+#include <arm_neon.h>
+#elif defined(__SSE__)
+#include <immintrin.h>
+#elif defined(EMSCRIPTEN)
+#include <wasm_simd128.h>
+#endif
+
 #include "bjvm.h"
 
 #define BJVM_UNREACHABLE(msg)                                                  \
@@ -353,8 +361,37 @@ ctx_free_ticket complex_free_on_verify_error(bjvm_classfile_parse_ctx *ctx,
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
 bjvm_cp_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
   bjvm_cp_utf8 result = init_utf8_entry(len); // conservatively large
-  int j = 0;
-  for (int i = 0; i < len; ++i) {
+  int i = 0, j = 0;
+
+  uint32_t idxs[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+  for (int i = 0; i < 16; ++i) idxs[i] -= 256;
+
+  for (; i + 15 < len; i += 16, j += 16) {
+    // fuck maintainability!!! (measured perf improvement: 12% on my M1 laptop)
+#ifdef __ARM_NEON__
+    uint8x16_t v = vld1q_u8(bytes + i);
+    uint8x16_t ascii = vcgtq_s8(v, vdupq_n_s8(0));
+    if (vminvq_u8(ascii) == 0) break;
+#pragma clang loop unroll(enable)
+    for (int k = 0; k < 4; ++k) {
+      uint8x16_t idx = vld1q_u8((uint8_t *)idxs + 16 * k);
+      vst1q_u8((uint8_t*)&result.chars[j + 4 * k], vqtbl1q_u8(v, idx));
+    }
+#elif defined(__SSSE3__)
+    __m128i v = _mm_loadu_si128((const __m128i*) (bytes + i));
+    short ascii = _mm_movemask_epi8(_mm_cmpgt_epi8(v, _mm_set1_epi8(0)));
+    if (ascii != 0xffff) break;
+#pragma GCC unroll 4
+    for (int k = 0; k < 4; ++k) {
+      __m128i idx = _mm_loadu_si128((const __m128i*)idxs + k);
+      _mm_storeu_si128((__m128i*)&results.chars[j + 4 * k], _mm_shuffle_epi8(v, idx));
+    }
+#else
+    break;
+#endif
+  }
+
+  for (; i < len; ++i) {
     // "Code points in the range '\u0001' to '\u007F' are represented by a
     // single byte"
     if (bytes[i] >= 0x01 && bytes[i] <= 0x7F) {
@@ -2487,41 +2524,43 @@ char *parse_field_descriptor(const wchar_t **chars, size_t len,
     result->dimensions = dimensions;
     if (dimensions > 255)
       return strdup("too many dimensions in field descriptor");
-    switch (*(*chars)++) {
-    case 'B':
+    wchar_t c = **chars;
+    (*chars)++;
+    switch (c) {
+    case L'B':
       result->kind = BJVM_TYPE_KIND_BYTE;
       return NULL;
-    case 'C':
+    case L'C':
       result->kind = BJVM_TYPE_KIND_CHAR;
       return NULL;
-    case 'D':
+    case L'D':
       result->kind = BJVM_TYPE_KIND_DOUBLE;
       return NULL;
-    case 'F':
+    case L'F':
       result->kind = BJVM_TYPE_KIND_FLOAT;
       return NULL;
-    case 'I':
+    case L'I':
       result->kind = BJVM_TYPE_KIND_INT;
       return NULL;
-    case 'J':
+    case L'J':
       result->kind = BJVM_TYPE_KIND_LONG;
       return NULL;
-    case 'S':
+    case L'S':
       result->kind = BJVM_TYPE_KIND_SHORT;
       return NULL;
-    case 'Z':
+    case L'Z':
       result->kind = BJVM_TYPE_KIND_BOOLEAN;
       return NULL;
-    case 'V': {
+    case L'V': {
       result->kind = BJVM_TYPE_KIND_VOID;
       if (dimensions > 0)
         return strdup("void cannot have dimensions");
       return NULL; // lol, check this later
     }
-    case '[':
+    case L'[':
       ++dimensions;
       break;
-    case 'L': {
+    case L'L': {
       const wchar_t *start = *chars;
       while (*chars < end && **chars != ';')
         ++*chars;
