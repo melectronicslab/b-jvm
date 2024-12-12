@@ -1988,9 +1988,6 @@ void free_field_descriptor(bjvm_parsed_field_descriptor descriptor) {
  * and returning an owned error message if there was an error.
  */
 char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_field_descriptor* result) {
-	if (len == 0)
-		return strdup("Empty field descriptor");
-
 	const wchar_t* end = *chars + len;
 	int dimensions = 0;
 	while (*chars < end) {
@@ -2036,7 +2033,7 @@ char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_fiel
 		}
 	}
 
-	BJVM_UNREACHABLE();
+	return strdup("Expected field descriptor character, but reached end of string");
 }
 
 bool bjvm_compare_field_descriptors(bjvm_parsed_field_descriptor left, bjvm_parsed_field_descriptor right) {
