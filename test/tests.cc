@@ -131,7 +131,7 @@ std::vector<std::string> ListDirectory(const std::string& path, bool recursive) 
 #endif
 }
 TEST_CASE("Test classfile parsing") {
-  bool fuzz = false;
+  bool fuzz = true;
 
   // list all java files in the jre8 directory
   auto files = ListDirectory("jre8", true);
@@ -139,7 +139,6 @@ TEST_CASE("Test classfile parsing") {
 
   int count = 0;
   int FILE_COUNT = fuzz ? 64 : INT_MAX;
-#pragma omp parallel for
   for (const auto& file : files) {
     if (!EndsWith(file, ".class")) {
       continue;
@@ -166,10 +165,13 @@ TEST_CASE("Test classfile parsing") {
     if (fuzz) {
       std::cerr << "Fuzzing classfile: " << file << '\n';
 
+#pragma omp parallel for
       for (int i = 0; i < read.size(); ++i) {
+        bjvm_parsed_classfile* cf = nullptr;
+        auto copy = read;
         for (int j = 0; j < 256; ++j) {
-          read[i] += 1;
-          char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
+          copy[i] += 1;
+          char* error = bjvm_parse_classfile(copy.data(), copy.size(), &cf);
           if (error) {
             free(error);
           } else {

@@ -2198,7 +2198,6 @@ void bjvm_locals_on_method_entry(const bjvm_cp_method *method,
   const bjvm_parsed_method_descriptor *desc = method->parsed_descriptor;
   BJVM_DCHECK(code);
   locals->entries = calloc(code->max_locals, sizeof(bjvm_analy_stack_entry));
-  free_on_verify_error(ctx, locals->entries);
   for (int i = 0; i < code->max_locals; ++i)
     locals->entries[i] = BJVM_TYPE_KIND_VOID;
   int i = 0, j = 0;
@@ -2223,6 +2222,7 @@ void bjvm_locals_on_method_entry(const bjvm_cp_method *method,
     return; // packed all arguments
 
 fail:
+  free(locals->entries);
   verify_error_static("max_locals is insufficiently large");
 }
 
@@ -2626,6 +2626,7 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len,
       }
     }
     free(ctx.free_on_error);
+    BJVM_DCHECK(verify_error_msg);
     return verify_error_needs_free ? verify_error_msg
                                    : strdup(verify_error_msg);
   }
