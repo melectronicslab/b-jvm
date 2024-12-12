@@ -6,6 +6,7 @@
 #define BJVM_H
 
 #include <stdint.h>
+#include <wchar.h>
 
 #ifdef __cplusplus
 extern "C" {
