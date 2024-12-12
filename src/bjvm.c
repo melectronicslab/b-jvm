@@ -2035,6 +2035,8 @@ char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_fiel
 			}
 		}
 	}
+
+	BJVM_UNREACHABLE();
 }
 
 bool bjvm_compare_field_descriptors(bjvm_parsed_field_descriptor left, bjvm_parsed_field_descriptor right) {
@@ -2071,7 +2073,7 @@ char* parse_method_descriptor(const bjvm_cp_utf8* entry, bjvm_parsed_method_desc
 	}
 	if (chars >= end)
 		return err_while_parsing_md(result, strdup("missing ')' in method descriptor"));
-	(chars)++;  // skip ')'
+	chars++;  // skip ')'
 	char* error = parse_field_descriptor(&chars, end - chars, &result->return_type);
 	return error ? err_while_parsing_md(result, error) : NULL;
 }
