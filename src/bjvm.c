@@ -381,13 +381,13 @@ bjvm_cp_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
     }
 #elif defined(__SSSE3__)
     __m128i v = _mm_loadu_si128((const __m128i*) (bytes + i));
-    short ascii = _mm_movemask_epi8(_mm_cmpgt_epi8(v, _mm_set1_epi8(0)));
+    int ascii = _mm_movemask_epi8(_mm_cmpgt_epi8(v, _mm_set1_epi8(0)));
     printf("%x\n", ascii);
     if (ascii != 0xffff) break;
 #pragma GCC unroll 4
     for (int k = 0; k < 4; ++k) {
       __m128i idx = _mm_loadu_si128((const __m128i*)idxs + k);
-      _mm_storeu_si128((__m128i*)&results.chars[j + 4 * k], _mm_shuffle_epi8(v, idx));
+      _mm_storeu_si128((__m128i*)&result.chars[j + 4 * k], _mm_shuffle_epi8(v, idx));
     }
 #else
     break;
