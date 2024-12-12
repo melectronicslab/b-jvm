@@ -191,10 +191,21 @@ void free_field(bjvm_cp_field* field) {
 	free(field->attributes);
 }
 
+void free_method_descriptor(void* descriptor_) {
+	bjvm_parsed_method_descriptor* descriptor = descriptor_;
+	for (int i = 0; i < descriptor->args_count; ++i) {
+		free_field_descriptor(descriptor->args[i]);
+	}
+	free_field_descriptor(descriptor->return_type);
+	free(descriptor->args);
+	free(descriptor);
+}
+
 void free_method(bjvm_cp_method *method) {
 	for (int i = 0; i < method->attributes_count; ++i) {
 		bjvm_free_attribute(&method->attributes[i]);
 	}
+	free_method_descriptor(method->parsed_descriptor);
 	free(method->attributes);
 }
 
@@ -278,7 +289,7 @@ cf_byteslice reader_get_slice(cf_byteslice *reader, size_t len, const char *reas
 	})
 
 typedef struct {
-	// Free these pointers if a verify error happens, to avoid memleaks
+	// Free these pointers if a verify error happens, to avoid memleaks. Pairs of (void*, free_fn)
 	void **free_on_error;
 	int free_on_error_cap;
 	int free_on_error_count;
@@ -300,17 +311,32 @@ void free_ticket(ctx_free_ticket ticket) {
 	ticket.ctx->free_on_error[ticket.offset] = NULL;
 }
 
+#define PUSH_FREE *VECTOR_PUSH(ctx->free_on_error, ctx->free_on_error_count, ctx->free_on_error_cap)
+
 /**
  * Record that this pointer needs to be freed if we encounter a VerifyError while parsing the classfile.
  */
 ctx_free_ticket needs_free_on_verify_error(bjvm_classfile_parse_ctx *ctx, void *ptr) {
 	if (!ctx) return (ctx_free_ticket) {};
-	*VECTOR_PUSH(ctx->free_on_error, ctx->free_on_error_count, ctx->free_on_error_cap) = ptr;
+	PUSH_FREE = ptr;
+	PUSH_FREE = free;
 	return (ctx_free_ticket) {
 		.ctx = ctx,
-		.offset = ctx->free_on_error_count - 1
+		.offset = ctx->free_on_error_count - 2
 	};
 }
+
+ctx_free_ticket needs_complex_free_on_verify_error(bjvm_classfile_parse_ctx *ctx, void *ptr, void (*free_fn)(void*)) {
+	if (!ctx) return (ctx_free_ticket) {};
+	PUSH_FREE = ptr;
+	PUSH_FREE = free_fn;
+	return (ctx_free_ticket) {
+		.ctx = ctx,
+		.offset = ctx->free_on_error_count - 2
+	};
+}
+
+#undef PUSH_FREE
 
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
 bjvm_cp_utf8_entry parse_modified_utf8(const uint8_t *bytes, int len) {
@@ -383,15 +409,17 @@ bjvm_cp_utf8_entry bjvm_wchar_slice_to_utf8(const wchar_t* chars, size_t len) {
 	return init;
 }
 
-char* parse_complete_field_descriptor(const bjvm_cp_utf8_entry* entry, bjvm_parsed_field_descriptor* result) {
+char* parse_complete_field_descriptor(const bjvm_cp_utf8_entry* entry, bjvm_parsed_field_descriptor* result, bjvm_classfile_parse_ctx* ctx) {
 	const wchar_t* chars = entry->chars;
 	char* error = parse_field_descriptor(&chars, entry->len, result);
 	if (error) return error;
+	if (result->kind == BJVM_TYPE_KIND_REFERENCE) needs_free_on_verify_error(ctx, result->class_name.chars);
 	if (chars != entry->chars + entry->len) {
 		char buf[64];
 		snprintf(buf, sizeof(buf), "trailing character(s) in field descriptor: '%c'", *chars);
 		return strdup(buf);
 	}
+	return NULL;
 }
 
 /**
@@ -588,14 +616,16 @@ bool is_entry_wide(bjvm_cp_entry *ent) {
 	return ent->kind == BJVM_CP_KIND_DOUBLE || ent->kind == BJVM_CP_KIND_LONG;
 }
 
-void finish_constant_pool_entry(bjvm_cp_entry *entry) {
+void finish_constant_pool_entry(bjvm_cp_entry *entry, bjvm_classfile_parse_ctx* ctx) {
 	switch (entry->kind) {
 		case BJVM_CP_KIND_FIELD_REF: {
 			bjvm_parsed_field_descriptor* parsed_descriptor = NULL;
 			bjvm_cp_name_and_type* name_and_type = entry->data.fieldref_info.name_and_type;
 
 			entry->data.fieldref_info.parsed_descriptor = parsed_descriptor = calloc(1, sizeof(bjvm_parsed_field_descriptor));
-			char* error = parse_complete_field_descriptor(name_and_type->descriptor, parsed_descriptor);
+			needs_free_on_verify_error(ctx, parsed_descriptor);
+
+			char* error = parse_complete_field_descriptor(name_and_type->descriptor, parsed_descriptor, ctx);
 			if (error) verify_error_with_free(error);
 		}
 		default: break;
@@ -625,7 +655,7 @@ bjvm_constant_pool *parse_constant_pool(cf_byteslice *reader, bjvm_classfile_par
 	}
 
 	for (int cp_i = 1; cp_i < count; cp_i++) {
-		finish_constant_pool_entry(get_constant_pool_entry(pool, cp_i));
+		finish_constant_pool_entry(get_constant_pool_entry(pool, cp_i), ctx);
 	}
 
 	return pool;
@@ -1820,6 +1850,14 @@ bjvm_cp_method parse_method(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx)
 	method.attributes = malloc(method.attributes_count * sizeof(bjvm_attribute));
 	needs_free_on_verify_error(ctx, method.attributes);
 
+	method.parsed_descriptor = calloc(1, sizeof(bjvm_parsed_method_descriptor));
+	char* error = parse_method_descriptor(method.descriptor, method.parsed_descriptor);
+	if (error) {
+		free(method.parsed_descriptor);
+		verify_error_with_free(error);
+	}
+	needs_complex_free_on_verify_error(ctx, method.parsed_descriptor, free_method_descriptor);
+
 	for (int i = 0; i < method.attributes_count; i++) {
 		parse_attribute(reader, ctx, method.attributes + i);
 	}
@@ -1965,8 +2003,9 @@ typedef struct {
 } bjvm_code_analysis;
 
 void free_field_descriptor(bjvm_parsed_field_descriptor descriptor) {
-	if (descriptor.kind == BJVM_TYPE_KIND_REFERENCE)
+	if (descriptor.kind == BJVM_TYPE_KIND_REFERENCE) {
 		free_utf8_entry(&descriptor.class_name);
+	}
 }
 
 /**
@@ -2005,12 +2044,12 @@ char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_fiel
 					++*chars;
 				if (*chars == end)
 					return strdup("missing ';' in reference type in field descriptor");
-				result->kind = BJVM_TYPE_KIND_REFERENCE;
 				size_t class_name_len = *chars - start;
 				if (class_name_len == 0) {
 					return strdup("missing reference type name after L in field descriptor");
 				}
 				++*chars;
+				result->kind = BJVM_TYPE_KIND_REFERENCE;
 				result->class_name = bjvm_wchar_slice_to_utf8(start, class_name_len);
 				return NULL;
 			}
@@ -2039,30 +2078,27 @@ char* err_while_parsing_md(bjvm_parsed_method_descriptor* result, char* error) {
 	return strdup(buf);
 }
 
-char* parse_method_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_method_descriptor* result) {
-	const wchar_t* end = *chars + len;
-	if (len < 1 || *(*chars)++ != '(')
+char* parse_method_descriptor(const bjvm_cp_utf8_entry* entry, bjvm_parsed_method_descriptor* result) {
+	const size_t len = entry->len;
+	const wchar_t *chars = entry->chars, *end = chars + len;
+	if (len < 1 || *(chars)++ != '(')
 		return strdup("missing '(' in method descriptor");
 	result->args = NULL;
 	result->args_cap = result->args_count = 0;
-	while (**chars != ')' && *chars < end) {
+	while (chars < end && *chars != ')') {
 		bjvm_parsed_field_descriptor arg;
-		char* error = parse_field_descriptor(chars, end - *chars, &arg);
+
+		char* error = parse_field_descriptor(&chars, end - chars, &arg);
 		if (error || arg.kind == BJVM_PRIMITIVE_VOID)
 			return err_while_parsing_md(result, error ? error : strdup("void in method descriptor"));
+
 		*VECTOR_PUSH(result->args, result->args_count, result->args_cap) = arg;
 	}
-	if (*chars >= end)
+	if (chars >= end)
 		return err_while_parsing_md(result, strdup("missing ')' in method descriptor"));
-	(*chars)++;  // skip ')'
-	char* error = parse_field_descriptor(chars, end - *chars, &result->return_type);
+	(chars)++;  // skip ')'
+	char* error = parse_field_descriptor(&chars, end - chars, &result->return_type);
 	return error ? err_while_parsing_md(result, error) : NULL;
-}
-
-void free_method_descriptor(bjvm_parsed_method_descriptor descriptor) {
-	for (int i = 0; i < descriptor.args_count; ++i)
-		free_field_descriptor(descriptor.args[i]);
-	free(descriptor.args);
 }
 
 char* bjvm_locals_on_function_entry(const bjvm_cp_utf8_entry* descriptor, bjvm_analy_stack_state* locals) {
@@ -2104,8 +2140,13 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_parsed_classfile **r
 	needs_free_on_verify_error(&ctx, cf);
 
 	if (setjmp(verify_error_jmp_buf)) {
-		for (int i = 0; i < ctx.free_on_error_count; i++)
-			free(ctx.free_on_error[i]);
+		for (int i = 0; i < ctx.free_on_error_count; i += 2) {
+			void* to_free = ctx.free_on_error[i];
+			if (to_free) {
+				void (*free_fn)(void*) = ctx.free_on_error[i + 1];
+				free_fn(to_free);
+			}
+		}
 		free(ctx.free_on_error);
 		return verify_error_needs_free ? verify_error_msg : strdup(verify_error_msg);
 	}

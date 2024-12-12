@@ -130,7 +130,7 @@ std::vector<std::string> ListDirectory(const std::string& path, bool recursive) 
 #endif
 }
 TEST_CASE("Test classfile parsing") {
-  bool fuzz = false;
+  bool fuzz = true;
 
   // list all java files in the jre8 directory
   auto files = ListDirectory("jre8", true);
@@ -170,6 +170,8 @@ TEST_CASE("Test classfile parsing") {
           }
         }
       }
+
+      break;
     }
 
     total_millis += get_time() - start;

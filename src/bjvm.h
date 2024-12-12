@@ -323,7 +323,7 @@ typedef struct bjvm_cp_method {
 	bjvm_cp_utf8_entry *name;
 	bjvm_cp_utf8_entry *descriptor;
 
-	bjvm_parsed_method_descriptor parsed_descriptor;
+	bjvm_parsed_method_descriptor* parsed_descriptor;
 
 	int attributes_count;
 	bjvm_attribute *attributes;
@@ -522,7 +522,7 @@ bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset* bits, size_t bit_in
 
 char* bjvm_locals_on_function_entry(const bjvm_cp_utf8_entry* descriptor, bjvm_analy_stack_state* locals);
 char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_field_descriptor* result);
-char* parse_method_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_method_descriptor* result);
+char* parse_method_descriptor(const bjvm_cp_utf8_entry* descriptor, bjvm_parsed_method_descriptor* result);
 bool compare_utf8_entry(bjvm_cp_utf8_entry *entry, const char *str);
 char* lossy_utf8_entry_to_chars(const bjvm_cp_utf8_entry* utf8);
 void free_field_descriptor(bjvm_parsed_field_descriptor descriptor);
