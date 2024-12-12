@@ -25,15 +25,15 @@
 
 const char *bjvm_type_kind_to_string(bjvm_type_kind kind) {
 	switch (kind) {
-		case BJVM_PRIMITIVE_BOOLEAN: return "boolean";
-		case BJVM_PRIMITIVE_BYTE: return "byte";
-		case BJVM_PRIMITIVE_CHAR: return "char";
-		case BJVM_PRIMITIVE_SHORT: return "short";
-		case BJVM_PRIMITIVE_INT: return "int";
-		case BJVM_PRIMITIVE_LONG: return "long";
-		case BJVM_PRIMITIVE_FLOAT: return "float";
-		case BJVM_PRIMITIVE_DOUBLE: return "double";
-		case BJVM_PRIMITIVE_VOID: return "void";
+		case BJVM_TYPE_KIND_BOOLEAN: return "boolean";
+		case BJVM_TYPE_KIND_BYTE: return "byte";
+		case BJVM_TYPE_KIND_CHAR: return "char";
+		case BJVM_TYPE_KIND_SHORT: return "short";
+		case BJVM_TYPE_KIND_INT: return "int";
+		case BJVM_TYPE_KIND_LONG: return "long";
+		case BJVM_TYPE_KIND_FLOAT: return "float";
+		case BJVM_TYPE_KIND_DOUBLE: return "double";
+		case BJVM_TYPE_KIND_VOID: return "void";
 		case BJVM_TYPE_KIND_REFERENCE: return "<reference>";
 	}
 	BJVM_UNREACHABLE();
@@ -41,15 +41,15 @@ const char *bjvm_type_kind_to_string(bjvm_type_kind kind) {
 
 int bjvm_parse_primitive_type(char c) {
 	switch (c) {
-		case 'Z': return BJVM_PRIMITIVE_BOOLEAN;
-		case 'B': return BJVM_PRIMITIVE_BYTE;
-		case 'C': return BJVM_PRIMITIVE_CHAR;
-		case 'S': return BJVM_PRIMITIVE_SHORT;
-		case 'I': return BJVM_PRIMITIVE_INT;
-		case 'J': return BJVM_PRIMITIVE_LONG;
-		case 'F': return BJVM_PRIMITIVE_FLOAT;
-		case 'D': return BJVM_PRIMITIVE_DOUBLE;
-		case 'V': return BJVM_PRIMITIVE_VOID;
+		case 'Z': return BJVM_TYPE_KIND_BOOLEAN;
+		case 'B': return BJVM_TYPE_KIND_BYTE;
+		case 'C': return BJVM_TYPE_KIND_CHAR;
+		case 'S': return BJVM_TYPE_KIND_SHORT;
+		case 'I': return BJVM_TYPE_KIND_INT;
+		case 'J': return BJVM_TYPE_KIND_LONG;
+		case 'F': return BJVM_TYPE_KIND_FLOAT;
+		case 'D': return BJVM_TYPE_KIND_DOUBLE;
+		case 'V': return BJVM_TYPE_KIND_VOID;
 		default: return -1;
 	}
 }
@@ -1468,7 +1468,7 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, uint32_t pc, bjvm_class
 
 		case newarray: {
 			uint8_t atype = reader_next_u8(reader, "newarray type");
-			if (atype < BJVM_PRIMITIVE_BOOLEAN || atype > BJVM_PRIMITIVE_LONG) {
+			if (atype < BJVM_TYPE_KIND_BOOLEAN || atype > BJVM_TYPE_KIND_LONG) {
 				char buf[64];
 				snprintf(buf, sizeof(buf), "invalid newarray type %d", atype);
 				verify_error_with_free(strdup(buf));
@@ -2023,16 +2023,16 @@ char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_fiel
 		if (dimensions > 255)
 			return strdup("too many dimensions in field descriptor");
 		switch (*(*chars)++) {
-			case 'B': result->kind = BJVM_PRIMITIVE_BYTE; return NULL;
-			case 'C': result->kind = BJVM_PRIMITIVE_CHAR; return NULL;
-			case 'D': result->kind = BJVM_PRIMITIVE_DOUBLE; return NULL;
-			case 'F': result->kind = BJVM_PRIMITIVE_FLOAT; return NULL;
-			case 'I': result->kind = BJVM_PRIMITIVE_INT; return NULL;
-			case 'J': result->kind = BJVM_PRIMITIVE_LONG; return NULL;
-			case 'S': result->kind = BJVM_PRIMITIVE_SHORT; return NULL;
-			case 'Z': result->kind = BJVM_PRIMITIVE_BOOLEAN; return NULL;
+			case 'B': result->kind = BJVM_TYPE_KIND_BYTE; return NULL;
+			case 'C': result->kind = BJVM_TYPE_KIND_CHAR; return NULL;
+			case 'D': result->kind = BJVM_TYPE_KIND_DOUBLE; return NULL;
+			case 'F': result->kind = BJVM_TYPE_KIND_FLOAT; return NULL;
+			case 'I': result->kind = BJVM_TYPE_KIND_INT; return NULL;
+			case 'J': result->kind = BJVM_TYPE_KIND_LONG; return NULL;
+			case 'S': result->kind = BJVM_TYPE_KIND_SHORT; return NULL;
+			case 'Z': result->kind = BJVM_TYPE_KIND_BOOLEAN; return NULL;
 			case 'V': {
-				result->kind = BJVM_PRIMITIVE_VOID;
+				result->kind = BJVM_TYPE_KIND_VOID;
 				if (dimensions > 0)
 					return strdup("void cannot have dimensions");
 				return NULL;  // lol, check this later
@@ -2089,7 +2089,7 @@ char* parse_method_descriptor(const bjvm_cp_utf8_entry* entry, bjvm_parsed_metho
 		bjvm_parsed_field_descriptor arg;
 
 		char* error = parse_field_descriptor(&chars, end - chars, &arg);
-		if (error || arg.kind == BJVM_PRIMITIVE_VOID)
+		if (error || arg.kind == BJVM_TYPE_KIND_VOID)
 			return err_while_parsing_md(result, error ? error : strdup("void in method descriptor"));
 
 		*VECTOR_PUSH(result->args, result->args_count, result->args_cap) = arg;

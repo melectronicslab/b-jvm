@@ -136,11 +136,17 @@ TEST_CASE("Test classfile parsing") {
   auto files = ListDirectory("jre8", true);
   double total_millis = 0;
 
+  int count = 0;
+  int FILE_COUNT = fuzz ? 16 : INT_MAX;
 #pragma omp parallel for
   for (const auto& file : files) {
     if (!EndsWith(file, ".class")) {
       continue;
     }
+    if (count++ > FILE_COUNT) {
+      continue;
+    }
+
     auto read = ReadFile(file);
     double start = get_time();
 
@@ -170,8 +176,6 @@ TEST_CASE("Test classfile parsing") {
           }
         }
       }
-
-      break;
     }
 
     total_millis += get_time() - start;
