@@ -1,4 +1,11 @@
 
 ## Style guide
 
-Prefix all functions with `bjvm_`.
+Prefix all non-`static` functions with `bjvm_`.
+
+Common abbreviations:
+
+- `cf` – classfile
+- `cp` – constant pool
+- `bc` – bytecode
+- `vm` – virtual machine

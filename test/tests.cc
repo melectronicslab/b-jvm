@@ -131,7 +131,6 @@ std::vector<std::string> ListDirectory(const std::string& path, bool recursive) 
 }
 TEST_CASE("Test classfile parsing") {
   bool fuzz = false;
-  return;
 
   // list all java files in the jre8 directory
   auto files = ListDirectory("jre8", true);
@@ -179,34 +178,136 @@ TEST_CASE("Test classfile parsing") {
   std::cout << "Total time: " << total_millis << "ms\n";
 }
 
-TEST_CASE("Class file management") {
-  bjvm_vm_options options = {};
-  bjvm_vm* vm = bjvm_create_vm(options);
-
+int register_classes(bjvm_vm* vm) {
   auto files = ListDirectory("jre8", true);
-  double total_millis = 0;
-
-#pragma omp parallel for
+  int file_count = 0;
   for (auto file : files) {
     if (!EndsWith(file, ".class")) {
       continue;
     }
     auto read = ReadFile(file);
     wchar_t filename[1000] = {};
-
     file = file.substr(5); // remove "jre8/"
     mbstowcs(filename, file.c_str(), file.size());
-
     bjvm_vm_register_classfile(vm, filename, read.data(), read.size());
+    file_count++;
   }
+  return file_count;
+}
 
+TEST_CASE("Class file management") {
+  bjvm_vm_options options = {};
+  bjvm_vm* vm = bjvm_create_vm(options);
+
+  int file_count = register_classes(vm);
   size_t len;
   const uint8_t* bytes;
-  bjvm_vm_read_classfile(vm, L"java/lang/Object.class", &bytes, &len);
+  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.class", &bytes, &len) == 0);
   REQUIRE(len > 0);
   REQUIRE(*(uint32_t*)bytes == 0xBEBAFECA);
-  bjvm_vm_read_classfile(vm, L"java/lang/Object.clas", nullptr, &len);
-  REQUIRE(len == 0);
-  bjvm_vm_read_classfile(vm, L"java/lang/Object.classe", nullptr, &len);
-  REQUIRE(len == 0);
+  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.clas", nullptr, &len) != 0);
+  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.classe", nullptr, &len) != 0);
+  bjvm_vm_list_classfiles(vm, nullptr, &len);
+  REQUIRE(len == file_count);
+  std::vector<wchar_t*> strings(len);
+  bjvm_vm_list_classfiles(vm, strings.data(), &len);
+  bool found = false;
+  for (int i = 0; i < len; ++i) {
+    found = found || wcscmp(strings[i], L"java/lang/ClassLoader.class") == 0;
+    free(strings[i]);
+  }
+  REQUIRE(found);
+  bjvm_free_vm(vm);
+}
+
+TEST_CASE("Compressed bitset") {
+  for (int size = 1; size < 256; ++size) {
+    std::vector<uint8_t> reference(size);
+    auto bitset = bjvm_init_compressed_bitset(size);
+
+    for (int i = 0; i < 1000; ++i) {
+      int index = rand() % size;
+      switch (rand() % 4) {
+        case 0: {
+          int* set_bits = nullptr, length = 0, capacity = 0;
+          set_bits = bjvm_list_compressed_bitset_bits(bitset, set_bits, &length, &capacity);
+          for (int i = 0; i < length; ++i) {
+            if (!reference[set_bits[i]]) REQUIRE(false);
+          }
+          free(set_bits);
+          break;
+        }
+        case 1: {
+          bool test = bjvm_test_set_compressed_bitset(&bitset, index);
+          if (test != reference[index])
+            REQUIRE(test == reference[index]);
+          reference[index] = true;
+          break;
+        }
+        case 2: {
+          bool test = bjvm_test_reset_compressed_bitset(&bitset, index);
+          if (test != reference[index])
+            REQUIRE(test == reference[index]);
+          reference[index] = false;
+          break;
+        }
+        case 3: {
+          bool test = bjvm_test_compressed_bitset(bitset, index);
+          if (test != reference[index])
+            REQUIRE(test == reference[index]);
+          break;
+        }
+      }
+    }
+
+    bjvm_free_compressed_bitset(bitset);
+  }
+}
+
+TEST_CASE("parse_field_descriptor valid cases") {
+  const wchar_t* fields = L"Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
+  bjvm_parsed_field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String, java_lang_Object, B, V, C, Z;
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &com_example_Example));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Iaaa));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Jaa));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &java_lang_String));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &java_lang_Object));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &B));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &V));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &C));
+  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Z));
+
+  REQUIRE(compare_utf8_entry(&com_example_Example.class_name, "com/example/Example"));
+  REQUIRE(com_example_Example.dimensions == 0);
+  REQUIRE(com_example_Example.kind == BJVM_TYPE_KIND_REFERENCE);
+
+  REQUIRE(Iaaa.kind == BJVM_PRIMITIVE_INT);
+  REQUIRE(Iaaa.dimensions == 1);
+
+  REQUIRE(Jaa.kind == BJVM_PRIMITIVE_LONG);
+  REQUIRE(Jaa.dimensions == 3);
+
+  REQUIRE(compare_utf8_entry(&java_lang_String.class_name, "java/lang/String"));
+  REQUIRE(java_lang_String.dimensions == 0);
+
+  REQUIRE(compare_utf8_entry(&java_lang_Object.class_name, "java/lang/Object"));
+  REQUIRE(java_lang_Object.dimensions == 2);
+
+  REQUIRE(B.kind == BJVM_PRIMITIVE_BYTE);
+  REQUIRE(C.kind == BJVM_PRIMITIVE_CHAR);
+  REQUIRE(V.kind == BJVM_PRIMITIVE_VOID);
+  REQUIRE(Z.kind == BJVM_PRIMITIVE_BOOLEAN);
+
+  free_field_descriptor(com_example_Example);
+  free_field_descriptor(java_lang_Object);
+  free_field_descriptor(java_lang_String);
+}
+
+TEST_CASE("VM initialization") {
+  bjvm_vm_options options = {};
+  bjvm_vm* vm = bjvm_create_vm(options);
+
+  //register_classes(vm);
+
+  bjvm_free_vm(vm);
 }

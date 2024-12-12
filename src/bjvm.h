@@ -70,6 +70,20 @@ typedef enum {
 	bjvm_bc_insn_tableswitch, bjvm_bc_insn_lookupswitch, bjvm_bc_insn_ret
 } bjvm_insn_code_kind;
 
+typedef enum {
+	BJVM_PRIMITIVE_BOOLEAN = 4,
+	BJVM_PRIMITIVE_CHAR = 5,
+	BJVM_PRIMITIVE_FLOAT = 6,
+	BJVM_PRIMITIVE_DOUBLE = 7,
+	BJVM_PRIMITIVE_BYTE = 8,
+	BJVM_PRIMITIVE_SHORT = 9,
+	BJVM_PRIMITIVE_INT = 10,
+	BJVM_PRIMITIVE_LONG = 11,
+	BJVM_PRIMITIVE_VOID = 12,
+
+	BJVM_TYPE_KIND_REFERENCE = 13,
+} bjvm_type_kind;
+
 struct bjvm_bc_tableswitch_data {
 	int default_target;
 	int *targets;
@@ -112,8 +126,17 @@ typedef struct bjvm_cp_name_and_type {
 } bjvm_cp_name_and_type;
 
 typedef struct {
+	bjvm_type_kind kind;
+	// Can be nonzero for any kind
+	int dimensions;
+	bjvm_cp_utf8_entry class_name;  // For reference and array types only
+} bjvm_parsed_field_descriptor;
+
+typedef struct {
 	bjvm_cp_class_info *class_info;
 	bjvm_cp_name_and_type *name_and_type;
+
+	bjvm_parsed_field_descriptor* parsed_descriptor;
 } bjvm_cp_field_info;
 
 // Used by both methodref and interface methodref
@@ -147,18 +170,6 @@ typedef enum {
 	BJVM_MH_KIND_NEW_INVOKE_SPECIAL = 8,
 	BJVM_MH_KIND_INVOKE_INTERFACE = 9
 } bjvm_method_handle_kind;
-
-typedef enum {
-	BJVM_PRIMITIVE_BOOLEAN = 4,
-	BJVM_PRIMITIVE_CHAR = 5,
-	BJVM_PRIMITIVE_FLOAT = 6,
-	BJVM_PRIMITIVE_DOUBLE = 7,
-	BJVM_PRIMITIVE_BYTE = 8,
-	BJVM_PRIMITIVE_SHORT = 9,
-	BJVM_PRIMITIVE_INT = 10,
-	BJVM_PRIMITIVE_LONG = 11,
-	BJVM_PRIMITIVE_VOID = 12
-} bjvm_primitive_kind;
 
 typedef struct {
 	bjvm_method_handle_kind handle_kind;
@@ -224,7 +235,7 @@ typedef struct {
 
 	union {
 		// for newarray
-		bjvm_primitive_kind array_type;
+		bjvm_type_kind array_type;
 		// constant pool index or local variable index or branch target (instruction index)
 		uint32_t index;
 		// Integer or long immediate
@@ -389,27 +400,51 @@ typedef struct {
 	bjvm_klass* descriptor;
 } bjvm_obj_header;
 
-typedef struct bjvm_class_loader bjvm_class_loader;
+struct bjvm_class_loader;
+typedef struct bjvm_vm bjvm_vm;
 
 typedef struct bjvm_class_loader {
 	bjvm_obj_header obj_header;
 	// Compare: https://github.com/openjdk/jdk8/blob/master/jdk/src/share/classes/java/lang/ClassLoader.java
-	bjvm_class_loader* parent;
+	struct bjvm_class_loader* parent;
 	// Used to synchronize class loading (instance of ConcurrentHashMap)
 	bjvm_obj_header* parallelLockMap;
 	// Whether this class loader is the bootstrap class loader
 	bool is_bootstrap;
+	// Pointer to the VM
+	bjvm_vm* vm;
 } bjvm_class_loader;
 
-typedef struct {
+typedef struct bjvm_vm {
 	bjvm_class_loader* bootstrap_class_loader;
-
 	void* classpath_manager;
 } bjvm_vm;
 
 typedef struct {
 	// TODO
 } bjvm_vm_options;
+
+/**
+ * For simplicity, we always store local variables/stack variables as 64 bits, and only use part of them in the case
+ * of integer or float (or, in 32-bit mode, reference) values.
+ */
+typedef union {
+	long l;
+	int i;    // used for all integer types except long, plus boolean
+	float f;
+	double d;
+	bjvm_obj_header* obj;  // reference type
+} bjvm_stack_value;
+
+typedef struct {
+	int program_counter;  // in instruction indices
+	int max_stack;
+	int max_locals;
+	int stack_depth;
+
+	// First max_stack bjvm_stack_values, then max_locals more
+	bjvm_stack_value values[];
+} bjvm_stack_frame;
 
 bjvm_vm *bjvm_create_vm(bjvm_vm_options options);
 
@@ -436,6 +471,54 @@ char* bjvm_parse_classfile(uint8_t* bytes, size_t len, bjvm_parsed_classfile** r
  * Free the classfile.
  */
 void bjvm_free_classfile(bjvm_parsed_classfile *cf);
+
+int bjvm_initialize_vm(bjvm_vm *vm);
+void bjvm_free_vm(bjvm_vm* vm);
+
+/**
+ * Implementation details, but exposed for testing...
+ */
+
+typedef struct {
+	union {
+		// Used if the number of bits in the local variable table/stack is less than 64
+		uint64_t bits_inl;
+		struct {
+			uint64_t* bits;
+			uint32_t size_words;
+		} ptr;
+	};
+} bjvm_compressed_bitset;
+
+enum bjvm_analy_stack_entry {
+	unusable = 0, boolean, byte, char_, short_, int_, float_, reference, returnAddress
+};
+
+// State of the stack (or local variable table) during analysis, indexed by formal JVM semantics (i.e., long/double
+// take up two slots, and the second slot is unusable).
+typedef struct {
+	enum bjvm_analy_stack_entry* entries;
+	int entries_count;
+	int entries_cap;
+} bjvm_analy_stack_state;
+
+typedef struct {
+
+} bjvm_parsed_method_descriptor;
+
+bjvm_compressed_bitset bjvm_init_compressed_bitset(int bits_capacity);
+void bjvm_free_compressed_bitset(bjvm_compressed_bitset bits);
+bool bjvm_is_bitset_compressed(bjvm_compressed_bitset bits);
+int* bjvm_list_compressed_bitset_bits(bjvm_compressed_bitset bits, int* existing_buf, int* length, int* capacity);
+bool bjvm_test_compressed_bitset(bjvm_compressed_bitset bits, size_t bit_index);
+bool bjvm_test_reset_compressed_bitset(bjvm_compressed_bitset* bits, size_t bit_index);
+bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset* bits, size_t bit_index);
+
+char* bjvm_locals_on_function_entry(const bjvm_cp_utf8_entry* descriptor, bjvm_analy_stack_state* locals);
+char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_field_descriptor* result);
+bool compare_utf8_entry(bjvm_cp_utf8_entry *entry, const char *str);
+char* lossy_utf8_entry_to_chars(const bjvm_cp_utf8_entry* utf8);
+void free_field_descriptor(bjvm_parsed_field_descriptor descriptor);
 
 #ifdef __cplusplus
 }
