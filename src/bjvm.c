@@ -367,8 +367,10 @@ bjvm_cp_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
   for (int i = 0; i < 16; ++i) idxs[i] -= 256;
 
   for (; i + 15 < len; i += 16, j += 16) {
-    // fuck maintainability!!! (measured perf improvement: 12% on my M1 laptop)
+    // fuck maintainability!!! (measured perf improvement: 12% for cf parsing on my M1 laptop.
+    // There are a shit ton of strings.)
 #ifdef __ARM_NEON__
+    break;
     uint8x16_t v = vld1q_u8(bytes + i);
     uint8x16_t ascii = vcgtq_s8(v, vdupq_n_s8(0));
     if (vminvq_u8(ascii) == 0) break;
@@ -378,14 +380,13 @@ bjvm_cp_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
       vst1q_u8((uint8_t*)&result.chars[j + 4 * k], vqtbl1q_u8(v, idx));
     }
 #elif defined(__SSSE3__)
-    break;
     __m128i v = _mm_loadu_si128((const __m128i*) (bytes + i));
     short ascii = _mm_movemask_epi8(_mm_cmpgt_epi8(v, _mm_set1_epi8(0)));
     if (ascii != 0xffff) break;
 #pragma GCC unroll 4
     for (int k = 0; k < 4; ++k) {
       __m128i idx = _mm_loadu_si128((const __m128i*)idxs + k);
-      _mm_storeu_si128((__m128i*)&results.chars[j + 4 * k], _mm_shuffle_epi8(v, idx));
+      _mm_storeu_si128((__m128i*)&results.chars[j + 3 * k], _mm_shuffle_epi8(v, idx));
     }
 #else
     break;
