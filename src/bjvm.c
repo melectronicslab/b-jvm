@@ -2251,7 +2251,7 @@ bjvm_wchar_trie_node* walk_trie(bjvm_wchar_trie_node** node, const wchar_t* file
 	return cur;
 }
 
-const int MAX_CLASSFILE_NAME_LENGTH = 1000;
+constexpr int MAX_CLASSFILE_NAME_LENGTH = 1000;
 
 int add_classfile_bytes(
 	bjvm_classpath_manager* manager,
