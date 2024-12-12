@@ -667,7 +667,7 @@ bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_cla
 	for (int i = 0; i < targets_count; ++i) {
 		targets[i] = checked_pc(original_pc, reader_next_i32(reader, "tableswitch target"), ctx);
 	}
-
+	free_on_verify_error(ctx, targets);
 	return (bjvm_bytecode_insn){
 		.kind = bjvm_bc_insn_tableswitch,
 		.program_counter = original_pc,
