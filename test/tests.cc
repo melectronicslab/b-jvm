@@ -138,7 +138,7 @@ TEST_CASE("Test classfile parsing") {
   double total_millis = 0;
 
   int count = 0;
-  int FILE_COUNT = fuzz ? 16 : INT_MAX;
+  int FILE_COUNT = fuzz ? 64 : INT_MAX;
 #pragma omp parallel for
   for (const auto& file : files) {
     if (!EndsWith(file, ".class")) {
