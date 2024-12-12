@@ -114,22 +114,22 @@ struct bjvm_bc_invokeinterface_data {
 typedef struct {
 	wchar_t *chars;
 	int len;
-} bjvm_cp_utf8_entry;
+} bjvm_cp_utf8;
 
 typedef struct {
-	bjvm_cp_utf8_entry *name;
+	bjvm_cp_utf8 *name;
 } bjvm_cp_class_info;
 
 typedef struct bjvm_cp_name_and_type {
-	bjvm_cp_utf8_entry *name;
-	bjvm_cp_utf8_entry *descriptor;
+	bjvm_cp_utf8 *name;
+	bjvm_cp_utf8 *descriptor;
 } bjvm_cp_name_and_type;
 
 typedef struct {
 	bjvm_type_kind kind;
 	// Can be nonzero for any kind
 	int dimensions;
-	bjvm_cp_utf8_entry class_name;  // For reference and array types only
+	bjvm_cp_utf8 class_name;  // For reference and array types only
 } bjvm_parsed_field_descriptor;
 
 typedef struct {
@@ -146,7 +146,7 @@ typedef struct {
 } bjvm_cp_method_info;
 
 typedef struct {
-	bjvm_cp_utf8_entry *chars;
+	bjvm_cp_utf8 *chars;
 } bjvm_cp_string_info;
 
 typedef struct {
@@ -177,7 +177,7 @@ typedef struct {
 } bjvm_cp_method_handle_info;
 
 typedef struct {
-	bjvm_cp_utf8_entry *descriptor;
+	bjvm_cp_utf8 *descriptor;
 } bjvm_cp_method_type_info;
 
 typedef struct {
@@ -207,7 +207,7 @@ typedef struct bjvm_cp_entry {
 	bjvm_cp_entry_kind kind;
 
 	union {
-		bjvm_cp_utf8_entry utf8;
+		bjvm_cp_utf8 utf8;
 		bjvm_cp_string_info string;
 
 		bjvm_cp_floating_info floating;
@@ -308,7 +308,7 @@ typedef struct {
 
 typedef struct bjvm_attribute {
 	bjvm_attribute_kind kind;
-	bjvm_cp_utf8_entry *name;
+	bjvm_cp_utf8 *name;
 	uint32_t length;
 
 	union {
@@ -320,8 +320,8 @@ typedef struct bjvm_attribute {
 typedef struct bjvm_cp_method {
 	bjvm_access_flags access_flags;
 
-	bjvm_cp_utf8_entry *name;
-	bjvm_cp_utf8_entry *descriptor;
+	bjvm_cp_utf8 *name;
+	bjvm_cp_utf8 *descriptor;
 
 	bjvm_parsed_method_descriptor* parsed_descriptor;
 
@@ -332,8 +332,8 @@ typedef struct bjvm_cp_method {
 
 typedef struct {
 	bjvm_access_flags access_flags;
-	bjvm_cp_utf8_entry* name;
-	bjvm_cp_utf8_entry* descriptor;
+	bjvm_cp_utf8* name;
+	bjvm_cp_utf8* descriptor;
 
 	int attributes_count;
 	bjvm_attribute* attributes;
@@ -380,7 +380,7 @@ typedef struct bjvm_klass {
 	// Size in bytes of an instance (ignoring array data)
 	uint32_t instance_size;
 	// Name of this class (e.g. "java/lang/Object")
-	bjvm_cp_utf8_entry* name;
+	bjvm_cp_utf8* name;
 } bjvm_klass;
 
 typedef struct bjvm_array_klass {
@@ -520,11 +520,11 @@ bool bjvm_test_compressed_bitset(bjvm_compressed_bitset bits, size_t bit_index);
 bool bjvm_test_reset_compressed_bitset(bjvm_compressed_bitset* bits, size_t bit_index);
 bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset* bits, size_t bit_index);
 
-char* bjvm_locals_on_function_entry(const bjvm_cp_utf8_entry* descriptor, bjvm_analy_stack_state* locals);
+char* bjvm_locals_on_function_entry(const bjvm_cp_utf8* descriptor, bjvm_analy_stack_state* locals);
 char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_field_descriptor* result);
-char* parse_method_descriptor(const bjvm_cp_utf8_entry* descriptor, bjvm_parsed_method_descriptor* result);
-bool compare_utf8_entry(bjvm_cp_utf8_entry *entry, const char *str);
-char* lossy_utf8_entry_to_chars(const bjvm_cp_utf8_entry* utf8);
+char* parse_method_descriptor(const bjvm_cp_utf8* descriptor, bjvm_parsed_method_descriptor* result);
+bool compare_utf8_entry(bjvm_cp_utf8 *entry, const char *str);
+char* lossy_utf8_entry_to_chars(const bjvm_cp_utf8* utf8);
 void free_field_descriptor(bjvm_parsed_field_descriptor descriptor);
 
 #ifdef __cplusplus
