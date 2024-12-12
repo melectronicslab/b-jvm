@@ -378,6 +378,7 @@ bjvm_cp_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
       vst1q_u8((uint8_t*)&result.chars[j + 4 * k], vqtbl1q_u8(v, idx));
     }
 #elif defined(__SSSE3__)
+    break;
     __m128i v = _mm_loadu_si128((const __m128i*) (bytes + i));
     short ascii = _mm_movemask_epi8(_mm_cmpgt_epi8(v, _mm_set1_epi8(0)));
     if (ascii != 0xffff) break;
