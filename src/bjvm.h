@@ -290,6 +290,14 @@ typedef enum {
 } bjvm_attribute_kind;
 
 typedef struct {
+	bjvm_parsed_field_descriptor* args;
+	int args_count;
+	int args_cap;
+
+	bjvm_parsed_field_descriptor return_type;
+} bjvm_parsed_method_descriptor;
+
+typedef struct {
 	uint16_t max_stack;
 	uint16_t max_locals;
 	int insn_count;
@@ -314,6 +322,8 @@ typedef struct bjvm_cp_method {
 
 	bjvm_cp_utf8_entry *name;
 	bjvm_cp_utf8_entry *descriptor;
+
+	bjvm_parsed_method_descriptor parsed_descriptor;
 
 	int attributes_count;
 	bjvm_attribute *attributes;
@@ -502,10 +512,6 @@ typedef struct {
 	int entries_cap;
 } bjvm_analy_stack_state;
 
-typedef struct {
-
-} bjvm_parsed_method_descriptor;
-
 bjvm_compressed_bitset bjvm_init_compressed_bitset(int bits_capacity);
 void bjvm_free_compressed_bitset(bjvm_compressed_bitset bits);
 bool bjvm_is_bitset_compressed(bjvm_compressed_bitset bits);
@@ -516,6 +522,7 @@ bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset* bits, size_t bit_in
 
 char* bjvm_locals_on_function_entry(const bjvm_cp_utf8_entry* descriptor, bjvm_analy_stack_state* locals);
 char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_field_descriptor* result);
+char* parse_method_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_method_descriptor* result);
 bool compare_utf8_entry(bjvm_cp_utf8_entry *entry, const char *str);
 char* lossy_utf8_entry_to_chars(const bjvm_cp_utf8_entry* utf8);
 void free_field_descriptor(bjvm_parsed_field_descriptor descriptor);

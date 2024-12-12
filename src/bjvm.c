@@ -304,6 +304,7 @@ void free_ticket(ctx_free_ticket ticket) {
  * Record that this pointer needs to be freed if we encounter a VerifyError while parsing the classfile.
  */
 ctx_free_ticket needs_free_on_verify_error(bjvm_classfile_parse_ctx *ctx, void *ptr) {
+	if (!ctx) return (ctx_free_ticket) {};
 	*VECTOR_PUSH(ctx->free_on_error, ctx->free_on_error_count, ctx->free_on_error_cap) = ptr;
 	return (ctx_free_ticket) {
 		.ctx = ctx,
@@ -1973,6 +1974,9 @@ void free_field_descriptor(bjvm_parsed_field_descriptor descriptor) {
  * and returning an owned error message if there was an error.
  */
 char* parse_field_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_field_descriptor* result) {
+	if (len == 0)
+		return strdup("Empty field descriptor");
+
 	const wchar_t* end = *chars + len;
 	int dimensions = 0;
 	while (*chars < end) {
@@ -2024,8 +2028,41 @@ bool bjvm_compare_field_descriptors(bjvm_parsed_field_descriptor left, bjvm_pars
 	return true; // TODO
 }
 
-bjvm_parsed_method_descriptor parse_method_descriptor(const wchar_t* chars, size_t len) {
+char* err_while_parsing_md(bjvm_parsed_method_descriptor* result, char* error) {
+	char buf[128];
+	snprintf(buf, sizeof(buf), "While parsing method descriptor: %s", error);
+	free(error);
+	for (int i = 0; i < result->args_count; ++i) {
+		free_field_descriptor(result->args[i]);
+	}
+	free(result->args);
+	return strdup(buf);
+}
 
+char* parse_method_descriptor(const wchar_t** chars, size_t len, bjvm_parsed_method_descriptor* result) {
+	const wchar_t* end = *chars + len;
+	if (len < 1 || *(*chars)++ != '(')
+		return strdup("missing '(' in method descriptor");
+	result->args = NULL;
+	result->args_cap = result->args_count = 0;
+	while (**chars != ')' && *chars < end) {
+		bjvm_parsed_field_descriptor arg;
+		char* error = parse_field_descriptor(chars, end - *chars, &arg);
+		if (error || arg.kind == BJVM_PRIMITIVE_VOID)
+			return err_while_parsing_md(result, error ? error : strdup("void in method descriptor"));
+		*VECTOR_PUSH(result->args, result->args_count, result->args_cap) = arg;
+	}
+	if (*chars >= end)
+		return err_while_parsing_md(result, strdup("missing ')' in method descriptor"));
+	(*chars)++;  // skip ')'
+	char* error = parse_field_descriptor(chars, end - *chars, &result->return_type);
+	return error ? err_while_parsing_md(result, error) : NULL;
+}
+
+void free_method_descriptor(bjvm_parsed_method_descriptor descriptor) {
+	for (int i = 0; i < descriptor.args_count; ++i)
+		free_field_descriptor(descriptor.args[i]);
+	free(descriptor.args);
 }
 
 char* bjvm_locals_on_function_entry(const bjvm_cp_utf8_entry* descriptor, bjvm_analy_stack_state* locals) {
