@@ -4,11 +4,11 @@
 
 #include <iostream>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <filesystem>
 #include <fstream>
 #include <climits>
 
-#include "../cmake-build-debug-llvm17/_deps/catch2-src/src/catch2/benchmark/catch_benchmark.hpp"
 #include "../src/bjvm.h"
 
 bool EndsWith(const std::string& s, const std::string& suffix) {
