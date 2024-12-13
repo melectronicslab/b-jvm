@@ -511,49 +511,138 @@ typedef struct {
 
 typedef uint64_t bjvm_mark_word_t;
 
-typedef struct bjvm_klass bjvm_klass;
+typedef struct bjvm_classdesc bjvm_classdesc;
+typedef struct bjvm_ordinary_class bjvm_ordinary_class;
+
+typedef enum {
+  BJVM_CLASSDESC_KIND_ORDINARY_ARRAY = 0,
+  BJVM_CLASSDESC_KIND_BYTE_ARRAY = 1,
+  BJVM_CLASSDESC_KIND_CHAR_ARRAY = 2,
+  BJVM_CLASSDESC_KIND_DOUBLE_ARRAY = 3,
+  BJVM_CLASSDESC_KIND_FLOAT_ARRAY = 4,
+  BJVM_CLASSDESC_KIND_INT_ARRAY = 5,
+  BJVM_CLASSDESC_KIND_LONG_ARRAY = 6,
+  BJVM_CLASSDESC_KIND_SHORT_ARRAY = 7,
+  BJVM_CLASSDESC_KIND_BOOLEAN_ARRAY = 8,
+  BJVM_CLASSDESC_KIND_ORDINARY = 10,
+} bjvm_classdesc_kind;
 
 // Equivalent to HotSpot's Klass
-typedef struct bjvm_klass {
-  // Superclass of this klass
-  bjvm_klass *super;
+typedef struct bjvm_classdesc {
+  // The type of this class
+  bjvm_classdesc_kind kind;
+  // Superclass of this class
+  bjvm_classdesc *super;
+  // Superinterfaces of this class
+  bjvm_ordinary_class *superinterfaces;
+  uint32_t superinterface_count;
   // Access flags
   bjvm_access_flags access_flags;
   // Size in bytes of an instance (ignoring array data)
   uint32_t instance_size;
   // Name of this class (e.g. "java/lang/Object")
   bjvm_cp_utf8 *name;
-} bjvm_klass;
+} bjvm_classdesc;
 
-typedef struct bjvm_array_klass {
-  bjvm_klass *base;
-
+typedef struct bjvm_object_array_classdesc {
+  bjvm_classdesc base;
   int dimensions;
-  bjvm_klass *base_component;
-} bjvm_array_class;
+  bjvm_classdesc *base_component;
+} bjvm_array_classdesc;
+
+typedef struct bjvm_primitive_array_classdesc {
+  bjvm_classdesc base;
+  int dimensions;
+  bjvm_type_kind element_type;
+} bjvm_primitive_array_classdesc;
 
 // Equivalent to HotSpot's InstanceKlass
 typedef struct bjvm_ordinary_class {
-  bjvm_klass base;
-
-  int arrays_count;
-  bjvm_array_class *arrays;
-
-  int fields_count;
-  bjvm_cp_field *fields;
-
-  int methods_count;
-  bjvm_cp_method *methods;
-} bjvm_instance_klass;
+  bjvm_classdesc base;
+  bjvm_parsed_classfile classfile;
+} bjvm_ordinary_classdesc;
 
 // Appears at the top of every object -- corresponds to HotSpot's oopDesc
 typedef struct {
   volatile bjvm_mark_word_t mark_word;
-  bjvm_klass *descriptor;
+  bjvm_classdesc *descriptor;
 } bjvm_obj_header;
 
 struct bjvm_class_loader;
 typedef struct bjvm_vm bjvm_vm;
+
+typedef struct bjvm_hash_table_entry {
+  struct bjvm_hash_table_entry *next;
+  wchar_t *key;
+  uint32_t key_len;
+  void *data;
+} bjvm_hash_table_entry;
+
+typedef struct bjvm_string_hash_table_iterator {
+  bjvm_hash_table_entry *current_base;
+  bjvm_hash_table_entry *current;
+  bjvm_hash_table_entry *end;
+} bjvm_hash_table_iterator;
+
+// Separate chaining hash map from (wchar_t) strings to void* (arbitrary)
+// entries. Sigh.
+typedef struct bjvm_string_hash_table {
+  void (*free_fn)(void *entry);
+  bjvm_hash_table_entry *entries;
+
+  size_t entries_count;
+  size_t entries_cap;
+
+  double load_factor;
+} bjvm_string_hash_table;
+
+bjvm_string_hash_table bjvm_make_hash_table(void (*free_fn)(void *),
+                                            double load_factor,
+                                            size_t initial_capacity);
+
+bjvm_hash_table_iterator
+bjvm_hash_table_get_iterator(bjvm_string_hash_table *tbl);
+
+bool bjvm_hash_table_iterator_has_next(bjvm_hash_table_iterator iter,
+                                       wchar_t **key, size_t *key_len,
+                                       void **value);
+
+bool bjvm_hash_table_iterator_next(bjvm_hash_table_iterator *iter);
+
+uint32_t bjvm_hash_string(const wchar_t *key, size_t len);
+
+void bjvm_hash_table_rehash(bjvm_string_hash_table *tbl, size_t new_capacity);
+
+/**
+ * Insert the key/value pair into the hash table and return the old value, if
+ * any. Ownership of the key is passed into the function.
+ */
+void *bjvm_hash_table_insert_impl(bjvm_string_hash_table *tbl, wchar_t *key,
+                                  int len, void *value, bool copy_key);
+
+/**
+ * Insert the key/value pair into the hash table and return the old value, if
+ * any. If len = -1, the key is treated as a null-terminated string literal.
+ */
+[[nodiscard]] void *bjvm_hash_table_insert(bjvm_string_hash_table *tbl,
+                                           const wchar_t *key, int len,
+                                           void *value);
+
+/**
+ * Delete the key from the hash table and return the old value, if any. If len =
+ * -1, the key is treated as a null- terminated string literal. Pass the result
+ * of this function to the free function, as long as it accepts NULL pointers.
+ */
+[[nodiscard]] void *bjvm_hash_table_delete(bjvm_string_hash_table *tbl,
+                                           const wchar_t *key, int len);
+
+/**
+ * Look up the value in the hash table.
+ */
+void *bjvm_hash_table_lookup(bjvm_string_hash_table *tbl, const wchar_t *key,
+                             int len);
+
+void bjvm_free_hash_table(bjvm_string_hash_table tbl);
 
 typedef struct bjvm_class_loader {
   bjvm_obj_header obj_header;
@@ -566,6 +655,8 @@ typedef struct bjvm_class_loader {
   bool is_bootstrap;
   // Pointer to the VM
   bjvm_vm *vm;
+  // Map of class name to instance of that class
+  bjvm_string_hash_table loaded_classes;
 } bjvm_class_loader;
 
 typedef struct bjvm_vm {
@@ -583,7 +674,7 @@ typedef struct {
  * mode, reference) values.
  */
 typedef union {
-  long l;
+  int64_t l;
   int i; // used for all integer types except long, plus boolean
   float f;
   double d;
@@ -600,7 +691,57 @@ typedef struct {
   bjvm_stack_value values[];
 } bjvm_stack_frame;
 
+typedef struct bjvm_thread {
+  // Global VM corresponding to this thread
+  bjvm_vm *vm;
+
+  // Essentially the stack of the thread -- a contiguous buffer which stores
+  // stack_frames
+  uint8_t *frame_buffer;
+  uint32_t frame_buffer_capacity;
+  // Also pointer one past the end of the last stack frame
+  uint32_t frame_buffer_used;
+
+  // Pointers into the frame_buffer
+  bjvm_stack_frame **frames;
+  uint32_t frames_count;
+  uint32_t frames_cap;
+
+  // Currently propagating exception
+  bjvm_obj_header *current_exception;
+
+  bool js_jit_enabled;
+} bjvm_thread;
+
+bjvm_array_classdesc *
+bjvm_checked_to_array_classdesc(bjvm_classdesc *classdesc);
+bjvm_classdesc *
+bjvm_checked_to_primitive_array_classdesc(bjvm_classdesc *classdesc);
+
+/**
+ * Create an uninitialized frame with space sufficient for the given method.
+ * Raises a StackOverflowError if the frames are exhausted.
+ */
+bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread,
+                                  const bjvm_cp_method *method);
+
+/**
+ * Pop the topmost frame from the stack, optionally passing a pointer as a debug
+ * check.
+ */
+void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference);
+
 bjvm_vm *bjvm_create_vm(bjvm_vm_options options);
+
+typedef struct {
+  uint32_t stack_space;
+  // Whether to enable JavaScript JIT compilation
+  bool js_jit_enabled;
+} bjvm_thread_options;
+
+void bjvm_fill_default_thread_options(bjvm_thread_options *options);
+bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options);
+void bjvm_free_thread(bjvm_thread *thread);
 
 /**
  * Add the given classfile as accessible to the VM (but don't necessarily load
@@ -625,12 +766,12 @@ void bjvm_vm_list_classfiles(bjvm_vm *vm, wchar_t **strings, size_t *count);
  * responsibility to free the error message.
  */
 char *bjvm_parse_classfile(uint8_t *bytes, size_t len,
-                           bjvm_parsed_classfile **result);
+                           bjvm_parsed_classfile *result);
 
 /**
  * Free the classfile.
  */
-void bjvm_free_classfile(bjvm_parsed_classfile *cf);
+void bjvm_free_classfile(bjvm_parsed_classfile cf);
 
 int bjvm_initialize_vm(bjvm_vm *vm);
 void bjvm_free_vm(bjvm_vm *vm);

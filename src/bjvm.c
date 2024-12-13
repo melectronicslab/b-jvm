@@ -160,19 +160,18 @@ void bjvm_free_attribute(bjvm_attribute *attribute) {
   }
 }
 
-void bjvm_free_classfile(bjvm_parsed_classfile *cf) {
-  bjvm_free_constant_pool(cf->pool);
-  free(cf->interfaces);
-  for (int i = 0; i < cf->attributes_count; ++i)
-    bjvm_free_attribute(&cf->attributes[i]);
-  for (int i = 0; i < cf->methods_count; ++i)
-    free_method(&cf->methods[i]);
-  for (int i = 0; i < cf->fields_count; ++i)
-    free_field(&cf->fields[i]);
-  free(cf->fields);
-  free(cf->methods);
-  free(cf->attributes);
-  free(cf);
+void bjvm_free_classfile(bjvm_parsed_classfile cf) {
+  bjvm_free_constant_pool(cf.pool);
+  free(cf.interfaces);
+  for (int i = 0; i < cf.attributes_count; ++i)
+    bjvm_free_attribute(&cf.attributes[i]);
+  for (int i = 0; i < cf.methods_count; ++i)
+    free_method(&cf.methods[i]);
+  for (int i = 0; i < cf.fields_count; ++i)
+    free_field(&cf.fields[i]);
+  free(cf.fields);
+  free(cf.methods);
+  free(cf.attributes);
 }
 
 /**
@@ -364,29 +363,32 @@ bjvm_cp_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
   int i = 0, j = 0;
 
   uint32_t idxs[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-  for (int i = 0; i < 16; ++i) idxs[i] -= 256;
+  for (int i = 0; i < 16; ++i)
+    idxs[i] -= 256;
 
   for (; i + 15 < len; i += 16, j += 16) {
-    // fuck maintainability!!! (measured perf improvement: 12% for cf parsing on my M1 laptop.
-    // There are a shit ton of strings.)
+    // fuck maintainability!!! (measured perf improvement: 12% for cf parsing on
+    // my M1 laptop. There are a shit ton of strings.)
 #ifdef __ARM_NEON__
-    break;
     uint8x16_t v = vld1q_u8(bytes + i);
     uint8x16_t ascii = vcgtq_s8(v, vdupq_n_s8(0));
-    if (vminvq_u8(ascii) == 0) break;
+    if (vminvq_u8(ascii) == 0)
+      break;
 #pragma clang loop unroll(enable)
     for (int k = 0; k < 4; ++k) {
       uint8x16_t idx = vld1q_u8((uint8_t *)idxs + 16 * k);
-      vst1q_u8((uint8_t*)&result.chars[j + 4 * k], vqtbl1q_u8(v, idx));
+      vst1q_u8((uint8_t *)&result.chars[j + 4 * k], vqtbl1q_u8(v, idx));
     }
 #elif defined(__SSSE3__)
-    __m128i v = _mm_loadu_si128((const __m128i*) (bytes + i));
+    __m128i v = _mm_loadu_si128((const __m128i *)(bytes + i));
     int ascii = _mm_movemask_epi8(_mm_cmpgt_epi8(v, _mm_set1_epi8(0)));
-    if (ascii != 0xffff) break;
+    if (ascii != 0xffff)
+      break;
 #pragma GCC unroll 4
     for (int k = 0; k < 4; ++k) {
-      __m128i idx = _mm_loadu_si128((const __m128i*)idxs + k);
-      _mm_storeu_si128((__m128i*)&result.chars[j + 4 * k], _mm_shuffle_epi8(v, idx));
+      __m128i idx = _mm_loadu_si128((const __m128i *)idxs + k);
+      _mm_storeu_si128((__m128i *)&result.chars[j + 4 * k],
+                       _mm_shuffle_epi8(v, idx));
     }
 #else
     break;
@@ -2224,6 +2226,7 @@ void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx,
     attr->kind = BJVM_ATTRIBUTE_KIND_UNKNOWN;
   }
 }
+
 bool bjvm_is_field_wide(bjvm_parsed_field_descriptor desc) {
   return (desc.kind == BJVM_TYPE_KIND_LONG ||
           desc.kind == BJVM_TYPE_KIND_DOUBLE) &&
@@ -2240,9 +2243,9 @@ void bjvm_locals_on_method_entry(const bjvm_cp_method *method,
   for (int i = 0; i < code->max_locals; ++i)
     locals->entries[i] = BJVM_TYPE_KIND_VOID;
   int i = 0, j = 0;
-  if (!(method->access_flags &
-        BJVM_ACCESS_STATIC)) { // if the method is nonstatic, the first local is
-                               // 'this'
+  if (!(method->access_flags & BJVM_ACCESS_STATIC)) {
+    // if the method is nonstatic, the first local is
+    // 'this'
     if (code->max_locals == 0)
       goto fail;
     locals->entries[j++] = BJVM_TYPE_KIND_REFERENCE;
@@ -2649,14 +2652,13 @@ char *parse_method_descriptor(const bjvm_cp_utf8 *entry,
  * responsibility to free).
  */
 char *bjvm_parse_classfile(uint8_t *bytes, size_t len,
-                           bjvm_parsed_classfile **result) {
+                           bjvm_parsed_classfile *result) {
   cf_byteslice reader = {.bytes = bytes, .len = len};
-  bjvm_parsed_classfile *cf = *result = malloc(sizeof(bjvm_parsed_classfile));
+  bjvm_parsed_classfile *cf = result;
   bjvm_classfile_parse_ctx ctx = {.free_on_error = NULL,
                                   .free_on_error_count = 0,
                                   .free_on_error_cap = 0,
                                   .cp = NULL};
-  free_on_verify_error(&ctx, cf);
 
   if (setjmp(verify_error_jmp_buf)) {
     for (int i = 0; i < ctx.free_on_error_count; i += 2) {
@@ -2836,6 +2838,255 @@ bjvm_classpath_manager *get_classpath_manager(bjvm_vm *vm) {
   return vm->classpath_manager;
 }
 
+bjvm_string_hash_table bjvm_make_hash_table(void (*free_fn)(void *),
+                                            double load_factor,
+                                            size_t initial_capacity) {
+  bjvm_string_hash_table table;
+  table.free_fn = free_fn;
+  table.entries = calloc(initial_capacity, sizeof(bjvm_hash_table_entry));
+  table.entries_count = 0;
+  table.entries_cap = initial_capacity;
+  table.load_factor = load_factor;
+  return table;
+}
+
+bjvm_hash_table_iterator
+bjvm_hash_table_get_iterator(bjvm_string_hash_table *tbl) {
+  bjvm_hash_table_iterator iter;
+  iter.current_base = tbl->entries;
+  bjvm_hash_table_entry *end = tbl->entries + tbl->entries_cap;
+  while (iter.current_base->key == NULL && iter.current_base < end) {
+    iter.current_base++;
+  }
+  iter.current = iter.current_base;
+  iter.end = end;
+  return iter;
+}
+
+bool bjvm_hash_table_iterator_has_next(bjvm_hash_table_iterator iter,
+                                       wchar_t **key, size_t *key_len,
+                                       void **value) {
+  if (iter.current != iter.end) {
+    *key = iter.current->key;
+    *key_len = iter.current->key_len;
+    *value = iter.current->data;
+    return true;
+  }
+  return false;
+}
+
+bool bjvm_hash_table_iterator_next(bjvm_hash_table_iterator *iter) {
+  if (iter->current_base == iter->end)
+    return false;
+  if (iter->current->next) {
+    iter->current = iter->current->next;
+    return true;
+  }
+  // advance base until a non-null key
+  while (++iter->current_base < iter->end && iter->current_base->key == NULL) {
+  }
+  iter->current = iter->current_base;
+  return iter->current_base != iter->end;
+}
+
+uint32_t bjvm_hash_string(const wchar_t *key, size_t len) {
+  uint64_t hash = 0;
+  for (size_t i = 0; i < len; ++i) {
+    hash = 31 * hash + key[i]; // yk what I mean ;)
+  }
+  return hash;
+}
+
+bjvm_hash_table_entry *
+bjvm_find_hash_table_entry(bjvm_string_hash_table *tbl, const wchar_t *key,
+                           size_t len, bool *equal, bool *on_chain,
+                           bjvm_hash_table_entry **prev_entry) {
+  uint32_t hash = bjvm_hash_string(key, len);
+  size_t index = hash % tbl->entries_cap;
+  bjvm_hash_table_entry *ent = &tbl->entries[index], *prev = NULL;
+  while (ent) {
+    *on_chain = prev != NULL;
+    if ((ent->key && ent->key_len == len && wmemcmp(ent->key, key, len) == 0) ||
+        !ent->next) {
+      *equal = true;
+      *prev_entry = prev;
+      return ent;
+    }
+    prev = ent;
+    ent = ent->next;
+  }
+  *equal = false;
+  *on_chain = true;
+  if (prev_entry)
+    *prev_entry = prev;
+  return prev;
+}
+
+void *bjvm_hash_table_delete(bjvm_string_hash_table *tbl, const wchar_t *key,
+                             int len) {
+  bool equal, on_chain;
+  len = len == -1 ? wcslen(key) : len;
+  bjvm_hash_table_entry *prev,
+      *ent =
+          bjvm_find_hash_table_entry(tbl, key, len, &equal, &on_chain, &prev);
+  if (!equal)
+    return NULL;
+  tbl->entries_count--;
+  void *ret_val = ent->data;
+  free(ent->key);
+  ent->key = NULL;
+  if (prev) {
+    prev->next = ent->next;
+    free(ent);
+  } else if (ent->next) {
+    prev = ent->next;
+    *ent = *ent->next;
+    free(prev);
+  }
+  return ret_val;
+}
+
+void *bjvm_hash_table_insert_impl(bjvm_string_hash_table *tbl, wchar_t *key,
+                                  int len, void *value, bool copy_key) {
+  len = len == -1 ? wcslen(key) : len;
+  bool equal, on_chain;
+  if (tbl->entries_count + 1 >= tbl->load_factor * tbl->entries_cap) {
+    bjvm_hash_table_rehash(tbl, tbl->entries_cap * 2);
+  }
+
+  bjvm_hash_table_entry *_prev,
+      *ent =
+          bjvm_find_hash_table_entry(tbl, key, len, &equal, &on_chain, &_prev);
+  if (equal) {
+    void *ret_val = ent->data;
+    ent->data = value;
+    if (!copy_key)
+      free(key);
+    return ret_val;
+  }
+  if (on_chain || ent->key != NULL) {
+    ent->next = malloc(sizeof(bjvm_hash_table_entry));
+    ent = ent->next;
+  }
+  ent->next = NULL;
+  ent->data = value;
+  if (copy_key) {
+    wchar_t *new_key = malloc(len * sizeof(wchar_t));
+    wmemcpy(new_key, key, len);
+    ent->key = new_key;
+  } else {
+    ent->key = key;
+  }
+  ent->key_len = len;
+  tbl->entries_count++;
+  return NULL;
+}
+
+void *bjvm_hash_table_insert(bjvm_string_hash_table *tbl, const wchar_t *key,
+                             int len, void *value) {
+  bjvm_hash_table_insert_impl(tbl, (wchar_t *)key /* key copied */, len, value,
+                              true);
+}
+
+void bjvm_hash_table_rehash(bjvm_string_hash_table *tbl, size_t new_capacity) {
+  bjvm_string_hash_table new_table =
+      bjvm_make_hash_table(tbl->free_fn, tbl->load_factor, new_capacity);
+  bjvm_hash_table_iterator iter = bjvm_hash_table_get_iterator(tbl);
+  wchar_t *key;
+  size_t len;
+  void *value;
+  while (bjvm_hash_table_iterator_has_next(iter, &key, &len, &value)) {
+    bjvm_hash_table_insert_impl(&new_table, key, len, value,
+                                false /* don't copy key */);
+    bjvm_hash_table_entry *ent = iter.current;
+    bool entry_on_chain = iter.current != iter.current_base;
+    bjvm_hash_table_iterator_next(&iter);
+    if (entry_on_chain)
+      free(ent);
+  }
+  free(tbl->entries); // Don't need to free the linked lists, keys etc. as they
+                      // were moved over
+  *tbl = new_table;
+}
+
+void *bjvm_hash_table_lookup(bjvm_string_hash_table *tbl, const wchar_t *key,
+                             int len) {
+  bool equal, on_chain;
+  len = len == -1 ? wcslen(key) : len;
+  bjvm_hash_table_entry *_prev,
+      *entry =
+          bjvm_find_hash_table_entry(tbl, key, len, &equal, &on_chain, &_prev);
+  return equal ? entry->data : nullptr;
+}
+
+void bjvm_free_hash_table(bjvm_string_hash_table tbl) {
+  bjvm_hash_table_iterator it = bjvm_hash_table_get_iterator(&tbl);
+  wchar_t *key;
+  size_t len;
+  void *value;
+  while (bjvm_hash_table_iterator_has_next(it, &key, &len, &value)) {
+    bjvm_hash_table_entry *ent = it.current;
+    bool needs_free = it.current != it.current_base;
+    free(key);
+    tbl.free_fn(value);
+    bjvm_hash_table_iterator_next(&it);
+    if (needs_free)
+      free(ent);
+  }
+  free(tbl.entries);
+  tbl.entries_cap = tbl.entries_count = 0; // good form
+}
+
+bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread,
+                                  const bjvm_cp_method *method) {
+  BJVM_DCHECK(method != NULL);
+
+  const bjvm_attribute_code *code = method->code;
+  BJVM_DCHECK(
+      code !=
+      NULL); // TODO: what to do with native methods which call back into bjvm?
+
+  const size_t header_bytes = sizeof(bjvm_stack_frame);
+  BJVM_DCHECK(header_bytes % 8 == 0);
+
+  size_t local_bytes =
+      ((int)code->max_locals + code->max_stack) * sizeof(bjvm_stack_value);
+  size_t total = header_bytes + local_bytes;
+
+  if (total + thread->frame_buffer_used > thread->frame_buffer_capacity) {
+    BJVM_UNREACHABLE("stack overflow");
+    /*
+    bjvm_instance_klass* StackOverflowError = (bjvm_instance_klass*)
+    bjvm_find_class(thread, "java/lang/StackOverflowError");
+    BJVM_DCHECK(StackOverflowError != NULL);
+    bjvm_cp_method* method = bjvm_find_method(thread, StackOverflowError,
+    "<init>", "()V"); BJVM_DCHECK(StackOverflowError != NULL); bjvm_obj_header*
+    obj = bjvm_new_object_raw(thread, StackOverflowError);
+    bjvm_raise_exception(thread, obj);
+    return NULL;
+    */
+  }
+
+  bjvm_stack_frame *frame =
+      (bjvm_stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
+  thread->frame_buffer_used += total;
+  *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) =
+      frame;
+
+  return frame;
+}
+
+void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference) {
+  BJVM_DCHECK(thr->frames_count > 0);
+  bjvm_stack_frame *frame = thr->frames[thr->frames_count - 1];
+  BJVM_DCHECK(reference == NULL || reference == frame);
+  thr->frames_count--;
+  thr->frame_buffer_used =
+      thr->frames_count == 0
+          ? 0
+          : &thr->frames[thr->frames_count - 1] - thr->frames;
+}
+
 bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   bjvm_vm *vm = malloc(sizeof(bjvm_vm));
   vm->classpath_manager = calloc(1, sizeof(bjvm_classpath_manager));
@@ -2870,6 +3121,26 @@ void bjvm_free_vm(bjvm_vm *vm) {
 int bjvm_initialize_vm(bjvm_vm *vm) {
   // Read and load java/lang/Object and java/lang/ClassLoader
   return 0;
+}
+
+void bjvm_fill_default_thread_options(bjvm_thread_options *options) {
+  options->stack_space = 1 << 20;
+  options->js_jit_enabled = true;
+}
+
+bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
+  bjvm_thread *thr = calloc(1, sizeof(bjvm_thread));
+  thr->vm = vm;
+  thr->frame_buffer =
+      calloc(1, thr->frame_buffer_capacity = options.stack_space);
+  thr->js_jit_enabled = options.js_jit_enabled;
+  return thr;
+}
+
+void bjvm_free_thread(bjvm_thread *thread) {
+  // TODO what happens to ->current_exception etc.?
+  free(thread->frame_buffer);
+  free(thread);
 }
 
 int bjvm_vm_register_classfile(bjvm_vm *vm, const wchar_t *filename,
@@ -2926,18 +3197,17 @@ void bjvm_vm_list_classfiles(bjvm_vm *vm, wchar_t **strings, size_t *count) {
                               chars, 0);
 }
 
-void bootstrap_class_loader_impl(bjvm_class_loader *loader,
-                                 const bjvm_cp_utf8 *name) {
+bjvm_classdesc *bootstrap_class_loader_impl(bjvm_class_loader *loader,
+                                            const bjvm_cp_utf8 *name) {
   int dimensions = 0;
-
   const wchar_t *chars = name->chars;
   size_t remaining_len = name->len;
-
   while (remaining_len > 0 && *chars == '[')
     dimensions++, remaining_len--, chars++;
 
   BJVM_DCHECK(dimensions < 255);
 
+  // java/lang/Object.class
   bjvm_vm *vm = loader->vm;
   const wchar_t *cf_ending = L".class";
   wchar_t *cf_name = malloc(remaining_len + wcslen(cf_ending) + 1);
@@ -2947,13 +3217,19 @@ void bootstrap_class_loader_impl(bjvm_class_loader *loader,
   uint8_t *bytes;
   size_t len;
   int err = bjvm_vm_read_classfile(vm, cf_name, &bytes, &len);
-
   free(cf_name);
   if (err) {
     // raise ClassNotFoundException (probably need to share across
     // invocations... ?)
-    return;
+    return NULL;
   }
+
+  bjvm_parsed_classfile cf;
+  char *error = bjvm_parse_classfile(bytes, len, &cf);
+  if (error) {
+    // raise VerifyError (also need to share)
+  }
+  return NULL;
 }
 
 bjvm_stack_value checked_pop(bjvm_stack_frame *frame) {
@@ -2993,7 +3269,7 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
     BJVM_UNREACHABLE("bjvm_bc_insn_aastore");
     break;
   case bjvm_bc_insn_aconst_null:
-    BJVM_UNREACHABLE("bjvm_bc_insn_aconst_null");
+    checked_push(frame, (bjvm_stack_value){.obj = NULL});
     break;
   case bjvm_bc_insn_areturn:
     BJVM_UNREACHABLE("bjvm_bc_insn_areturn");
@@ -3232,7 +3508,7 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
     BJVM_UNREACHABLE("bjvm_bc_insn_laload");
     break;
   case bjvm_bc_insn_land: {
-    long a = checked_pop(frame).l, b = checked_pop(frame).l;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
     checked_push(frame, (bjvm_stack_value){.l = a & b});
     break;
   }
@@ -3240,31 +3516,31 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
     BJVM_UNREACHABLE("bjvm_bc_insn_lastore");
     break;
   case bjvm_bc_insn_lcmp: {
-    long a = checked_pop(frame).l, b = checked_pop(frame).l;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
     int sign = a > b ? 1 : a == b ? 0 : -1;
     checked_push(frame, (bjvm_stack_value){.i = sign});
     break;
   }
   case bjvm_bc_insn_ldiv: {
-    int a = checked_pop(frame).l, b = checked_pop(frame).l;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
     BJVM_DCHECK(b != 0); // TODO
     checked_push(frame, (bjvm_stack_value){.l = java_ldiv(a, b)});
     break;
   }
   case bjvm_bc_insn_lmul: {
-    long a = checked_pop(frame).l, b = checked_pop(frame).l, c;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
     __builtin_mul_overflow(a, b, &c);
     checked_push(frame, (bjvm_stack_value){.l = c});
     break;
   }
   case bjvm_bc_insn_lneg: {
-    long a = checked_pop(frame).l, b;
+    int64_t a = checked_pop(frame).l, b;
     __builtin_sub_overflow(0, a, &b);
     checked_push(frame, (bjvm_stack_value){.l = b});
     break;
   }
   case bjvm_bc_insn_lor: {
-    long a = checked_pop(frame).l, b = checked_pop(frame).l;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
     checked_push(frame, (bjvm_stack_value){.l = a | b});
     break;
   }
@@ -3275,25 +3551,32 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
     BJVM_UNREACHABLE("bjvm_bc_insn_lreturn");
     break;
   case bjvm_bc_insn_lshl: {
-    int a = checked_pop(frame).l, b = checked_pop(frame).l;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
     uint64_t c = ((uint64_t)a) << (b & 0x3f); // fuck u UB
-    checked_push(frame, (bjvm_stack_value){.l = (long)c});
+    checked_push(frame, (bjvm_stack_value){.l = (int64_t)c});
     break;
   }
   case bjvm_bc_insn_lshr: {
-    int a = checked_pop(frame).l, b = checked_pop(frame).l;
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
     checked_push(frame, (bjvm_stack_value){.l = a >> b});
     break;
   }
-  case bjvm_bc_insn_lsub:
-    BJVM_UNREACHABLE("bjvm_bc_insn_lsub");
+  case bjvm_bc_insn_lsub: {
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
+    __builtin_sub_overflow(a, b, &c);
+    checked_push(frame, (bjvm_stack_value){.l = c});
     break;
-  case bjvm_bc_insn_lushr:
-    BJVM_UNREACHABLE("bjvm_bc_insn_lushr");
+  }
+  case bjvm_bc_insn_lushr: {
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+    checked_push(frame, (bjvm_stack_value){.l = (int64_t)((uint64_t)a >> b)});
     break;
-  case bjvm_bc_insn_lxor:
-    BJVM_UNREACHABLE("bjvm_bc_insn_lxor");
+  }
+  case bjvm_bc_insn_lxor: {
+    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+    checked_push(frame, (bjvm_stack_value){.l = a ^ b});
     break;
+  }
   case bjvm_bc_insn_monitorenter:
     BJVM_UNREACHABLE("bjvm_bc_insn_monitorenter");
     break;
@@ -3301,10 +3584,11 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
     BJVM_UNREACHABLE("bjvm_bc_insn_monitorexit");
     break;
   case bjvm_bc_insn_pop:
-    BJVM_UNREACHABLE("bjvm_bc_insn_pop");
+    checked_pop(frame);
     break;
   case bjvm_bc_insn_pop2:
-    BJVM_UNREACHABLE("bjvm_bc_insn_pop2");
+    checked_pop(frame);
+    checked_pop(frame);
     break;
   case bjvm_bc_insn_return:
     BJVM_UNREACHABLE("bjvm_bc_insn_return");
@@ -3481,3 +3765,4 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
 
   frame->program_counter++;
 }
+q

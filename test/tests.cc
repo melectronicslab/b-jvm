@@ -2,16 +2,16 @@
 #include <emscripten.h>
 #endif
 
-#include <iostream>
-#include <catch2/catch_test_macros.hpp>
 #include <catch2/benchmark/catch_benchmark.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <climits>
 #include <filesystem>
 #include <fstream>
-#include <climits>
+#include <iostream>
 
 #include "../src/bjvm.h"
 
-bool EndsWith(const std::string& s, const std::string& suffix) {
+bool EndsWith(const std::string &s, const std::string &suffix) {
   if (s.size() < suffix.size()) {
     return false;
   }
@@ -34,22 +34,24 @@ double get_time() {
 #endif
 }
 
-std::vector<uint8_t> ReadFile(const std::string& file) {
+std::vector<uint8_t> ReadFile(const std::string &file) {
 #ifdef EMSCRIPTEN
-  void* length_and_data = EM_ASM_PTR({
-    const fs = require('fs');
-    const buffer = fs.readFileSync(UTF8ToString($0));
-    const length = buffer.length;
+  void *length_and_data = EM_ASM_PTR(
+      {
+        const fs = require('fs');
+        const buffer = fs.readFileSync(UTF8ToString($0));
+        const length = buffer.length;
 
-    const result = _malloc(length + 4);
-    Module.HEAPU32[result >> 2] = length;
-    Module.HEAPU8.set(buffer, result + 4);
+        const result = _malloc(length + 4);
+        Module.HEAPU32[result >> 2] = length;
+        Module.HEAPU8.set(buffer, result + 4);
 
-    return result;
-  }, file.c_str());
+        return result;
+      },
+      file.c_str());
 
-  uint32_t length = *reinterpret_cast<uint32_t*>(length_and_data);
-  uint8_t* data = reinterpret_cast<uint8_t*>(length_and_data) + 4;
+  uint32_t length = *reinterpret_cast<uint32_t *>(length_and_data);
+  uint8_t *data = reinterpret_cast<uint8_t *>(length_and_data) + 4;
 
   std::vector result(data, data + length);
   free(length_and_data);
@@ -62,7 +64,7 @@ std::vector<uint8_t> ReadFile(const std::string& file) {
 
     result.resize(pos);
     ifs.seekg(0, std::ios::beg);
-    ifs.read(reinterpret_cast<char*>(result.data()), pos);
+    ifs.read(reinterpret_cast<char *>(result.data()), pos);
   } else {
     throw std::runtime_error("Classpath file not found: " + file);
   }
@@ -70,37 +72,40 @@ std::vector<uint8_t> ReadFile(const std::string& file) {
 #endif
 }
 
-std::vector<std::string> ListDirectory(const std::string& path, bool recursive) {
+std::vector<std::string> ListDirectory(const std::string &path,
+                                       bool recursive) {
 #ifdef EMSCRIPTEN
-  void* length_and_data = EM_ASM_PTR({
-     // Credit: https://stackoverflow.com/a/5827895
-     const fs = require('fs');
-     const path = require('path');
-     function *walkSync(dir, recursive) {
-       const files = fs.readdirSync(dir, { withFileTypes: true });
-       for (const file of files) {
-         if (file.isDirectory() && recursive) {
-           yield* walkSync(path.join(dir, file.name), recursive);
-         } else {
-           yield path.join(dir, file.name);
-         }
-       }
-     }
+  void *length_and_data = EM_ASM_PTR(
+      {
+        // Credit: https://stackoverflow.com/a/5827895
+        const fs = require('fs');
+        const path = require('path');
+        function *walkSync(dir, recursive) {
+          const files = fs.readdirSync(dir, {withFileTypes : true});
+          for (const file of files) {
+            if (file.isDirectory() && recursive) {
+              yield *walkSync(path.join(dir, file.name), recursive);
+            } else {
+              yield path.join(dir, file.name);
+            }
+          }
+        }
 
-     var s = "";
-     for (const filePath of walkSync(UTF8ToString($0), $1)) s += filePath + "\n";
+        var s = "";
+        for (const filePath of walkSync(UTF8ToString($0), $1))
+          s += filePath + "\n";
 
-      const length = s.length;
-      const result = _malloc(length + 4);
-      Module.HEAPU32[result >> 2] = length;
-      Module.HEAPU8.set(new TextEncoder().encode(s), result + 4);
+        const length = s.length;
+        const result = _malloc(length + 4);
+        Module.HEAPU32[result >> 2] = length;
+        Module.HEAPU8.set(new TextEncoder().encode(s), result + 4);
 
-      return result;
-  }, path.c_str(), recursive);
+        return result;
+      },
+      path.c_str(), recursive);
 
-
-  uint32_t length = *reinterpret_cast<uint32_t*>(length_and_data);
-  uint8_t* data = reinterpret_cast<uint8_t*>(length_and_data) + 4;
+  uint32_t length = *reinterpret_cast<uint32_t *>(length_and_data);
+  uint8_t *data = reinterpret_cast<uint8_t *>(length_and_data) + 4;
 
   std::string s(data, data + length);
   free(length_and_data);
@@ -122,7 +127,7 @@ std::vector<std::string> ListDirectory(const std::string& path, bool recursive) 
   // Recursively list files (TODO: fix recursive = false)
   std::vector<std::string> result;
 
-  for (const auto& entry : recursive_directory_iterator(path)) {
+  for (const auto &entry : recursive_directory_iterator(path)) {
     if (entry.is_regular_file()) {
       result.push_back(entry.path().string());
     }
@@ -140,7 +145,7 @@ TEST_CASE("Test classfile parsing") {
 
   int count = 0;
   int FILE_COUNT = fuzz ? 64 : INT_MAX;
-  for (const auto& file : files) {
+  for (const auto &file : files) {
     if (!EndsWith(file, ".class")) {
       continue;
     }
@@ -152,14 +157,13 @@ TEST_CASE("Test classfile parsing") {
     double start = get_time();
 
     // std::cout << "Reading " << file << "\n";
-    bjvm_parsed_classfile* cf = nullptr;
-    char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
+    bjvm_parsed_classfile cf;
+    char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
       free(error);
       abort();
-    }
-    if (cf) {
+    } else {
       bjvm_free_classfile(cf);
     }
 
@@ -169,11 +173,11 @@ TEST_CASE("Test classfile parsing") {
 #pragma omp parallel for
       for (int i = 0; i < read.size(); ++i) {
         std::cout << "Done with " << i << '\n';
-        bjvm_parsed_classfile* cf = nullptr;
+        bjvm_parsed_classfile cf;
         auto copy = read;
         for (int j = 0; j < 256; ++j) {
           copy[i] += 1;
-          char* error = bjvm_parse_classfile(copy.data(), copy.size(), &cf);
+          char *error = bjvm_parse_classfile(copy.data(), copy.size(), &cf);
           if (error) {
             free(error);
           } else {
@@ -188,19 +192,20 @@ TEST_CASE("Test classfile parsing") {
 
   std::cout << "Total time: " << total_millis << "ms\n";
 
-  BENCHMARK_ADVANCED("Parse classfile") (Catch::Benchmark::Chronometer meter) {
+  BENCHMARK_ADVANCED("Parse classfile")(Catch::Benchmark::Chronometer meter) {
     auto read = ReadFile("./jre8/sun/security/tools/keytool/Main.class");
-    bjvm_parsed_classfile* cf = nullptr;
+    bjvm_parsed_classfile cf;
 
     meter.measure([&] {
-      char* error = bjvm_parse_classfile(read.data(), read.size(), &cf);
-      if (error) abort();
+      char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
+      if (error)
+        abort();
       bjvm_free_classfile(cf);
     });
   };
 }
 
-int register_classes(bjvm_vm* vm) {
+int register_classes(bjvm_vm *vm) {
   auto files = ListDirectory("jre8", true);
   int file_count = 0;
   for (auto file : files) {
@@ -219,19 +224,22 @@ int register_classes(bjvm_vm* vm) {
 
 TEST_CASE("Class file management") {
   bjvm_vm_options options = {};
-  bjvm_vm* vm = bjvm_create_vm(options);
+  bjvm_vm *vm = bjvm_create_vm(options);
 
   int file_count = register_classes(vm);
   size_t len;
-  const uint8_t* bytes;
-  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.class", &bytes, &len) == 0);
+  const uint8_t *bytes;
+  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.class", &bytes, &len) ==
+          0);
   REQUIRE(len > 0);
-  REQUIRE(*(uint32_t*)bytes == 0xBEBAFECA);
-  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.clas", nullptr, &len) != 0);
-  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.classe", nullptr, &len) != 0);
+  REQUIRE(*(uint32_t *)bytes == 0xBEBAFECA);
+  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.clas", nullptr, &len) !=
+          0);
+  REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.classe", nullptr,
+                                 &len) != 0);
   bjvm_vm_list_classfiles(vm, nullptr, &len);
   REQUIRE(len == file_count);
-  std::vector<wchar_t*> strings(len);
+  std::vector<wchar_t *> strings(len);
   bjvm_vm_list_classfiles(vm, strings.data(), &len);
   bool found = false;
   for (int i = 0; i < len; ++i) {
@@ -250,35 +258,37 @@ TEST_CASE("Compressed bitset") {
     for (int i = 0; i < 1000; ++i) {
       int index = rand() % size;
       switch (rand() % 4) {
-        case 0: {
-          int* set_bits = nullptr, length = 0, capacity = 0;
-          set_bits = bjvm_list_compressed_bitset_bits(bitset, set_bits, &length, &capacity);
-          for (int i = 0; i < length; ++i) {
-            if (!reference[set_bits[i]]) REQUIRE(false);
-          }
-          free(set_bits);
-          break;
+      case 0: {
+        int *set_bits = nullptr, length = 0, capacity = 0;
+        set_bits = bjvm_list_compressed_bitset_bits(bitset, set_bits, &length,
+                                                    &capacity);
+        for (int i = 0; i < length; ++i) {
+          if (!reference[set_bits[i]])
+            REQUIRE(false);
         }
-        case 1: {
-          bool test = bjvm_test_set_compressed_bitset(&bitset, index);
-          if (test != reference[index])
-            REQUIRE(test == reference[index]);
-          reference[index] = true;
-          break;
-        }
-        case 2: {
-          bool test = bjvm_test_reset_compressed_bitset(&bitset, index);
-          if (test != reference[index])
-            REQUIRE(test == reference[index]);
-          reference[index] = false;
-          break;
-        }
-        case 3: {
-          bool test = bjvm_test_compressed_bitset(bitset, index);
-          if (test != reference[index])
-            REQUIRE(test == reference[index]);
-          break;
-        }
+        free(set_bits);
+        break;
+      }
+      case 1: {
+        bool test = bjvm_test_set_compressed_bitset(&bitset, index);
+        if (test != reference[index])
+          REQUIRE(test == reference[index]);
+        reference[index] = true;
+        break;
+      }
+      case 2: {
+        bool test = bjvm_test_reset_compressed_bitset(&bitset, index);
+        if (test != reference[index])
+          REQUIRE(test == reference[index]);
+        reference[index] = false;
+        break;
+      }
+      case 3: {
+        bool test = bjvm_test_compressed_bitset(bitset, index);
+        if (test != reference[index])
+          REQUIRE(test == reference[index]);
+        break;
+      }
       }
     }
 
@@ -287,9 +297,12 @@ TEST_CASE("Compressed bitset") {
 }
 
 TEST_CASE("parse_field_descriptor valid cases") {
-  const wchar_t* fields = L"Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
-  bjvm_parsed_field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String, java_lang_Object, B, V, C, Z;
-  REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &com_example_Example));
+  const wchar_t *fields =
+      L"Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
+  bjvm_parsed_field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String,
+      java_lang_Object, B, V, C, Z;
+  REQUIRE(
+      !parse_field_descriptor(&fields, wcslen(fields), &com_example_Example));
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Iaaa));
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Jaa));
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &java_lang_String));
@@ -299,7 +312,8 @@ TEST_CASE("parse_field_descriptor valid cases") {
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &C));
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Z));
 
-  REQUIRE(compare_utf8_entry(&com_example_Example.class_name, "com/example/Example"));
+  REQUIRE(compare_utf8_entry(&com_example_Example.class_name,
+                             "com/example/Example"));
   REQUIRE(com_example_Example.dimensions == 0);
   REQUIRE(com_example_Example.kind == BJVM_TYPE_KIND_REFERENCE);
 
@@ -325,11 +339,64 @@ TEST_CASE("parse_field_descriptor valid cases") {
   free_field_descriptor(java_lang_String);
 }
 
-TEST_CASE("VM initialization") {
+bjvm_vm *create_vm(bool register_classes_) {
   bjvm_vm_options options = {};
-  bjvm_vm* vm = bjvm_create_vm(options);
+  bjvm_vm *vm = bjvm_create_vm(options);
 
-  //register_classes(vm);
+  if (register_classes_)
+    register_classes(vm);
 
+  return vm;
+}
+
+TEST_CASE("VM initialization") {
+  bjvm_vm *vm = create_vm(true);
   bjvm_free_vm(vm);
+}
+
+TEST_CASE("Thread initialization") {
+  bjvm_vm *vm = create_vm(false);
+
+  bjvm_thread_options options;
+  bjvm_fill_default_thread_options(&options);
+  bjvm_thread *thr = bjvm_create_thread(vm, options);
+
+  bjvm_free_thread(thr);
+  bjvm_free_vm(vm);
+}
+
+TEST_CASE("String hash table") {
+  bjvm_string_hash_table tbl = bjvm_make_hash_table(free, 0.75, 48);
+  REQUIRE(tbl.load_factor == 0.75);
+  REQUIRE(tbl.entries_cap == 48);
+
+  std::unordered_map<std::wstring, std::string> reference;
+  for (int i = 0; i < 5000; ++i) {
+    std::wstring key = std::to_wstring(i * 5201);
+    std::string value = std::to_string(i);
+    reference[key] = value;
+    bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str()));
+    free(bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str())));
+  }
+  for (int i = 1; i <= 4999; i += 2) {
+    std::wstring key = std::to_wstring(i * 5201);
+    free(bjvm_hash_table_delete(&tbl, key.c_str(), -1));
+  }
+  // REQUIRE(tbl.entries_count == 2500);
+  for (int i = 1; i <= 4999; i += 2) {
+    std::wstring key = std::to_wstring(i * 5201);
+    void *lookup = bjvm_hash_table_lookup(&tbl, key.c_str(), -1);
+    // REQUIRE(lookup == nullptr);
+    std::string value = std::to_string(i);
+    // bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str()));
+  }
+
+  for (int i = 0; i < 5000; i += 2) {
+    std::wstring key = std::to_wstring(i * 5201);
+    void *value = bjvm_hash_table_lookup(&tbl, key.c_str(), -1);
+    // REQUIRE(value != nullptr);
+    // REQUIRE(reference[key] == (const char*)value);
+  }
+
+  bjvm_free_hash_table(tbl);
 }
