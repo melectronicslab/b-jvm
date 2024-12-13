@@ -246,21 +246,24 @@ typedef struct {
   // Can be nonzero for any kind
   int dimensions;
   bjvm_cp_utf8 class_name; // For reference and array types only
-} bjvm_parsed_field_descriptor;
+} bjvm_field_descriptor;
 
-bool bjvm_is_field_wide(bjvm_parsed_field_descriptor desc);
+bool bjvm_is_field_wide(bjvm_field_descriptor desc);
 
 typedef struct {
   bjvm_cp_class_info *class_info;
   bjvm_cp_name_and_type *name_and_type;
 
-  bjvm_parsed_field_descriptor *parsed_descriptor;
+  bjvm_field_descriptor *parsed_descriptor;
 } bjvm_cp_field_info;
+
+typedef struct bjvm_method_descriptor bjvm_method_descriptor;
 
 // Used by both methodref and interface methodref
 typedef struct {
   bjvm_cp_class_info *class_info;
   bjvm_cp_name_and_type *name_and_type;
+  bjvm_method_descriptor *method_descriptor;
 } bjvm_cp_method_info;
 
 typedef struct {
@@ -298,12 +301,10 @@ typedef struct {
   bjvm_cp_utf8 *descriptor;
 } bjvm_cp_method_type_info;
 
-typedef struct bjvm_parsed_method_descriptor bjvm_parsed_method_descriptor;
-
 typedef struct {
   uint16_t bootstrap_method_attr_index; // TODO convert to pointer
   bjvm_cp_name_and_type *name_and_type;
-  bjvm_parsed_method_descriptor *method_descriptor;
+  bjvm_method_descriptor *method_descriptor;
 } bjvm_cp_invoke_dynamic_info;
 
 typedef enum {
@@ -326,6 +327,7 @@ typedef enum {
 
 typedef struct bjvm_cp_entry {
   bjvm_cp_entry_kind kind;
+  int my_index;
 
   union {
     bjvm_cp_utf8 utf8;
@@ -338,11 +340,11 @@ typedef struct bjvm_cp_entry {
     bjvm_cp_class_info class_info;
 
     bjvm_cp_field_info fieldref_info;
-    bjvm_cp_method_info methodref_info;
+    bjvm_cp_method_info methodref;
     bjvm_cp_method_handle_info method_handle_info;
     bjvm_cp_method_type_info method_type_info;
-    bjvm_cp_invoke_dynamic_info invoke_dynamic_info;
-  } data;
+    bjvm_cp_invoke_dynamic_info indy_info;
+  };
 } bjvm_cp_entry;
 
 struct bjvm_multianewarray_data {
@@ -410,12 +412,12 @@ typedef enum {
   BJVM_ATTRIBUTE_KIND_UNKNOWN = 2,
 } bjvm_attribute_kind;
 
-typedef struct bjvm_parsed_method_descriptor {
-  bjvm_parsed_field_descriptor *args;
+typedef struct bjvm_method_descriptor {
+  bjvm_field_descriptor *args;
   int args_count;
   int args_cap;
-  bjvm_parsed_field_descriptor return_type;
-} bjvm_parsed_method_descriptor;
+  bjvm_field_descriptor return_type;
+} bjvm_method_descriptor;
 
 typedef struct {
   int start_insn;
@@ -435,7 +437,7 @@ typedef struct {
   uint16_t max_stack;
   uint16_t max_locals;
   int insn_count;
-  int max_pc;
+  int max_formal_pc;
 
   bjvm_bytecode_insn *code;
   bjvm_attribute_exception_table *exception_table;
@@ -484,7 +486,7 @@ typedef struct bjvm_cp_method {
   bjvm_cp_utf8 *name;
   bjvm_cp_utf8 *descriptor;
 
-  bjvm_parsed_method_descriptor *parsed_descriptor;
+  bjvm_method_descriptor *parsed_descriptor;
   bjvm_code_analysis *code_analysis;
 
   int attributes_count;
@@ -809,6 +811,7 @@ typedef struct {
   bjvm_analy_stack_entry *entries;
   int entries_count;
   int entries_cap;
+  bool from_jump_target;
 } bjvm_analy_stack_state;
 
 char *print_analy_stack_state(const bjvm_analy_stack_state *state);
@@ -828,12 +831,12 @@ bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset *bits,
 char *bjvm_locals_on_function_entry(const bjvm_cp_utf8 *descriptor,
                                     bjvm_analy_stack_state *locals);
 char *parse_field_descriptor(const wchar_t **chars, size_t len,
-                             bjvm_parsed_field_descriptor *result);
+                             bjvm_field_descriptor *result);
 char *parse_method_descriptor(const bjvm_cp_utf8 *descriptor,
-                              bjvm_parsed_method_descriptor *result);
+                              bjvm_method_descriptor *result);
 bool compare_utf8_entry(bjvm_cp_utf8 *entry, const char *str);
 char *lossy_utf8_entry_to_chars(const bjvm_cp_utf8 *utf8);
-void free_field_descriptor(bjvm_parsed_field_descriptor descriptor);
+void free_field_descriptor(bjvm_field_descriptor descriptor);
 
 #ifdef __cplusplus
 }

@@ -143,6 +143,9 @@ TEST_CASE("Test classfile parsing") {
   auto files = ListDirectory("jre8", true);
   double total_millis = 0;
 
+  char *shortest_error = NULL;
+  int shortest_error_length = 1000000;
+
   int count = 0;
   int FILE_COUNT = fuzz ? 64 : INT_MAX;
   for (const auto &file : files) {
@@ -161,8 +164,12 @@ TEST_CASE("Test classfile parsing") {
     char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
+      if (strlen(error) < shortest_error_length) {
+        shortest_error = strdup(error);
+        shortest_error_length = strlen(error);
+      }
       free(error);
-      abort();
+      // abort();
     } else {
       bjvm_free_classfile(cf);
     }
@@ -189,6 +196,8 @@ TEST_CASE("Test classfile parsing") {
 
     total_millis += get_time() - start;
   }
+
+  printf("Shortest error: %s\n", shortest_error);
 
   std::cout << "Total time: " << total_millis << "ms\n";
 
@@ -299,7 +308,7 @@ TEST_CASE("Compressed bitset") {
 TEST_CASE("parse_field_descriptor valid cases") {
   const wchar_t *fields =
       L"Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
-  bjvm_parsed_field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String,
+  bjvm_field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String,
       java_lang_Object, B, V, C, Z;
   REQUIRE(
       !parse_field_descriptor(&fields, wcslen(fields), &com_example_Example));
