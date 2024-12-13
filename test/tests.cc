@@ -375,27 +375,27 @@ TEST_CASE("String hash table") {
     std::wstring key = std::to_wstring(i * 5201);
     std::string value = std::to_string(i);
     reference[key] = value;
-    bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str()));
+    free(bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str())));
     free(bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str())));
   }
   for (int i = 1; i <= 4999; i += 2) {
     std::wstring key = std::to_wstring(i * 5201);
     free(bjvm_hash_table_delete(&tbl, key.c_str(), -1));
   }
-  // REQUIRE(tbl.entries_count == 2500);
+  REQUIRE(tbl.entries_count == 2500);
   for (int i = 1; i <= 4999; i += 2) {
     std::wstring key = std::to_wstring(i * 5201);
     void *lookup = bjvm_hash_table_lookup(&tbl, key.c_str(), -1);
-    // REQUIRE(lookup == nullptr);
+    REQUIRE(lookup == nullptr);
     std::string value = std::to_string(i);
-    // bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str()));
+    free(bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str())));
   }
 
   for (int i = 0; i < 5000; i += 2) {
     std::wstring key = std::to_wstring(i * 5201);
     void *value = bjvm_hash_table_lookup(&tbl, key.c_str(), -1);
-    // REQUIRE(value != nullptr);
-    // REQUIRE(reference[key] == (const char*)value);
+    REQUIRE(value != nullptr);
+    REQUIRE(reference[key] == (const char *)value);
   }
 
   bjvm_free_hash_table(tbl);

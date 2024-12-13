@@ -665,7 +665,7 @@ typedef struct bjvm_vm {
 } bjvm_vm;
 
 typedef struct {
-  // TODO
+  bool unused;
 } bjvm_vm_options;
 
 /**

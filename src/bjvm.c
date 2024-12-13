@@ -2234,8 +2234,7 @@ bool bjvm_is_field_wide(bjvm_parsed_field_descriptor desc) {
 }
 
 void bjvm_locals_on_method_entry(const bjvm_cp_method *method,
-                                 bjvm_analy_stack_state *locals,
-                                 bjvm_classfile_parse_ctx *ctx) {
+                                 bjvm_analy_stack_state *locals) {
   const bjvm_attribute_code *code = method->code;
   const bjvm_parsed_method_descriptor *desc = method->parsed_descriptor;
   BJVM_DCHECK(code);
@@ -2290,6 +2289,8 @@ const char *bjvm_type_kind_to_string(bjvm_type_kind kind) {
     return "void";
   case BJVM_TYPE_KIND_REFERENCE:
     return "<reference>";
+  case BJVM_TYPE_KIND_RETURN_ADDRESS:
+    return "<retaddr>";
   }
   BJVM_UNREACHABLE();
 }
@@ -2319,7 +2320,9 @@ char *analyze_method_code_segment(const bjvm_cp_method *method,
     return NULL; // method has no code
 
   bjvm_analy_stack_state locals;
-  bjvm_locals_on_method_entry(method, &locals, ctx);
+  bjvm_locals_on_method_entry(method, &locals);
+
+  (void)ctx;
 
   free(locals.entries);
 
@@ -2436,7 +2439,7 @@ int *bjvm_list_compressed_bitset_bits(bjvm_compressed_bitset bits,
       if (bits.bits_inl & (1ULL << i))
         *VECTOR_PUSH(existing_buf, (*length), (*capacity)) = i - 1;
   } else {
-    for (int i = 0; i < bits.ptr.size_words; ++i)
+    for (uint32_t i = 0; i < bits.ptr.size_words; ++i)
       for (int j = 0; j < 64; ++j)
         if (bits.ptr.bits[i] & (1ULL << j))
           *VECTOR_PUSH(existing_buf, (*length), (*capacity)) = i * 64 + j;
@@ -2461,8 +2464,8 @@ bjvm_copy_compressed_bitset(bjvm_compressed_bitset bits) {
   if (bjvm_is_bitset_compressed(bits)) {
     return bits;
   }
-  const size_t buf_size = bits.ptr.size_words * sizeof(uint32_t);
-  uint32_t *buffer = malloc(buf_size);
+  const size_t buf_size = bits.ptr.size_words * sizeof(uint64_t);
+  uint64_t *buffer = malloc(buf_size);
   memcpy(buffer, bits.ptr.bits, buf_size);
   return (bjvm_compressed_bitset){.ptr.bits = buffer,
                                   .ptr.size_words = bits.ptr.size_words};
@@ -2486,7 +2489,8 @@ bool bjvm_test_compressed_bitset(const bjvm_compressed_bitset bits,
                                  size_t bit_index) {
   uint64_t *word;
   uint8_t offset;
-  get_compressed_bitset_word_and_offset(&bits, bit_index, &word, &offset);
+  get_compressed_bitset_word_and_offset((bjvm_compressed_bitset *)&bits,
+                                        bit_index, &word, &offset);
   return *word & (1ULL << offset);
 }
 
@@ -2984,8 +2988,8 @@ void *bjvm_hash_table_insert_impl(bjvm_string_hash_table *tbl, wchar_t *key,
 
 void *bjvm_hash_table_insert(bjvm_string_hash_table *tbl, const wchar_t *key,
                              int len, void *value) {
-  bjvm_hash_table_insert_impl(tbl, (wchar_t *)key /* key copied */, len, value,
-                              true);
+  return bjvm_hash_table_insert_impl(tbl, (wchar_t *)key /* key copied */, len,
+                                     value, true);
 }
 
 void bjvm_hash_table_rehash(bjvm_string_hash_table *tbl, size_t new_capacity) {
@@ -3089,14 +3093,17 @@ void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference) {
 
 bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   bjvm_vm *vm = malloc(sizeof(bjvm_vm));
+  (void)options;
+
   vm->classpath_manager = calloc(1, sizeof(bjvm_classpath_manager));
+
   return vm;
 }
 
 void free_wchar_trie(bjvm_wchar_trie_node *root) {
   if (!root)
     return;
-  for (int i = 0; i < sizeof(root->fast_next) / sizeof(root->fast_next[0]);
+  for (size_t i = 0; i < sizeof(root->fast_next) / sizeof(root->fast_next[0]);
        ++i) {
     free_wchar_trie(root->fast_next[i]);
   }
@@ -3120,6 +3127,7 @@ void bjvm_free_vm(bjvm_vm *vm) {
 
 int bjvm_initialize_vm(bjvm_vm *vm) {
   // Read and load java/lang/Object and java/lang/ClassLoader
+  (void)vm;
   return 0;
 }
 
@@ -3175,7 +3183,7 @@ void recursively_list_classfiles(bjvm_wchar_trie_node *node, wchar_t **strings,
       strings[*count] = wcsdup(chars);
     (*count)++;
   }
-  for (int i = 0; i < sizeof(node->fast_next) / sizeof(node->fast_next[0]);
+  for (size_t i = 0; i < sizeof(node->fast_next) / sizeof(node->fast_next[0]);
        ++i) {
     chars[depth] = i + 32;
     recursively_list_classfiles(node->fast_next[i], strings, count, chars,
@@ -3216,7 +3224,7 @@ bjvm_classdesc *bootstrap_class_loader_impl(bjvm_class_loader *loader,
 
   uint8_t *bytes;
   size_t len;
-  int err = bjvm_vm_read_classfile(vm, cf_name, &bytes, &len);
+  int err = bjvm_vm_read_classfile(vm, cf_name, (const uint8_t **)&bytes, &len);
   free(cf_name);
   if (err) {
     // raise ClassNotFoundException (probably need to share across
@@ -3256,7 +3264,11 @@ int64_t java_ldiv(int64_t a, int64_t b) {
   return a / b;
 }
 
-void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
+void bjvm_raise_exception(bjvm_thread *thread, bjvm_obj_header *obj) {
+  thread->current_exception = obj;
+}
+
+void bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
                              bjvm_attribute_code *code) {
   bjvm_bytecode_insn insn = code->code[frame->program_counter];
 
@@ -3277,9 +3289,10 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
   case bjvm_bc_insn_arraylength:
     BJVM_UNREACHABLE("bjvm_bc_insn_arraylength");
     break;
-  case bjvm_bc_insn_athrow:
-    BJVM_UNREACHABLE("bjvm_bc_insn_athrow");
+  case bjvm_bc_insn_athrow: {
+    bjvm_raise_exception(thread, checked_pop(frame).obj);
     break;
+  }
   case bjvm_bc_insn_baload:
     BJVM_UNREACHABLE("bjvm_bc_insn_baload");
     break;
@@ -3765,4 +3778,3 @@ void bjvm_bytecode_interpret(bjvm_vm *vm, bjvm_stack_frame *frame,
 
   frame->program_counter++;
 }
-q
