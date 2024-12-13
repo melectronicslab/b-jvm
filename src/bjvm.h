@@ -416,12 +416,30 @@ typedef struct {
 } bjvm_parsed_method_descriptor;
 
 typedef struct {
+  int start_insn;
+  int end_insn;
+  int handler_pc;
+  bjvm_cp_class_info *catch_type;
+} bjvm_exception_table_entry;
+
+typedef struct {
+  bjvm_exception_table_entry *entries;
+  int entries_count;
+} bjvm_attribute_exception_table;
+
+typedef struct bjvm_attribute bjvm_attribute;
+
+typedef struct {
   uint16_t max_stack;
   uint16_t max_locals;
   int insn_count;
   int max_pc;
 
   bjvm_bytecode_insn *code;
+  bjvm_attribute_exception_table *exception_table;
+
+  bjvm_attribute *attributes;
+  int attributes_count;
 } bjvm_attribute_code;
 
 typedef struct bjvm_attribute {
@@ -791,7 +809,7 @@ typedef struct {
   int entries_cap;
 } bjvm_analy_stack_state;
 
-char *bjvm_print_analy_stack_state(const bjvm_analy_stack_state *state);
+char *print_analy_stack_state(const bjvm_analy_stack_state *state);
 
 bjvm_compressed_bitset bjvm_init_compressed_bitset(int bits_capacity);
 void bjvm_free_compressed_bitset(bjvm_compressed_bitset bits);
