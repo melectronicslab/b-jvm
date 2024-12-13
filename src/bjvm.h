@@ -298,9 +298,12 @@ typedef struct {
   bjvm_cp_utf8 *descriptor;
 } bjvm_cp_method_type_info;
 
+typedef struct bjvm_parsed_method_descriptor bjvm_parsed_method_descriptor;
+
 typedef struct {
   uint16_t bootstrap_method_attr_index; // TODO convert to pointer
   bjvm_cp_name_and_type *name_and_type;
+  bjvm_parsed_method_descriptor *method_descriptor;
 } bjvm_cp_invoke_dynamic_info;
 
 typedef enum {
@@ -407,11 +410,10 @@ typedef enum {
   BJVM_ATTRIBUTE_KIND_UNKNOWN = 2,
 } bjvm_attribute_kind;
 
-typedef struct {
+typedef struct bjvm_parsed_method_descriptor {
   bjvm_parsed_field_descriptor *args;
   int args_count;
   int args_cap;
-
   bjvm_parsed_field_descriptor return_type;
 } bjvm_parsed_method_descriptor;
 

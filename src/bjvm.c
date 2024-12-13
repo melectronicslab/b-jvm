@@ -100,6 +100,8 @@ void free_utf8_entry(bjvm_cp_utf8 *entry) {
   entry->len = 0;
 }
 
+void free_method_descriptor(void *descriptor_);
+
 void free_constant_pool_entry(bjvm_cp_entry *entry) {
   switch (entry->kind) {
   case BJVM_CP_KIND_UTF8:
@@ -111,6 +113,10 @@ void free_constant_pool_entry(bjvm_cp_entry *entry) {
     if (desc)
       free_field_descriptor(*desc);
     free(desc);
+    break;
+  }
+  case BJVM_CP_KIND_INVOKE_DYNAMIC: {
+    free_method_descriptor(entry->data.invoke_dynamic_info.method_descriptor);
     break;
   }
   default: // TODO will need to add more as we resolve descriptors
@@ -216,9 +222,11 @@ void free_method_descriptor(void *descriptor_) {
 }
 
 void free_code_analysis(bjvm_code_analysis *code_analysis) {
+  if (!code_analysis) return;
   for (int i = 0; i < code_analysis->insn_count; ++i) {
     bjvm_free_compressed_bitset(code_analysis->insn_index_to_references[i]);
   }
+  free(code_analysis->insn_index_to_references);
   free(code_analysis);
 }
 
@@ -657,17 +665,20 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader,
         reader_next_u16(reader, "bootstrap method attr index");
     uint16_t name_and_type_index =
         reader_next_u16(reader, "name and type index");
-    return (bjvm_cp_entry){
-        .kind = BJVM_CP_KIND_INVOKE_DYNAMIC,
-        .data.invoke_dynamic_info = {
-            .bootstrap_method_attr_index = bootstrap_method_attr_index,
-            .name_and_type =
-                skip_resolution
+    bjvm_cp_name_and_type* name_and_type = skip_resolution
                     ? NULL
                     : &checked_cp_entry(ctx->cp, name_and_type_index,
                                         BJVM_CP_KIND_NAME_AND_TYPE,
                                         "indy name and type")
-                           ->data.name_and_type}};
+                           ->data.name_and_type;
+
+    return (bjvm_cp_entry){
+        .kind = BJVM_CP_KIND_INVOKE_DYNAMIC,
+        .data.invoke_dynamic_info = {
+            .bootstrap_method_attr_index = bootstrap_method_attr_index,
+            .name_and_type = name_and_type,
+            .method_descriptor = NULL
+        }};
   }
   default:
     verify_error_static("Invalid constant pool entry kind");
@@ -681,8 +692,12 @@ bjvm_constant_pool *init_constant_pool(uint16_t count) {
   return pool;
 }
 
-bool is_entry_wide(bjvm_cp_entry *ent) {
+bool is_cp_entry_wide(bjvm_cp_entry *ent) {
   return ent->kind == BJVM_CP_KIND_DOUBLE || ent->kind == BJVM_CP_KIND_LONG;
+}
+
+bool is_kind_wide(bjvm_type_kind kind) {
+  return kind == BJVM_TYPE_KIND_LONG || kind == BJVM_TYPE_KIND_DOUBLE;
 }
 
 void finish_constant_pool_entry(bjvm_cp_entry *entry,
@@ -701,6 +716,16 @@ void finish_constant_pool_entry(bjvm_cp_entry *entry,
                                                   parsed_descriptor, ctx);
     if (error)
       verify_error_nonstatic(error);
+    break;
+  }
+  case BJVM_CP_KIND_INVOKE_DYNAMIC: {
+    bjvm_parsed_method_descriptor* desc = malloc(sizeof(bjvm_parsed_method_descriptor));
+    free_on_verify_error(ctx, desc);
+    char *error = parse_method_descriptor(entry->data.invoke_dynamic_info.name_and_type->descriptor, desc);
+    if (error)
+      verify_error_nonstatic(error);
+    entry->data.invoke_dynamic_info.method_descriptor = desc;
+    break;
   }
   default:
     break;
@@ -723,7 +748,7 @@ bjvm_constant_pool *parse_constant_pool(cf_byteslice *reader,
       // Read first, then link
       *get_constant_pool_entry(pool, cp_i) =
           parse_constant_pool_entry(reader, ctx, !(bool)i);
-      if (is_entry_wide(get_constant_pool_entry(pool, cp_i))) {
+      if (is_cp_entry_wide(get_constant_pool_entry(pool, cp_i))) {
         get_constant_pool_entry(pool, cp_i + 1)->kind = BJVM_CP_KIND_INVALID;
         cp_i++;
       }
@@ -2402,133 +2427,239 @@ fail:;
  * place, writing the analysis into analysis, and returning an error string upon
  * some sort of error.
  */
-char *analyze_method_code_segment(const bjvm_cp_method *method,
+char *analyze_method_code_segment(bjvm_cp_method *method,
                                   bjvm_classfile_parse_ctx *ctx) {
   bjvm_attribute_code *code = method->code;
   if (!code)
     return NULL; // method has no code
 
+  char* error = NULL;
   bjvm_analy_stack_state locals;
   bjvm_locals_on_method_entry(method, &locals);
 
   bjvm_analy_stack_state stack;
-  memset(&stack, 0, sizeof(bjvm_analy_stack_state));
+  stack.entries = calloc(code->max_stack, sizeof(bjvm_analy_stack_entry));
+  stack.entries_cap = code->max_stack;
+  stack.entries_count = 0;
 
   // After jumps, we can infer the stack and locals at these points
   bjvm_analy_stack_state *inferred_stacks =
       calloc(code->insn_count, sizeof(bjvm_analy_stack_state));
-  bjvm_analy_stack_state *inferred_locals =
-      calloc(code->insn_count, sizeof(bjvm_analy_stack_state));
-
   bjvm_compressed_bitset *insn_index_to_references =
       calloc(code->insn_count, sizeof(bjvm_compressed_bitset));
-  free(insn_index_to_references);
+
+  bjvm_code_analysis *analy = method->code_analysis = malloc(sizeof(bjvm_code_analysis));
+  free_on_verify_error(ctx, analy);
+
+  analy->insn_count = code->insn_count;
+  analy->insn_index_to_references = insn_index_to_references;
+
+  int* branch_targets_to_process = calloc(code->insn_count, sizeof(int));
+  int branch_targets_count = 0;
+
+  free(branch_targets_to_process);
+
+#define POP_VAL ({ \
+  if (stack.entries_count == 0) goto stack_underflow; \
+  stack.entries[--stack.entries_count]; })
+#define POP(kind) { \
+  bjvm_analy_stack_entry entry = POP_VAL; \
+  if (entry != BJVM_TYPE_KIND_ ## kind) goto stack_type_mismatch; }
+#define PUSH_KIND(kind) { if (stack.entries_count == stack.entries_cap) goto stack_overflow; stack.entries[stack.entries_count++] = kind; }
+#define PUSH(kind) PUSH_KIND(BJVM_TYPE_KIND_ ## kind)
+#define PUSH_BRANCH_TARGET(target) branch_targets_to_process[branch_targets_count++] = target;
+
   bool stack_terminated = false;
-  for (int i = 0; i < code->insn_count; ++i) {
+  for (int i = 0; false; ++i) { // i < code->insn_count; ++i) {
     if (stack_terminated) {
       // We expect to be able to recover the stack/locals from a previously
       // encountered jump, or an exception handler. If this isn't possible then
       // there will be weeping and wailing and gnashing of teeth.
+      BJVM_DCHECK(inferred_stacks[i].entries);
+      free(stack.entries);
+      stack = copy_analy_stack_state(inferred_stacks[i]);
     }
 
-    bjvm_bytecode_insn insn = code->code[i];
-    switch (insn.kind) {
+    bjvm_bytecode_insn* insn = &code->code[i];
+    switch (insn->kind) {
     case bjvm_bc_insn_nop:
-      continue;
+      break;
     case bjvm_bc_insn_aaload:
-      break;
+      POP(INT) POP(REFERENCE) PUSH(REFERENCE) break;
     case bjvm_bc_insn_aastore:
-      break;
+      POP(REFERENCE) POP(INT) POP(REFERENCE) break;
     case bjvm_bc_insn_aconst_null:
-      break;
+      PUSH(REFERENCE) break;
     case bjvm_bc_insn_areturn:
+      POP(REFERENCE)
+      stack_terminated = true;
       break;
     case bjvm_bc_insn_arraylength:
-      break;
+      POP(REFERENCE) PUSH(INT) break;
     case bjvm_bc_insn_athrow:
+      POP(REFERENCE)
+      stack_terminated = true;
       break;
-    case bjvm_bc_insn_baload:
-      break;
+    case bjvm_bc_insn_baload: case bjvm_bc_insn_caload: case bjvm_bc_insn_saload: case bjvm_bc_insn_iaload:
+      POP(INT) POP(REFERENCE) PUSH(INT) break;
     case bjvm_bc_insn_bastore:
-      break;
-    case bjvm_bc_insn_caload:
-      break;
     case bjvm_bc_insn_castore:
-      break;
+    case bjvm_bc_insn_sastore:
+    case bjvm_bc_insn_iastore:
+      POP(INT) POP(INT) POP(REFERENCE) break;
     case bjvm_bc_insn_d2f:
-      break;
+      POP(DOUBLE) PUSH(FLOAT) break;
     case bjvm_bc_insn_d2i:
-      break;
+      POP(DOUBLE) PUSH(INT) break;
     case bjvm_bc_insn_d2l:
-      break;
+      POP(DOUBLE) PUSH(LONG) break;
     case bjvm_bc_insn_dadd:
-      break;
-    case bjvm_bc_insn_daload:
-      break;
-    case bjvm_bc_insn_dastore:
-      break;
-    case bjvm_bc_insn_dcmpg:
-      break;
-    case bjvm_bc_insn_dcmpl:
-      break;
     case bjvm_bc_insn_ddiv:
-      break;
     case bjvm_bc_insn_dmul:
-      break;
-    case bjvm_bc_insn_dneg:
-      break;
     case bjvm_bc_insn_drem:
-      break;
-    case bjvm_bc_insn_dreturn:
-      break;
     case bjvm_bc_insn_dsub:
+      POP(DOUBLE) POP(DOUBLE) PUSH(DOUBLE) break;
+    case bjvm_bc_insn_daload:
+      POP(INT) POP(REFERENCE) PUSH(DOUBLE) break;
+    case bjvm_bc_insn_dastore:
+      POP(DOUBLE) POP(INT) POP(REFERENCE) break;
+    case bjvm_bc_insn_dcmpg:
+    case bjvm_bc_insn_dcmpl:
+      POP(DOUBLE) POP(DOUBLE) PUSH(INT) break;
+    case bjvm_bc_insn_dneg:
+      POP(DOUBLE) PUSH(DOUBLE) break;
+    case bjvm_bc_insn_dreturn:
+      POP(DOUBLE)
+      stack_terminated = true;
       break;
-    case bjvm_bc_insn_dup:
+    case bjvm_bc_insn_dup: {
+      if (stack.entries_count == 0)
+        goto stack_underflow;
+      PUSH_KIND(stack.entries[stack.entries_count - 1])
+    }
+    case bjvm_bc_insn_dup_x1: {
+      if (stack.entries_count <= 1)
+        goto stack_underflow;
+      bjvm_type_kind kind1 = POP_VAL, kind2 = POP_VAL;
+      if (is_kind_wide(kind1) || is_kind_wide(kind2))
+        goto stack_type_mismatch;
+      PUSH_KIND(kind1) PUSH_KIND(kind2)
+    }
+    case bjvm_bc_insn_dup_x2: {
+      bjvm_type_kind to_dup = POP_VAL, kind2 = POP_VAL, kind3;
+      if (is_kind_wide(to_dup))
+        goto stack_type_mismatch;
+      if (is_kind_wide(kind2)) {
+        PUSH_KIND(to_dup) PUSH_KIND(kind2)
+        insn->kind = bjvm_bc_insn_dup_x1;
+      } else {
+        kind3 = POP_VAL;
+        PUSH_KIND(to_dup) PUSH_KIND(kind3) PUSH_KIND(kind2)
+      }
+    }
+    case bjvm_bc_insn_dup2: {
+      bjvm_type_kind to_dup = POP_VAL, kind2;
+      if (is_kind_wide(to_dup)) {
+        PUSH_KIND(to_dup) PUSH_KIND(to_dup)
+        insn->kind = bjvm_bc_insn_dup;
+      } else {
+        kind2 = POP_VAL;
+        if (is_kind_wide(kind2))
+          goto stack_type_mismatch;
+        PUSH_KIND(kind2) PUSH_KIND(to_dup) PUSH_KIND(kind2) PUSH_KIND(to_dup)
+      }
+    }
+    case bjvm_bc_insn_dup2_x1: {
+      bjvm_type_kind to_dup = POP_VAL, kind2 = POP_VAL, kind3;
+      if (is_kind_wide(to_dup)) {
+        PUSH_KIND(to_dup) PUSH_KIND(kind2) PUSH_KIND(to_dup)
+        insn->kind = bjvm_bc_insn_dup_x1;
+      } else {
+        kind3 = POP_VAL;
+        if (is_kind_wide(kind3))
+          goto stack_type_mismatch;
+        PUSH_KIND(kind2) PUSH_KIND(to_dup) PUSH_KIND(kind3) PUSH_KIND(kind2) PUSH_KIND(to_dup)
+      }
+    }
+    case bjvm_bc_insn_dup2_x2: {
+      bjvm_type_kind to_dup = POP_VAL, kind2 = POP_VAL, kind3, kind4;
+      if (is_kind_wide(to_dup)) {
+        if (is_kind_wide(kind2)) {
+          PUSH_KIND(to_dup)
+          PUSH_KIND(kind2) PUSH_KIND(to_dup)
+          insn->kind = bjvm_bc_insn_dup_x1;
+        } else {
+          kind3 = POP_VAL;
+          if (is_kind_wide(kind3)) goto stack_type_mismatch;
+          PUSH_KIND(to_dup) PUSH_KIND(kind3) PUSH_KIND(kind2) PUSH_KIND(to_dup)
+          insn->kind = bjvm_bc_insn_dup_x2;
+        }
+      } else {
+        kind3 = POP_VAL;
+        if (is_kind_wide(kind3)) {
+          PUSH_KIND(kind2) PUSH_KIND(to_dup) PUSH_KIND(kind3) PUSH_KIND(kind2) PUSH_KIND(to_dup)
+          insn->kind = bjvm_bc_insn_dup2_x1;
+        } else {
+          kind4 = POP_VAL;
+          if (is_kind_wide(kind4)) goto stack_type_mismatch;
+          PUSH_KIND(kind2) PUSH_KIND(to_dup) PUSH_KIND(kind4) PUSH_KIND(kind3) PUSH_KIND(kind2) PUSH_KIND(to_dup)
+        }
+      }
+    }
+    case bjvm_bc_insn_f2d: {
+      POP(FLOAT) PUSH(DOUBLE)
       break;
-    case bjvm_bc_insn_dup_x1:
+    }
+    case bjvm_bc_insn_f2i: {
+      POP(FLOAT) PUSH(INT)
       break;
-    case bjvm_bc_insn_dup_x2:
+    }
+    case bjvm_bc_insn_f2l: {
+      POP(FLOAT) PUSH(LONG)
       break;
-    case bjvm_bc_insn_dup2:
+    }
+    case bjvm_bc_insn_fadd: {
+      POP(FLOAT) POP(FLOAT) PUSH(FLOAT)
       break;
-    case bjvm_bc_insn_dup2_x1:
+    }
+    case bjvm_bc_insn_faload: {
+      POP(INT) POP(REFERENCE) PUSH(FLOAT)
       break;
-    case bjvm_bc_insn_dup2_x2:
+    }
+    case bjvm_bc_insn_fastore: {
+      POP(FLOAT) POP(INT) POP(REFERENCE)
       break;
-    case bjvm_bc_insn_f2d:
-      break;
-    case bjvm_bc_insn_f2i:
-      break;
-    case bjvm_bc_insn_f2l:
-      break;
-    case bjvm_bc_insn_fadd:
-      break;
-    case bjvm_bc_insn_faload:
-      break;
-    case bjvm_bc_insn_fastore:
-      break;
+    }
     case bjvm_bc_insn_fcmpg:
+    case bjvm_bc_insn_fcmpl: {
+      POP(FLOAT) POP(FLOAT) PUSH(INT)
       break;
-    case bjvm_bc_insn_fcmpl:
-      break;
+    }
     case bjvm_bc_insn_fdiv:
-      break;
     case bjvm_bc_insn_fmul:
-      break;
-    case bjvm_bc_insn_fneg:
-      break;
     case bjvm_bc_insn_frem:
+    case bjvm_bc_insn_fsub: {
+      POP(FLOAT) POP(FLOAT) PUSH(FLOAT)
       break;
-    case bjvm_bc_insn_freturn:
+    }
+    case bjvm_bc_insn_fneg: {
+      POP(FLOAT) PUSH(FLOAT);
       break;
-    case bjvm_bc_insn_fsub:
+    }
+    case bjvm_bc_insn_freturn:{
+      POP(FLOAT)
+      stack_terminated = true;
       break;
+    }
     case bjvm_bc_insn_i2b:
+    case bjvm_bc_insn_i2c: {
+      POP(INT) PUSH(INT)
       break;
-    case bjvm_bc_insn_i2c:
+    }
+    case bjvm_bc_insn_i2d: {
+      POP(INT) PUSH(DOUBLE)
       break;
-    case bjvm_bc_insn_i2d:
-      break;
+    }
     case bjvm_bc_insn_i2f:
       break;
     case bjvm_bc_insn_i2l:
@@ -2536,101 +2667,119 @@ char *analyze_method_code_segment(const bjvm_cp_method *method,
     case bjvm_bc_insn_i2s:
       break;
     case bjvm_bc_insn_iadd:
-      break;
-    case bjvm_bc_insn_iaload:
-      break;
     case bjvm_bc_insn_iand:
-      break;
-    case bjvm_bc_insn_iastore:
-      break;
     case bjvm_bc_insn_idiv:
-      break;
     case bjvm_bc_insn_imul:
+    case bjvm_bc_insn_irem:
+    case bjvm_bc_insn_ior:
+    case bjvm_bc_insn_ishl:
+    case bjvm_bc_insn_ishr:
+    case bjvm_bc_insn_isub:
+    case bjvm_bc_insn_ixor:
+    case bjvm_bc_insn_iushr: {
+      POP(INT) POP(INT) PUSH(INT)
+    }
       break;
     case bjvm_bc_insn_ineg:
-      break;
-    case bjvm_bc_insn_ior:
-      break;
-    case bjvm_bc_insn_irem:
-      break;
     case bjvm_bc_insn_ireturn:
+    case bjvm_bc_insn_l2d: {
+      POP(LONG) PUSH(DOUBLE)
       break;
-    case bjvm_bc_insn_ishl:
+    }
+    case bjvm_bc_insn_l2f: {
+      POP(LONG) PUSH(FLOAT)
       break;
-    case bjvm_bc_insn_ishr:
+    }
+    case bjvm_bc_insn_l2i: {
+      POP(LONG) PUSH(INT)
       break;
-    case bjvm_bc_insn_isub:
-      break;
-    case bjvm_bc_insn_iushr:
-      break;
-    case bjvm_bc_insn_ixor:
-      break;
-    case bjvm_bc_insn_l2d:
-      break;
-    case bjvm_bc_insn_l2f:
-      break;
-    case bjvm_bc_insn_l2i:
-      break;
+    }
     case bjvm_bc_insn_ladd:
-      break;
-    case bjvm_bc_insn_laload:
-      break;
     case bjvm_bc_insn_land:
-      break;
-    case bjvm_bc_insn_lastore:
-      break;
-    case bjvm_bc_insn_lcmp:
-      break;
     case bjvm_bc_insn_ldiv:
-      break;
     case bjvm_bc_insn_lmul:
-      break;
-    case bjvm_bc_insn_lneg:
-      break;
     case bjvm_bc_insn_lor:
-      break;
     case bjvm_bc_insn_lrem:
-      break;
-    case bjvm_bc_insn_lreturn:
-      break;
     case bjvm_bc_insn_lshl:
-      break;
     case bjvm_bc_insn_lshr:
-      break;
     case bjvm_bc_insn_lsub:
-      break;
     case bjvm_bc_insn_lushr:
+    case bjvm_bc_insn_lxor: {
+      POP(LONG) POP(LONG) PUSH(LONG)
       break;
-    case bjvm_bc_insn_lxor:
+    }
+    case bjvm_bc_insn_laload: {
+      POP(INT) POP(REFERENCE) PUSH(LONG)
+    }
+    case bjvm_bc_insn_lastore: {
+      POP(LONG) POP(INT) POP(REFERENCE)
+    }
+    case bjvm_bc_insn_lcmp: {
+      POP(LONG) POP(LONG) PUSH(INT)
+    }
+    case bjvm_bc_insn_lneg: {
+      POP(LONG) PUSH(LONG)
+    }
+    case bjvm_bc_insn_lreturn: {
+      POP(LONG)
+      stack_terminated = true;
       break;
-    case bjvm_bc_insn_monitorenter:
+    }
+    case bjvm_bc_insn_monitorenter: {
+      POP(REFERENCE)
       break;
-    case bjvm_bc_insn_monitorexit:
+    }
+    case bjvm_bc_insn_monitorexit: {
+      POP(REFERENCE)
       break;
-    case bjvm_bc_insn_pop:
+    }
+    case bjvm_bc_insn_pop: {
+      bjvm_type_kind kind = POP_VAL;
+      if (is_kind_wide(kind)) goto stack_type_mismatch;
       break;
-    case bjvm_bc_insn_pop2:
+    }
+    case bjvm_bc_insn_pop2: {
+      bjvm_type_kind kind = POP_VAL;
+      if (!is_kind_wide(kind)) {
+        bjvm_type_kind kind2 = POP_VAL;
+        if (is_kind_wide(kind2)) goto stack_type_mismatch;
+      } else {
+        insn->kind = bjvm_bc_insn_pop;
+      }
       break;
-    case bjvm_bc_insn_return:
+    }
+    case bjvm_bc_insn_return: {
+      stack_terminated = true;
       break;
-    case bjvm_bc_insn_saload:
+    }
+    case bjvm_bc_insn_swap: {
+      bjvm_type_kind kind1 = POP_VAL, kind2 = POP_VAL;
+      if (is_kind_wide(kind1) || is_kind_wide(kind2)) goto stack_type_mismatch;;
+      PUSH_KIND(kind1) PUSH_KIND(kind2)
+    }
+    case bjvm_bc_insn_anewarray: {
+      POP(INT) PUSH(REFERENCE)
       break;
-    case bjvm_bc_insn_sastore:
+    }
+    case bjvm_bc_insn_checkcast: {
+      POP(REFERENCE)
       break;
-    case bjvm_bc_insn_swap:
+    }
+    case bjvm_bc_insn_getfield: {
+      POP(REFERENCE) PUSH(REFERENCE)
       break;
-    case bjvm_bc_insn_anewarray:
+    }
+    case bjvm_bc_insn_getstatic: {
+      PUSH(REFERENCE)
       break;
-    case bjvm_bc_insn_checkcast:
+    }
+    case bjvm_bc_insn_instanceof: {
+      POP(REFERENCE) PUSH(INT)
       break;
-    case bjvm_bc_insn_getfield:
-      break;
-    case bjvm_bc_insn_getstatic:
-      break;
-    case bjvm_bc_insn_instanceof:
-      break;
-    case bjvm_bc_insn_invokedynamic:
-      break;
+    }
+    case bjvm_bc_insn_invokedynamic: {
+      bjvm_cp_utf8* descriptor = insn->cp->data.invoke_dynamic_info.name_and_type->descriptor;
+    }
     case bjvm_bc_insn_new:
       break;
     case bjvm_bc_insn_putfield:
@@ -2726,15 +2875,25 @@ char *analyze_method_code_segment(const bjvm_cp_method *method,
     case bjvm_bc_insn_ret:
       break;
     }
+
+    continue;
+
+stack_overflow:
+    error = strdup("stack overflow");
+    break;
+stack_underflow:
+    error = strdup("stack underflow");
+    break;
+stack_type_mismatch:
+    error = strdup("stack type mismatch");
+    break;
   }
 
-  for (int i = 0; i < code->insn_count; ++i) {
-    free(inferred_locals->entries);
-    free(inferred_stacks->entries);
-  }
+  free(inferred_stacks);
   free(locals.entries);
+  free(stack.entries);
 
-  return NULL;
+  return error;
 }
 
 /**
@@ -2773,9 +2932,7 @@ bjvm_cp_method parse_method(cf_byteslice *reader,
     }
   }
 
-  method.code_analysis = calloc(1, sizeof(bjvm_code_analysis));
-  free_on_verify_error(ctx, method.code_analysis);
-
+  method.code_analysis = NULL;
   error = analyze_method_code_segment(&method, ctx);
   if (error) {
     verify_error_nonstatic(error);
