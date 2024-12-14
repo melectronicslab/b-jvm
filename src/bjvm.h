@@ -230,22 +230,22 @@ struct bjvm_bc_invokeinterface_data {
 typedef struct {
   wchar_t *chars;
   int len;
-} bjvm_cp_utf8;
+} bjvm_utf8;
 
 typedef struct {
-  bjvm_cp_utf8 *name;
+  bjvm_utf8 *name;
 } bjvm_cp_class_info;
 
 typedef struct bjvm_cp_name_and_type {
-  bjvm_cp_utf8 *name;
-  bjvm_cp_utf8 *descriptor;
+  bjvm_utf8 *name;
+  bjvm_utf8 *descriptor;
 } bjvm_cp_name_and_type;
 
 typedef struct {
   bjvm_type_kind kind;
   // Can be nonzero for any kind
   int dimensions;
-  bjvm_cp_utf8 class_name; // For reference and array types only
+  bjvm_utf8 class_name; // For reference and array types only
 } bjvm_field_descriptor;
 
 bool bjvm_is_field_wide(bjvm_field_descriptor desc);
@@ -267,7 +267,7 @@ typedef struct {
 } bjvm_cp_method_info;
 
 typedef struct {
-  bjvm_cp_utf8 *chars;
+  bjvm_utf8 *chars;
 } bjvm_cp_string_info;
 
 typedef struct {
@@ -298,7 +298,7 @@ typedef struct {
 } bjvm_cp_method_handle_info;
 
 typedef struct {
-  bjvm_cp_utf8 *descriptor;
+  bjvm_utf8 *descriptor;
 } bjvm_cp_method_type_info;
 
 typedef struct {
@@ -330,7 +330,7 @@ typedef struct bjvm_cp_entry {
   int my_index;
 
   union {
-    bjvm_cp_utf8 utf8;
+    bjvm_utf8 utf8;
     bjvm_cp_string_info string;
 
     bjvm_cp_floating_info floating;
@@ -448,7 +448,7 @@ typedef struct {
 
 typedef struct bjvm_attribute {
   bjvm_attribute_kind kind;
-  bjvm_cp_utf8 *name;
+  bjvm_utf8 *name;
   uint32_t length;
 
   union {
@@ -483,8 +483,8 @@ typedef struct {
 typedef struct bjvm_cp_method {
   bjvm_access_flags access_flags;
 
-  bjvm_cp_utf8 *name;
-  bjvm_cp_utf8 *descriptor;
+  bjvm_utf8 *name;
+  bjvm_utf8 *descriptor;
 
   bjvm_method_descriptor *parsed_descriptor;
   bjvm_code_analysis *code_analysis;
@@ -492,12 +492,14 @@ typedef struct bjvm_cp_method {
   int attributes_count;
   bjvm_attribute *attributes;
   bjvm_attribute_code *code;
+
+  bool is_signature_polymorphic;
 } bjvm_cp_method;
 
 typedef struct {
   bjvm_access_flags access_flags;
-  bjvm_cp_utf8 *name;
-  bjvm_cp_utf8 *descriptor;
+  bjvm_utf8 *name;
+  bjvm_utf8 *descriptor;
 
   int attributes_count;
   bjvm_attribute *attributes;
@@ -505,10 +507,23 @@ typedef struct {
   int byte_offset;
 } bjvm_cp_field;
 
-typedef struct {
-  uint16_t minor_version;
-  uint16_t major_version;
+typedef enum {
+  BJVM_CLASSDESC_KIND_ORDINARY_ARRAY = 0,
+  BJVM_CLASSDESC_KIND_BYTE_ARRAY = 1,
+  BJVM_CLASSDESC_KIND_CHAR_ARRAY = 2,
+  BJVM_CLASSDESC_KIND_DOUBLE_ARRAY = 3,
+  BJVM_CLASSDESC_KIND_FLOAT_ARRAY = 4,
+  BJVM_CLASSDESC_KIND_INT_ARRAY = 5,
+  BJVM_CLASSDESC_KIND_LONG_ARRAY = 6,
+  BJVM_CLASSDESC_KIND_SHORT_ARRAY = 7,
+  BJVM_CLASSDESC_KIND_BOOLEAN_ARRAY = 8,
+  BJVM_CLASSDESC_KIND_ORDINARY = 10,
+} bjvm_classdesc_kind;
 
+typedef struct bjvm_array_classdesc bjvm_array_classdesc;
+
+typedef struct {
+  bjvm_classdesc_kind kind;
   bjvm_constant_pool *pool;
 
   bjvm_access_flags access_flags;
@@ -527,46 +542,19 @@ typedef struct {
   int attributes_count;
   bjvm_attribute *attributes;
 
+  bjvm_array_classdesc *array_type;
+
   // Whether this class corresponds to the primordial object class
   bool is_primordial_object;
-} bjvm_parsed_classfile;
+  uint16_t minor_version;
+  uint16_t major_version;
+} bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
 
-typedef struct bjvm_classdesc bjvm_classdesc;
 typedef struct bjvm_ordinary_class bjvm_ordinary_class;
 
-typedef enum {
-  BJVM_CLASSDESC_KIND_ORDINARY_ARRAY = 0,
-  BJVM_CLASSDESC_KIND_BYTE_ARRAY = 1,
-  BJVM_CLASSDESC_KIND_CHAR_ARRAY = 2,
-  BJVM_CLASSDESC_KIND_DOUBLE_ARRAY = 3,
-  BJVM_CLASSDESC_KIND_FLOAT_ARRAY = 4,
-  BJVM_CLASSDESC_KIND_INT_ARRAY = 5,
-  BJVM_CLASSDESC_KIND_LONG_ARRAY = 6,
-  BJVM_CLASSDESC_KIND_SHORT_ARRAY = 7,
-  BJVM_CLASSDESC_KIND_BOOLEAN_ARRAY = 8,
-  BJVM_CLASSDESC_KIND_ORDINARY = 10,
-} bjvm_classdesc_kind;
-
-// Equivalent to HotSpot's Klass
-typedef struct bjvm_classdesc {
-  // The type of this class
-  bjvm_classdesc_kind kind;
-  // Superclass of this class
-  bjvm_classdesc *super;
-  // Superinterfaces of this class
-  bjvm_ordinary_class *superinterfaces;
-  uint32_t superinterface_count;
-  // Access flags
-  bjvm_access_flags access_flags;
-  // Size in bytes of an instance (ignoring array data)
-  uint32_t instance_size;
-  // Name of this class (e.g. "java/lang/Object")
-  bjvm_cp_utf8 *name;
-} bjvm_classdesc;
-
-typedef struct bjvm_object_array_classdesc {
+typedef struct bjvm_array_classdesc {
   bjvm_classdesc base;
   int dimensions;
   bjvm_classdesc *base_component;
@@ -581,7 +569,7 @@ typedef struct bjvm_primitive_array_classdesc {
 // Equivalent to HotSpot's InstanceKlass
 typedef struct bjvm_ordinary_class {
   bjvm_classdesc base;
-  bjvm_parsed_classfile classfile;
+  bjvm_classdesc classfile;
 } bjvm_ordinary_classdesc;
 
 // Appears at the top of every object -- corresponds to HotSpot's oopDesc
@@ -666,24 +654,9 @@ void *bjvm_hash_table_lookup(bjvm_string_hash_table *tbl, const wchar_t *key,
 
 void bjvm_free_hash_table(bjvm_string_hash_table tbl);
 
-typedef struct bjvm_class_loader {
-  bjvm_obj_header obj_header;
-  // Compare:
-  // https://github.com/openjdk/jdk8/blob/master/jdk/src/share/classes/java/lang/ClassLoader.java
-  struct bjvm_class_loader *parent;
-  // Used to synchronize class loading (instance of ConcurrentHashMap)
-  bjvm_obj_header *parallelLockMap;
-  // Whether this class loader is the bootstrap class loader
-  bool is_bootstrap;
-  // Pointer to the VM
-  bjvm_vm *vm;
-  // Map of class name to instance of that class
-  bjvm_string_hash_table loaded_classes;
-} bjvm_class_loader;
-
 typedef struct bjvm_vm {
-  bjvm_class_loader *bootstrap_class_loader;
   void *classpath_manager;
+  bjvm_string_hash_table classes;
 } bjvm_vm;
 
 typedef struct {
@@ -788,12 +761,12 @@ void bjvm_vm_list_classfiles(bjvm_vm *vm, wchar_t **strings, size_t *count);
  * responsibility to free the error message.
  */
 char *bjvm_parse_classfile(uint8_t *bytes, size_t len,
-                           bjvm_parsed_classfile *result);
+                           bjvm_classdesc *result);
 
 /**
  * Free the classfile.
  */
-void bjvm_free_classfile(bjvm_parsed_classfile cf);
+void bjvm_free_classfile(bjvm_classdesc cf);
 
 int bjvm_initialize_vm(bjvm_vm *vm);
 void bjvm_free_vm(bjvm_vm *vm);
@@ -828,14 +801,16 @@ bool bjvm_test_reset_compressed_bitset(bjvm_compressed_bitset *bits,
 bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset *bits,
                                      size_t bit_index);
 
-char *bjvm_locals_on_function_entry(const bjvm_cp_utf8 *descriptor,
+char *bjvm_locals_on_function_entry(const bjvm_utf8 *descriptor,
                                     bjvm_analy_stack_state *locals);
 char *parse_field_descriptor(const wchar_t **chars, size_t len,
                              bjvm_field_descriptor *result);
-char *parse_method_descriptor(const bjvm_cp_utf8 *descriptor,
+char *parse_method_descriptor(const bjvm_utf8 *descriptor,
                               bjvm_method_descriptor *result);
-bool compare_utf8_entry(bjvm_cp_utf8 *entry, const char *str);
-char *lossy_utf8_entry_to_chars(const bjvm_cp_utf8 *utf8);
+bool utf8_equals(bjvm_utf8 *entry, const char *str);
+char *lossy_utf8_entry_to_chars(const bjvm_utf8 *utf8);
+bjvm_utf8 bjvm_make_utf8(const wchar_t* c_literal);
+void free_utf8_entry(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
 
 #ifdef __cplusplus

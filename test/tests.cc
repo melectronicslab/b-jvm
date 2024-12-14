@@ -160,7 +160,7 @@ TEST_CASE("Test classfile parsing") {
     double start = get_time();
 
     // std::cout << "Reading " << file << "\n";
-    bjvm_parsed_classfile cf;
+    bjvm_classdesc cf;
     char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
@@ -180,7 +180,7 @@ TEST_CASE("Test classfile parsing") {
 #pragma omp parallel for
       for (int i = 0; i < read.size(); ++i) {
         std::cout << "Done with " << i << '\n';
-        bjvm_parsed_classfile cf;
+        bjvm_classdesc cf;
         auto copy = read;
         for (int j = 0; j < 256; ++j) {
           copy[i] += 1;
@@ -203,7 +203,7 @@ TEST_CASE("Test classfile parsing") {
 
   BENCHMARK_ADVANCED("Parse classfile")(Catch::Benchmark::Chronometer meter) {
     auto read = ReadFile("./jre8/sun/security/tools/keytool/Main.class");
-    bjvm_parsed_classfile cf;
+    bjvm_classdesc cf;
 
     meter.measure([&] {
       char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
@@ -321,7 +321,7 @@ TEST_CASE("parse_field_descriptor valid cases") {
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &C));
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Z));
 
-  REQUIRE(compare_utf8_entry(&com_example_Example.class_name,
+  REQUIRE(utf8_equals(&com_example_Example.class_name,
                              "com/example/Example"));
   REQUIRE(com_example_Example.dimensions == 0);
   REQUIRE(com_example_Example.kind == BJVM_TYPE_KIND_REFERENCE);
@@ -332,10 +332,10 @@ TEST_CASE("parse_field_descriptor valid cases") {
   REQUIRE(Jaa.kind == BJVM_TYPE_KIND_LONG);
   REQUIRE(Jaa.dimensions == 3);
 
-  REQUIRE(compare_utf8_entry(&java_lang_String.class_name, "java/lang/String"));
+  REQUIRE(utf8_equals(&java_lang_String.class_name, "java/lang/String"));
   REQUIRE(java_lang_String.dimensions == 0);
 
-  REQUIRE(compare_utf8_entry(&java_lang_Object.class_name, "java/lang/Object"));
+  REQUIRE(utf8_equals(&java_lang_Object.class_name, "java/lang/Object"));
   REQUIRE(java_lang_Object.dimensions == 2);
 
   REQUIRE(B.kind == BJVM_TYPE_KIND_BYTE);
@@ -408,4 +408,8 @@ TEST_CASE("String hash table") {
   }
 
   bjvm_free_hash_table(tbl);
+}
+
+TEST_CASE("SignaturePolymorphic methods found") {
+  // TODO
 }
