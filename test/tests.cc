@@ -321,8 +321,7 @@ TEST_CASE("parse_field_descriptor valid cases") {
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &C));
   REQUIRE(!parse_field_descriptor(&fields, wcslen(fields), &Z));
 
-  REQUIRE(utf8_equals(&com_example_Example.class_name,
-                             "com/example/Example"));
+  REQUIRE(utf8_equals(&com_example_Example.class_name, "com/example/Example"));
   REQUIRE(com_example_Example.dimensions == 0);
   REQUIRE(com_example_Example.kind == BJVM_TYPE_KIND_REFERENCE);
 
@@ -413,3 +412,5 @@ TEST_CASE("String hash table") {
 TEST_CASE("SignaturePolymorphic methods found") {
   // TODO
 }
+
+TEST_CASE("Malformed classfiles") {}

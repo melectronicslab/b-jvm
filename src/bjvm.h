@@ -327,6 +327,7 @@ typedef enum {
 
 typedef struct bjvm_cp_entry {
   bjvm_cp_entry_kind kind;
+  // Index of this entry within the constant pool
   int my_index;
 
   union {
@@ -756,12 +757,18 @@ int bjvm_vm_read_classfile(bjvm_vm *vm, const wchar_t *filename,
 void bjvm_vm_list_classfiles(bjvm_vm *vm, wchar_t **strings, size_t *count);
 
 /**
- * Parse the given classfile. Writes a pointer to the parsed classfile into
- * result. Returns an error message if the parsing failed. It is the caller's
- * responsibility to free the error message.
+ * Parse a Java class file.
+ *
+ * The error message corresponds to a ClassFormatError in Java land.
+ * (UnsupportedClassVersionErrors and VerifyErrors should be raised elsewhere.)
+ *
+ * @param bytes Start byte of the classfile.
+ * @param len Length of the classfile in bytes.
+ * @param result Where to write the result.
+ * @return NULL on success, otherwise an error message (which is the caller's
+ * responsibility to free).
  */
-char *bjvm_parse_classfile(uint8_t *bytes, size_t len,
-                           bjvm_classdesc *result);
+char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result);
 
 /**
  * Free the classfile.
@@ -809,7 +816,7 @@ char *parse_method_descriptor(const bjvm_utf8 *descriptor,
                               bjvm_method_descriptor *result);
 bool utf8_equals(bjvm_utf8 *entry, const char *str);
 char *lossy_utf8_entry_to_chars(const bjvm_utf8 *utf8);
-bjvm_utf8 bjvm_make_utf8(const wchar_t* c_literal);
+bjvm_utf8 bjvm_make_utf8(const wchar_t *c_literal);
 void free_utf8_entry(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
 
