@@ -127,6 +127,8 @@ std::vector<std::string> ListDirectory(const std::string &path,
   // Recursively list files (TODO: fix recursive = false)
   std::vector<std::string> result;
 
+  (void)recursive;
+
   for (const auto &entry : recursive_directory_iterator(path)) {
     if (entry.is_regular_file()) {
       result.push_back(entry.path().string());
@@ -164,7 +166,7 @@ TEST_CASE("Test classfile parsing") {
     char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
-      if (strlen(error) < shortest_error_length) {
+      if ((int)strlen(error) < shortest_error_length) {
         shortest_error = strdup(error);
         shortest_error_length = strlen(error);
       }
@@ -178,7 +180,7 @@ TEST_CASE("Test classfile parsing") {
       std::cerr << "Fuzzing classfile: " << file << '\n';
 
 #pragma omp parallel for
-      for (int i = 0; i < read.size(); ++i) {
+      for (size_t i = 0; i < read.size(); ++i) {
         std::cout << "Done with " << i << '\n';
         bjvm_classdesc cf;
         auto copy = read;
@@ -247,11 +249,11 @@ TEST_CASE("Class file management") {
   REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.classe", nullptr,
                                  &len) != 0);
   bjvm_vm_list_classfiles(vm, nullptr, &len);
-  REQUIRE(len == file_count);
+  REQUIRE((int)len == file_count);
   std::vector<wchar_t *> strings(len);
   bjvm_vm_list_classfiles(vm, strings.data(), &len);
   bool found = false;
-  for (int i = 0; i < len; ++i) {
+  for (size_t i = 0; i < len; ++i) {
     found = found || wcscmp(strings[i], L"java/lang/ClassLoader.class") == 0;
     free(strings[i]);
   }
@@ -363,11 +365,15 @@ TEST_CASE("VM initialization") {
 }
 
 TEST_CASE("Thread initialization") {
-  bjvm_vm *vm = create_vm(false);
+  bjvm_vm *vm = create_vm(true);
 
   bjvm_thread_options options;
   bjvm_fill_default_thread_options(&options);
   bjvm_thread *thr = bjvm_create_thread(vm, options);
+
+  bjvm_utf8 java_lang_Object = bjvm_make_utf8(L"java/lang/Object");
+  bootstrap_class_create(thr, java_lang_Object);
+  free_utf8(java_lang_Object);
 
   bjvm_free_thread(thr);
   bjvm_free_vm(vm);
@@ -413,4 +419,6 @@ TEST_CASE("SignaturePolymorphic methods found") {
   // TODO
 }
 
-TEST_CASE("Malformed classfiles") {}
+TEST_CASE("Malformed classfiles") {
+  // TODO
+}

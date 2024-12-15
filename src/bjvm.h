@@ -232,8 +232,14 @@ typedef struct {
   int len;
 } bjvm_utf8;
 
+typedef struct bjvm_classdesc bjvm_classdesc;
+typedef struct bjvm_obj_header bjvm_obj_header;
+
 typedef struct {
+  bjvm_classdesc *classdesc;
   bjvm_utf8 *name;
+
+  bjvm_obj_header *resolution_error;
 } bjvm_cp_class_info;
 
 typedef struct bjvm_cp_name_and_type {
@@ -323,10 +329,10 @@ typedef enum {
   BJVM_CP_KIND_METHOD_HANDLE = 1 << 11,
   BJVM_CP_KIND_METHOD_TYPE = 1 << 12,
   BJVM_CP_KIND_INVOKE_DYNAMIC = 1 << 13,
-} bjvm_cp_entry_kind;
+} bjvm_cp_kind;
 
 typedef struct bjvm_cp_entry {
-  bjvm_cp_entry_kind kind;
+  bjvm_cp_kind kind;
   // Index of this entry within the constant pool
   int my_index;
 
@@ -523,8 +529,17 @@ typedef enum {
 
 typedef struct bjvm_array_classdesc bjvm_array_classdesc;
 
-typedef struct {
+typedef enum {
+  BJVM_CD_STATE_LINKAGE_ERROR = 0,
+  BJVM_CD_STATE_LOADED = 1,
+  BJVM_CD_STATE_LINKED = 2,
+  BJVM_CD_STATE_INITIALIZED = 3,
+} bjvm_classdesc_state;
+
+typedef struct bjvm_classdesc {
   bjvm_classdesc_kind kind;
+  bjvm_classdesc_state state;
+
   bjvm_constant_pool *pool;
 
   bjvm_access_flags access_flags;
@@ -574,7 +589,7 @@ typedef struct bjvm_ordinary_class {
 } bjvm_ordinary_classdesc;
 
 // Appears at the top of every object -- corresponds to HotSpot's oopDesc
-typedef struct {
+typedef struct bjvm_obj_header{
   volatile bjvm_mark_word_t mark_word;
   bjvm_classdesc *descriptor;
 } bjvm_obj_header;
@@ -657,6 +672,7 @@ void bjvm_free_hash_table(bjvm_string_hash_table tbl);
 
 typedef struct bjvm_vm {
   void *classpath_manager;
+
   bjvm_string_hash_table classes;
 } bjvm_vm;
 
@@ -814,11 +830,12 @@ char *parse_field_descriptor(const wchar_t **chars, size_t len,
                              bjvm_field_descriptor *result);
 char *parse_method_descriptor(const bjvm_utf8 *descriptor,
                               bjvm_method_descriptor *result);
-bool utf8_equals(bjvm_utf8 *entry, const char *str);
+bool utf8_equals(const bjvm_utf8 *entry, const char *str);
 char *lossy_utf8_entry_to_chars(const bjvm_utf8 *utf8);
 bjvm_utf8 bjvm_make_utf8(const wchar_t *c_literal);
-void free_utf8_entry(bjvm_utf8 entry);
+void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
+bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name);
 
 #ifdef __cplusplus
 }
