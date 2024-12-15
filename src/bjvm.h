@@ -674,10 +674,18 @@ typedef struct bjvm_vm {
   void *classpath_manager;
 
   bjvm_string_hash_table classes;
+
+  int (*load_classfile)(const char* filename, void* param, uint8_t** bytes, size_t* len);
+  void* load_classfile_param;
 } bjvm_vm;
 
 typedef struct {
   bool unused;
+
+  // Callback to load a classfile from the classpath. Returns 0 on success, nonzero on failure. Pointer passed to
+  // bytes will be free()-d by the VM.
+  int (*load_classfile)(const char* filename, void* param, uint8_t** bytes, size_t* len);
+  void* load_classfile_param;
 } bjvm_vm_options;
 
 /**
@@ -756,10 +764,9 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options);
 void bjvm_free_thread(bjvm_thread *thread);
 
 /**
- * Add the given classfile as accessible to the VM (but don't necessarily load
- * it yet).
+ * Directly add the given classfile as accessible to the VM, bypassing the callback to load_classfile.
  */
-int bjvm_vm_register_classfile(bjvm_vm *vm, const wchar_t *filename,
+int bjvm_vm_preregister_classfile(bjvm_vm *vm, const wchar_t *filename,
                                const uint8_t *bytes, size_t len);
 
 /**

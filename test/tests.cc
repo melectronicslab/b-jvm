@@ -216,7 +216,7 @@ TEST_CASE("Test classfile parsing") {
   };
 }
 
-int register_classes(bjvm_vm *vm) {
+int preregister_all_classes(bjvm_vm *vm) {
   auto files = ListDirectory("jre8", true);
   int file_count = 0;
   for (auto file : files) {
@@ -227,7 +227,7 @@ int register_classes(bjvm_vm *vm) {
     wchar_t filename[1000] = {};
     file = file.substr(5); // remove "jre8/"
     mbstowcs(filename, file.c_str(), file.size());
-    bjvm_vm_register_classfile(vm, filename, read.data(), read.size());
+    bjvm_vm_preregister_classfile(vm, filename, read.data(), read.size());
     file_count++;
   }
   return file_count;
@@ -237,7 +237,7 @@ TEST_CASE("Class file management") {
   bjvm_vm_options options = {};
   bjvm_vm *vm = bjvm_create_vm(options);
 
-  int file_count = register_classes(vm);
+  int file_count = preregister_all_classes(vm);
   size_t len;
   const uint8_t *bytes;
   REQUIRE(bjvm_vm_read_classfile(vm, L"java/lang/Object.class", &bytes, &len) ==
@@ -349,12 +349,27 @@ TEST_CASE("parse_field_descriptor valid cases") {
   free_field_descriptor(java_lang_String);
 }
 
-bjvm_vm *create_vm(bool register_classes_) {
+int load_classfile(const char* filename, void* param, uint8_t** bytes, size_t* len) {
+  std::string file = "jre8/";
+  (void)param;
+  file += std::string(filename);
+
+  auto file_data = ReadFile(file);
+  auto* data = (uint8_t*)malloc(file_data.size());
+  memcpy(data, file_data.data(), file_data.size());
+  *bytes = data;
+  *len = file_data.size();
+
+  return 0;
+}
+
+bjvm_vm *create_vm(bool preregister) {
   bjvm_vm_options options = {};
+  options.load_classfile = load_classfile;
   bjvm_vm *vm = bjvm_create_vm(options);
 
-  if (register_classes_)
-    register_classes(vm);
+  if (preregister)
+    preregister_all_classes(vm);
 
   return vm;
 }
@@ -365,7 +380,7 @@ TEST_CASE("VM initialization") {
 }
 
 TEST_CASE("Thread initialization") {
-  bjvm_vm *vm = create_vm(true);
+  bjvm_vm *vm = create_vm(false);
 
   bjvm_thread_options options;
   bjvm_fill_default_thread_options(&options);

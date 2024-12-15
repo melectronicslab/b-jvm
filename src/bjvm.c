@@ -634,7 +634,7 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader,
     uint16_t length = reader_next_u16(reader, "utf8 length");
     cf_byteslice bytes_reader = reader_get_slice(reader, length, "utf8 data");
 
-    bjvm_utf8 utf8 = {};
+    bjvm_utf8 utf8 = {0};
 
     if (!skip_linking) {
       utf8 = parse_modified_utf8(bytes_reader.bytes, length);
@@ -2595,7 +2595,7 @@ char *analyze_method_code_segment(bjvm_cp_method *method,
     }                                                                          \
   }
 
-  bjvm_analy_stack_state stack_before = {};
+  bjvm_analy_stack_state stack_before = {0};
 
   char *error_str;
   bool error_str_needs_free = false;
@@ -3174,9 +3174,7 @@ char *analyze_method_code_segment(bjvm_cp_method *method,
  */
 bjvm_cp_method parse_method(cf_byteslice *reader,
                             bjvm_classfile_parse_ctx *ctx) {
-  bjvm_cp_method method;
-  memset(&method, 0, sizeof(bjvm_cp_method));
-
+  bjvm_cp_method method = {0};
   method.access_flags = reader_next_u16(reader, "method access flags");
   method.name = checked_get_utf8(
       ctx->cp, reader_next_u16(reader, "method name"), "method name");
@@ -3950,7 +3948,9 @@ void free_classdesc(void* classdesc_) {
 
 bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   bjvm_vm *vm = malloc(sizeof(bjvm_vm));
-  (void)options;
+
+  vm->load_classfile = options.load_classfile;
+  vm->load_classfile_param = options.load_classfile_param;
 
   vm->classpath_manager = calloc(1, sizeof(bjvm_classpath_manager));
   vm->classes = bjvm_make_hash_table(free_classdesc, 0.75, 16);
@@ -4010,7 +4010,7 @@ void bjvm_free_thread(bjvm_thread *thread) {
   free(thread);
 }
 
-int bjvm_vm_register_classfile(bjvm_vm *vm, const wchar_t *filename,
+int bjvm_vm_preregister_classfile(bjvm_vm *vm, const wchar_t *filename,
                                const uint8_t *bytes, size_t len) {
   return add_classfile_bytes(get_classpath_manager(vm), filename,
                              wcslen(filename), bytes, len);
@@ -4027,6 +4027,28 @@ int bjvm_vm_read_classfile(bjvm_vm *vm, const wchar_t *filename,
       *len = node->len;
     return 0;
   }
+
+  // Otherwise, try to read it from the vm->load_classfile implementation
+  if (vm->load_classfile) {
+    uint8_t* loaded_bytes;
+
+    size_t mbs_len = wcslen(filename) * 4 + 1;
+    char* as_mbs = malloc(mbs_len);
+    wcstombs(as_mbs, filename, mbs_len);
+
+    int status = vm->load_classfile(as_mbs, vm->load_classfile_param, &loaded_bytes, len);
+    free(as_mbs);
+
+    if (status) {
+      free(loaded_bytes);
+      return -1;
+    }
+
+    bjvm_vm_preregister_classfile(vm, filename, loaded_bytes, *len);
+    free(loaded_bytes);
+    return bjvm_vm_read_classfile(vm, filename, bytes, len);
+  }
+
   return -1;
 }
 
@@ -4208,11 +4230,10 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
 
     uint8_t *bytes;
     size_t len;
-    int err =
-        bjvm_vm_read_classfile(vm, cf_name, (const uint8_t **)&bytes, &len);
+    int read_status = bjvm_vm_read_classfile(vm, cf_name, (const uint8_t **)&bytes, &len);
     free(cf_name);
-    if (err) {
-      printf("File %S not found\n", name.chars);
+    if (read_status) {
+      printf("File %S not found\n", cf_name);
       UNREACHABLE();
       // TODO raise ClassNotFoundException (probably need to share across
       // invocations... ?)
