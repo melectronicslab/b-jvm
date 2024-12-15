@@ -512,6 +512,8 @@ typedef struct {
   bjvm_attribute *attributes;
   // Offset of the field in the static or instance data area
   int byte_offset;
+
+  bjvm_field_descriptor parsed_descriptor;
 } bjvm_cp_field;
 
 typedef enum {
@@ -564,6 +566,8 @@ typedef struct bjvm_classdesc {
   bool is_primordial_object;
   uint16_t minor_version;
   uint16_t major_version;
+
+  uint8_t* static_fields;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -674,6 +678,8 @@ typedef struct bjvm_vm {
   void *classpath_manager;
 
   bjvm_string_hash_table classes;
+  // Classes currently under creation -- used to detect circularity
+  bjvm_string_hash_table inchoate_classes;
 
   int (*load_classfile)(const char* filename, void* param, uint8_t** bytes, size_t* len);
   void* load_classfile_param;
@@ -843,6 +849,10 @@ bjvm_utf8 bjvm_make_utf8(const wchar_t *c_literal);
 void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
 bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name);
+int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc);
+bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor);
+bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
+void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args);
 
 #ifdef __cplusplus
 }

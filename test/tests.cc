@@ -350,22 +350,34 @@ TEST_CASE("parse_field_descriptor valid cases") {
 }
 
 int load_classfile(const char* filename, void* param, uint8_t** bytes, size_t* len) {
-  std::string file = "jre8/";
-  (void)param;
-  file += std::string(filename);
+  const char** classpath = (const char**) param;
+  std::vector<std::string> paths { "jre8/" };
+  for (int i = 0; classpath && classpath[i]; ++i) {
+    paths.emplace_back(classpath[i]);
+  }
+  for (const auto& path : paths) {
+    std::string file = path + std::string(filename);
+    try {
+      auto file_data = ReadFile(file);
+      if (file_data.size() > 0) {
+        auto* data = (uint8_t*)malloc(file_data.size());
+        memcpy(data, file_data.data(), file_data.size());
+        *bytes = data;
+        *len = file_data.size();
+        return 0;
+      }
+    } catch (const std::runtime_error& e) {
+    }
+  }
 
-  auto file_data = ReadFile(file);
-  auto* data = (uint8_t*)malloc(file_data.size());
-  memcpy(data, file_data.data(), file_data.size());
-  *bytes = data;
-  *len = file_data.size();
-
-  return 0;
+  return -1;
 }
 
-bjvm_vm *create_vm(bool preregister) {
+bjvm_vm *create_vm(bool preregister, const char** classpath = nullptr) {
   bjvm_vm_options options = {};
+
   options.load_classfile = load_classfile;
+  options.load_classfile_param = classpath;
   bjvm_vm *vm = bjvm_create_vm(options);
 
   if (preregister)
@@ -379,15 +391,24 @@ TEST_CASE("VM initialization") {
   bjvm_free_vm(vm);
 }
 
-TEST_CASE("Thread initialization") {
-  bjvm_vm *vm = create_vm(false);
+TEST_CASE("Playground") {
+  const char* cp[2] = { "test_files/playground/", nullptr };
+  bjvm_vm *vm = create_vm(false, cp);
 
   bjvm_thread_options options;
   bjvm_fill_default_thread_options(&options);
   bjvm_thread *thr = bjvm_create_thread(vm, options);
 
-  bjvm_utf8 java_lang_Object = bjvm_make_utf8(L"java/lang/Object");
-  bootstrap_class_create(thr, java_lang_Object);
+  bjvm_utf8 java_lang_Object = bjvm_make_utf8(L"Main");
+  bjvm_classdesc* desc = bootstrap_class_create(thr, java_lang_Object);
+  int status = bootstrap_class_link(thr, desc);
+  REQUIRE(status == 0);
+
+  bjvm_cp_method *method = bjvm_get_method(desc, "main", "([Ljava/lang/String;)V");
+  bjvm_stack_value args[1] = { 0 };
+
+  bjvm_thread_start(thr, method, args);
+
   free_utf8(java_lang_Object);
 
   bjvm_free_thread(thr);
@@ -437,3 +458,21 @@ TEST_CASE("SignaturePolymorphic methods found") {
 TEST_CASE("Malformed classfiles") {
   // TODO
 }
+
+#if 0
+TEST_CASE("Class circularity error") {
+  const char* cp[2] = { "test_files/circularity/", nullptr };
+  bjvm_vm *vm = create_vm(false, cp);
+
+  bjvm_thread_options options;
+  bjvm_fill_default_thread_options(&options);
+  bjvm_thread *thr = bjvm_create_thread(vm, options);
+
+  bjvm_utf8 Main = bjvm_make_utf8(L"Main");
+  bootstrap_class_create(thr, Main);
+  free_utf8(Main);
+
+  bjvm_free_thread(thr);
+  bjvm_free_vm(vm);
+}
+#endif

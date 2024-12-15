@@ -101,6 +101,15 @@ bjvm_utf8 init_utf8_entry(int len) {
   return (bjvm_utf8){.chars = calloc(len + 1, sizeof(wchar_t)), .len = len};
 }
 
+// Create an entry from a C string
+bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal) {
+  int len = strlen(c_literal);
+  bjvm_utf8 entry = init_utf8_entry(len);
+  for (int i = 0; i < len; ++i)
+    entry.chars[i] = c_literal[i];
+  return entry;
+}
+
 void free_utf8(bjvm_utf8 entry) { free(entry.chars); }
 
 void free_method_descriptor(void *descriptor_);
@@ -190,6 +199,7 @@ void bjvm_free_classfile(bjvm_classdesc cf) {
     free_method(&cf.methods[i]);
   for (int i = 0; i < cf.fields_count; ++i)
     free_field(&cf.fields[i]);
+  free(cf.static_fields);
   free(cf.fields);
   free(cf.methods);
   free(cf.attributes);
@@ -213,6 +223,7 @@ void free_field(bjvm_cp_field *field) {
   for (int i = 0; i < field->attributes_count; ++i) {
     bjvm_free_attribute(&field->attributes[i]);
   }
+  free_field_descriptor(field->parsed_descriptor);
   free(field->attributes);
 }
 
@@ -2510,8 +2521,7 @@ bjvm_type_kind field_to_representable_kind(const bjvm_field_descriptor *field) {
  * place to make longs/doubles one stack value wide, writing the analysis into analysis,
  * and returning an error string upon some sort of error.
  */
-char *analyze_method_code_segment(bjvm_cp_method *method,
-                                  bjvm_classfile_parse_ctx *ctx) {
+char *analyze_method_code_segment(bjvm_cp_method *method) {
   bjvm_attribute_code *code = method->code;
   if (!code)
     return NULL; // method has no code
@@ -2548,7 +2558,6 @@ char *analyze_method_code_segment(bjvm_cp_method *method,
 
   bjvm_code_analysis *analy = method->code_analysis =
       malloc(sizeof(bjvm_code_analysis));
-  free_on_format_error(ctx, analy);
 
   analy->insn_count = code->insn_count;
   analy->insn_index_to_references = insn_index_to_references;
@@ -3223,6 +3232,10 @@ bjvm_cp_field read_field(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx) {
     parse_attribute(reader, ctx, field.attributes + i);
   }
 
+  char* error = parse_complete_field_descriptor(field.descriptor, &field.parsed_descriptor, ctx);
+  if (error)
+    format_error_dynamic(error);
+
   return field;
 }
 
@@ -3866,7 +3879,8 @@ void bjvm_free_hash_table(bjvm_string_hash_table tbl) {
     bjvm_hash_table_entry *ent = it.current;
     bool needs_free = it.current != it.current_base;
     free(key);
-    tbl.free_fn(value);
+    if (tbl.free_fn)
+      tbl.free_fn(value);
     bjvm_hash_table_iterator_next(&it);
     if (needs_free)
       free(ent);
@@ -3954,6 +3968,7 @@ bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
 
   vm->classpath_manager = calloc(1, sizeof(bjvm_classpath_manager));
   vm->classes = bjvm_make_hash_table(free_classdesc, 0.75, 16);
+  vm->inchoate_classes = bjvm_make_hash_table(NULL, 0.75, 16);
 
   return vm;
 }
@@ -3981,6 +3996,7 @@ void free_classpath_manager(bjvm_classpath_manager *manager) {
 void bjvm_free_vm(bjvm_vm *vm) {
   free_classpath_manager(vm->classpath_manager);
   bjvm_free_hash_table(vm->classes);
+  bjvm_free_hash_table(vm->inchoate_classes);
   free(vm);
 }
 
@@ -4030,7 +4046,7 @@ int bjvm_vm_read_classfile(bjvm_vm *vm, const wchar_t *filename,
 
   // Otherwise, try to read it from the vm->load_classfile implementation
   if (vm->load_classfile) {
-    uint8_t* loaded_bytes;
+    uint8_t* loaded_bytes = NULL;
 
     size_t mbs_len = wcslen(filename) * 4 + 1;
     char* as_mbs = malloc(mbs_len);
@@ -4092,7 +4108,6 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name);
 void fill_array_classdesc(bjvm_thread* thread, bjvm_classdesc* base) {
   base->access_flags = BJVM_ACCESS_PUBLIC | BJVM_ACCESS_FINAL;
 
-  base->state = BJVM_CD_STATE_LINKED;
   bjvm_utf8 *java_lang_Object = malloc(sizeof(bjvm_utf8));
   *java_lang_Object = bjvm_make_utf8(L"java/lang/Object");
   bjvm_cp_class_info* info = calloc(1, sizeof(bjvm_cp_class_info));
@@ -4118,6 +4133,8 @@ bjvm_primitive_array_classdesc *primitive_arr_classdesc(
 ) {
   bjvm_primitive_array_classdesc *result = calloc(1, sizeof(bjvm_primitive_array_classdesc));
   bjvm_classdesc* base = &result->base;
+
+  base->state = BJVM_CD_STATE_INITIALIZED;
 
   base->kind = classdesc_kind;
   fill_array_classdesc(thread, base);
@@ -4147,6 +4164,7 @@ void free_primitive_arr_classdesc(bjvm_primitive_array_classdesc *desc) {
 bjvm_array_classdesc * ordinary_arr_classdesc(bjvm_thread * thread, bjvm_classdesc *base, int dimensions) {
   bjvm_array_classdesc *result = calloc(1, sizeof(bjvm_array_classdesc));
   result->base.kind = BJVM_CLASSDESC_KIND_ORDINARY_ARRAY;
+  result->base.state = base->state;
   fill_array_classdesc(thread, &result->base);
 
   result->dimensions = dimensions;
@@ -4159,11 +4177,13 @@ bjvm_array_classdesc * ordinary_arr_classdesc(bjvm_thread * thread, bjvm_classde
   }
 }
 
+int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info);
+
 // name = "java/lang/Object"
 bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
   bjvm_vm *vm = thread->vm;
 
-  printf("Creating class %S\n", name.chars);
+  printf("Loading class %S\n", name.chars);
 
   int dimensions = 0;
   const wchar_t *chars = name.chars;
@@ -4221,6 +4241,9 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
       bjvm_hash_table_lookup(&vm->classes, chars, remaining_len);
 
   if (!base_class) {
+    // Add entry to inchoate_classes
+    (void)bjvm_hash_table_insert(&vm->inchoate_classes, name.chars, name.len, (void*) 1);
+
     // java/lang/Object.class
     const wchar_t *cf_ending = L".class";
     wchar_t *cf_name = malloc((remaining_len + wcslen(cf_ending) + 1) * sizeof(wchar_t));
@@ -4231,15 +4254,16 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
     uint8_t *bytes;
     size_t len;
     int read_status = bjvm_vm_read_classfile(vm, cf_name, (const uint8_t **)&bytes, &len);
-    free(cf_name);
     if (read_status) {
       printf("File %S not found\n", cf_name);
+      free(cf_name);
       UNREACHABLE();
       // TODO raise ClassNotFoundException (probably need to share across
       // invocations... ?)
       return NULL;
     }
 
+    free(cf_name);
     base_class = calloc(1, sizeof(bjvm_classdesc));
     char *error = bjvm_parse_classfile(bytes, len, base_class);
     if (error) {
@@ -4248,6 +4272,42 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
       // TODO raise VerifyError
       UNREACHABLE();
     }
+
+    // 3. If C has a direct superclass, the symbolic reference from C to its direct superclass is resolved using the
+    // algorithm of §5.4.3.1.
+    bjvm_cp_class_info* super = base_class->super_class;
+    if (super) {
+      // Check whether the superclass is currently being loaded -> circularity error
+      if (bjvm_hash_table_lookup(&vm->inchoate_classes, super->name->chars, super->name->len)) {
+        // TODO raise ClassCircularityError
+        UNREACHABLE();
+      }
+
+      int status = bjvm_resolve_class(thread, base_class->super_class);
+      if (status) {
+        // TODO raise NoClassDefFoundError
+        UNREACHABLE();
+      }
+    }
+
+    // 4. If C has any direct superinterfaces, the symbolic references from C to its direct superinterfaces are resolved
+    // using the algorithm of §5.4.3.1.
+    for (int i = 0; i < base_class->interfaces_count; ++i) {
+      bjvm_cp_class_info* super = base_class->interfaces[i];
+      if (bjvm_hash_table_lookup(&vm->inchoate_classes, super->name->chars, super->name->len)) {
+        // TODO raise ClassCircularityError
+        UNREACHABLE();
+      }
+
+      int status = bjvm_resolve_class(thread, base_class->interfaces[i]);
+      if (status) {
+        // TODO raise NoClassDefFoundError
+        UNREACHABLE();
+      }
+    }
+
+    // Remove from inchoate_classes
+    (void)bjvm_hash_table_delete(&vm->inchoate_classes, name.chars, name.len);
   }
 
   // Derive nth dimension
@@ -4262,6 +4322,119 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
   (void)bjvm_hash_table_insert(&vm->classes, chars, (int)remaining_len, result);
 
   return result;
+}
+
+int bootstrap_array_class_link(bjvm_thread *thread, bjvm_array_classdesc *classdesc) {
+  int status = bootstrap_class_link(thread, classdesc->base_component);
+  if (status) {
+    // TODO mark all arrays of this class as fucked up
+    UNREACHABLE();
+  }
+  classdesc->base.state = classdesc->base_component->state;
+  return status;
+}
+
+int allocate_field(int* current, bjvm_type_kind kind) {
+  int result;
+  switch (kind) {
+    case BJVM_TYPE_KIND_BOOLEAN:
+    case BJVM_TYPE_KIND_BYTE: {
+      result = *current;
+      (*current)++;
+      break;
+    }
+    case BJVM_TYPE_KIND_CHAR:
+    case BJVM_TYPE_KIND_SHORT: {
+      *current = (*current + 1) & ~1;
+      result = *current;
+      *current += 2;
+      break;
+    }
+    case BJVM_TYPE_KIND_FLOAT:
+    case BJVM_TYPE_KIND_INT:
+#ifdef EMSCRIPTEN
+    case BJVM_TYPE_KIND_REFERENCE:
+#endif
+      *current = (*current + 3) & ~3;
+      result = *current;
+      *current += 4;
+      break;
+    case BJVM_TYPE_KIND_DOUBLE:
+    case BJVM_TYPE_KIND_LONG:
+#ifndef EMSCRIPTEN
+    case BJVM_TYPE_KIND_REFERENCE:
+#endif
+      *current = (*current + 7) & ~7;
+      result = *current;
+      *current += 8;
+      break;
+    case BJVM_TYPE_KIND_VOID:
+    case BJVM_TYPE_KIND_RETURN_ADDRESS:
+      UNREACHABLE();
+  }
+  return result;
+}
+
+int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc) {
+  DCHECK(classdesc);
+  printf("Linking class %S\n", classdesc->this_class->name->chars);
+  if (classdesc->state != BJVM_CD_STATE_LOADED)  // already linked
+    return 0;
+
+  if (classdesc->kind != BJVM_CLASSDESC_KIND_ORDINARY) {
+    DCHECK(classdesc->kind == BJVM_CLASSDESC_KIND_ORDINARY_ARRAY);
+    return bootstrap_array_class_link(thread, (bjvm_array_classdesc*) classdesc);
+  }
+
+  // Link superclasses
+  if (classdesc->super_class) {
+    int status = bootstrap_class_link(thread, classdesc->super_class->classdesc);
+    if (status) {
+      // TODO raise VerifyError
+      classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
+      return status;
+    }
+  }
+
+  // Link superinterfaces
+  for (int i = 0; i < classdesc->interfaces_count; ++i) {
+    int status = bootstrap_class_link(thread, classdesc->interfaces[i]->classdesc);
+    if (status) {
+      // TODO raise VerifyError
+      classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
+      return status;
+    }
+  }
+
+  classdesc->state = BJVM_CD_STATE_LINKED;
+
+  // Analyze/rewrite all methods
+  for (int method_i = 0; method_i < classdesc->methods_count; ++method_i) {
+    bjvm_cp_method *method = classdesc->methods + method_i;
+    if (method->code) {
+      char* error = analyze_method_code_segment(method);
+      if (error) {
+        // TODO raise VerifyError
+        classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
+        printf("Error analyzing method %S: %s\n", method->name->chars, error);
+        UNREACHABLE();
+      }
+    }
+  }
+
+  // Assign memory locations to all static/non-static fields
+  int static_offset = 0, nonstatic_offset = 0;
+  for (int field_i = 0; field_i < classdesc->fields_count; ++field_i) {
+    bjvm_cp_field *field = classdesc->fields + field_i;
+    bjvm_type_kind kind = field->parsed_descriptor.kind;
+    field->byte_offset = field->access_flags & BJVM_ACCESS_STATIC
+                        ? allocate_field(&static_offset, kind)
+                        : allocate_field(&nonstatic_offset, kind);
+  }
+
+  // Create static field memory, initializing all to 0
+  classdesc->static_fields = calloc(static_offset, 1);
+  return 0;
 }
 
 bjvm_stack_value checked_pop(bjvm_stack_frame *frame) {
@@ -4299,8 +4472,7 @@ bool method_candidate_matches(const bjvm_cp_method *candidate,
          utf8_equals_utf8(candidate->descriptor, method_descriptor));
 }
 
-bjvm_cp_method *bjvm_method_lookup(bjvm_thread *thread,
-                                   bjvm_classdesc *descriptor,
+bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor,
                                    bjvm_utf8 *name,
                                    bjvm_utf8 *method_descriptor,
                                    bool search_superinterfaces) {
@@ -4317,7 +4489,20 @@ bjvm_cp_method *bjvm_method_lookup(bjvm_thread *thread,
   }
   if (!search_superinterfaces) return NULL;
 
+  for (int i = 0; i < descriptor->interfaces_count; ++i) {
+    bjvm_cp_method *result = bjvm_method_lookup(descriptor->interfaces[i]->classdesc, name, method_descriptor, true);
+    if (result) return result;
+  }
+
   return NULL;
+}
+
+bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor) {
+  bjvm_utf8 name_wide = bjvm_make_utf8_cstr(name), descriptor_wide = bjvm_make_utf8_cstr(descriptor);
+  bjvm_cp_method* result = bjvm_method_lookup(classdesc, &name_wide, &descriptor_wide, true);
+  free_utf8(name_wide);
+  free_utf8(descriptor_wide);
+  return result;
 }
 
 int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info) {
@@ -4334,6 +4519,9 @@ int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info) {
     info->resolution_error = thread->current_exception;
     return -1;
   }
+
+  // TODO check that the class is accessible
+
   return 0;
 }
 
@@ -4730,7 +4918,7 @@ void bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
     bjvm_obj_header* resolution_error = bjvm_resolve_method(thread, info);
 
     bjvm_cp_method *method =
-        bjvm_method_lookup(thread, obj->descriptor, info->name_and_type->name,
+        bjvm_method_lookup(obj->descriptor, info->name_and_type->name,
                            info->name_and_type->descriptor, false);
     if (!method) {
 
