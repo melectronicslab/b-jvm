@@ -401,13 +401,13 @@ TEST_CASE("Playground") {
 
   bjvm_utf8 java_lang_Object = bjvm_make_utf8(L"Main");
   bjvm_classdesc* desc = bootstrap_class_create(thr, java_lang_Object);
-  int status = bootstrap_class_link(thr, desc);
+  int status = bjvm_initialize_class(thr, desc);
   REQUIRE(status == 0);
 
-  bjvm_cp_method *method = bjvm_get_method(desc, "main", "([Ljava/lang/String;)V");
-  bjvm_stack_value args[1] = { 0 };
+  bjvm_cp_method *method = bjvm_get_method(desc, "main", "([Ljava/lang/String;)V", false, false);
+  bjvm_stack_value args[1] = { { .obj = nullptr } };
 
-  bjvm_thread_start(thr, method, args);
+  bjvm_thread_start(thr, method, args, NULL);
 
   free_utf8(java_lang_Object);
 

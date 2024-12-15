@@ -258,9 +258,10 @@ bool bjvm_is_field_wide(bjvm_field_descriptor desc);
 
 typedef struct {
   bjvm_cp_class_info *class_info;
-  bjvm_cp_name_and_type *name_and_type;
+  bjvm_cp_name_and_type *nat;
 
   bjvm_field_descriptor *parsed_descriptor;
+  // bjvm_cp_field* field;
 } bjvm_cp_field_info;
 
 typedef struct bjvm_method_descriptor bjvm_method_descriptor;
@@ -487,6 +488,23 @@ typedef struct {
   int insn_count;
 } bjvm_code_analysis;
 
+typedef struct bjvm_thread bjvm_thread;
+
+/**
+ * For simplicity, we always store local variables/stack variables as 64 bits,
+ * and only use part of them in the case of integer or float (or, in 32-bit
+ * mode, reference) values.
+ */
+typedef union {
+  int64_t l;
+  int i; // used for all integer types except long, plus boolean
+  float f;
+  double d;
+  bjvm_obj_header *obj; // reference type
+} bjvm_stack_value;
+
+typedef int (*bjvm_native_callback)(bjvm_thread* vm, bjvm_obj_header* obj, bjvm_stack_value* args, int argc, bjvm_stack_value* ret);
+
 typedef struct bjvm_cp_method {
   bjvm_access_flags access_flags;
 
@@ -501,6 +519,9 @@ typedef struct bjvm_cp_method {
   bjvm_attribute_code *code;
 
   bool is_signature_polymorphic;
+  bjvm_classdesc *my_class;
+
+  bjvm_native_callback native_handle;
 } bjvm_cp_method;
 
 typedef struct {
@@ -560,7 +581,7 @@ typedef struct bjvm_classdesc {
   int attributes_count;
   bjvm_attribute *attributes;
 
-  bjvm_array_classdesc *array_type;
+  bjvm_classdesc *array_type;
 
   // Whether this class corresponds to the primordial object class
   bool is_primordial_object;
@@ -568,6 +589,7 @@ typedef struct bjvm_classdesc {
   uint16_t major_version;
 
   uint8_t* static_fields;
+  int data_bytes;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -681,6 +703,9 @@ typedef struct bjvm_vm {
   // Classes currently under creation -- used to detect circularity
   bjvm_string_hash_table inchoate_classes;
 
+  // Native methods in javah form
+  bjvm_string_hash_table natives;
+
   int (*load_classfile)(const char* filename, void* param, uint8_t** bytes, size_t* len);
   void* load_classfile_param;
 } bjvm_vm;
@@ -694,26 +719,15 @@ typedef struct {
   void* load_classfile_param;
 } bjvm_vm_options;
 
-/**
- * For simplicity, we always store local variables/stack variables as 64 bits,
- * and only use part of them in the case of integer or float (or, in 32-bit
- * mode, reference) values.
- */
-typedef union {
-  int64_t l;
-  int i; // used for all integer types except long, plus boolean
-  float f;
-  double d;
-  bjvm_obj_header *obj; // reference type
-} bjvm_stack_value;
-
 typedef struct {
   int program_counter; // in instruction indices
   int max_stack;
   int max_locals;
   int stack_depth;
 
-  // First max_stack bjvm_stack_values, then max_locals more
+  bjvm_cp_method* method;
+
+  // First max_locals bjvm_stack_values, then max_stack more
   bjvm_stack_value values[];
 } bjvm_stack_frame;
 
@@ -748,8 +762,7 @@ bjvm_checked_to_primitive_array_classdesc(bjvm_classdesc *classdesc);
  * Create an uninitialized frame with space sufficient for the given method.
  * Raises a StackOverflowError if the frames are exhausted.
  */
-bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread,
-                                  const bjvm_cp_method *method);
+bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method);
 
 /**
  * Pop the topmost frame from the stack, optionally passing a pointer as a debug
@@ -804,7 +817,6 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result);
  */
 void bjvm_free_classfile(bjvm_classdesc cf);
 
-int bjvm_initialize_vm(bjvm_vm *vm);
 void bjvm_free_vm(bjvm_vm *vm);
 
 /**
@@ -849,10 +861,12 @@ bjvm_utf8 bjvm_make_utf8(const wchar_t *c_literal);
 void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
 bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name);
-int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc);
-bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor);
+int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
+bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor, bool superclasses, bool superinterfaces);
 bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
-void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args);
+void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result);
+int bjvm_initialize_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
+void bjvm_register_native(bjvm_vm *vm, const char *class_name, const char *method_name, const char *method_descriptor, bjvm_native_callback callback);
 
 #ifdef __cplusplus
 }

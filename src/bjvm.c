@@ -590,7 +590,7 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader,
     if (kind == CONSTANT_Fieldref) {
       return (bjvm_cp_entry){.kind = entry_kind,
                              .fieldref_info = {.class_info = class_info,
-                                               .name_and_type = name_and_type}};
+                                               .nat = name_and_type}};
     }
     return (bjvm_cp_entry){.kind = entry_kind,
                            .methodref = {.class_info = class_info,
@@ -710,7 +710,7 @@ void finish_constant_pool_entry(bjvm_cp_entry *entry,
   switch (entry->kind) {
   case BJVM_CP_KIND_FIELD_REF: {
     bjvm_field_descriptor *parsed_descriptor = NULL;
-    bjvm_cp_name_and_type *name_and_type = entry->fieldref_info.name_and_type;
+    bjvm_cp_name_and_type *name_and_type = entry->fieldref_info.nat;
 
     entry->fieldref_info.parsed_descriptor = parsed_descriptor =
         calloc(1, sizeof(bjvm_field_descriptor));
@@ -2090,7 +2090,7 @@ char *constant_pool_entry_to_string(const bjvm_cp_entry *ent) {
     char *class_name =
         class_info_entry_to_string(ent->fieldref_info.class_info);
     char *field_name =
-        name_and_type_entry_to_string(ent->fieldref_info.name_and_type);
+        name_and_type_entry_to_string(ent->fieldref_info.nat);
 
     snprintf(result, sizeof(result), "FieldRef: %s.%s", class_name, field_name);
     break;
@@ -2100,7 +2100,7 @@ char *constant_pool_entry_to_string(const bjvm_cp_entry *ent) {
     char *class_name =
         class_info_entry_to_string(ent->fieldref_info.class_info);
     char *field_name =
-        name_and_type_entry_to_string(ent->fieldref_info.name_and_type);
+        name_and_type_entry_to_string(ent->fieldref_info.nat);
 
     snprintf(result, sizeof(result), "%s: %s; %s",
              ent->kind == BJVM_CP_KIND_METHOD_REF ? "MethodRef"
@@ -3564,6 +3564,7 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result) {
       utf8_equals(cf->this_class->name, "java/lang/invoke/MethodHandle");
   for (int i = 0; i < cf->methods_count; ++i) {
     cf->methods[i] = parse_method(&reader, &ctx);
+    cf->methods[i].my_class = result;
 
     // Mark signature polymorphic functions
     if (in_MethodHandle && (utf8_equals(cf->methods[i].name, "invoke") ||
@@ -3889,14 +3890,11 @@ void bjvm_free_hash_table(bjvm_string_hash_table tbl) {
   tbl.entries_cap = tbl.entries_count = 0; // good form
 }
 
-bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread,
-                                  const bjvm_cp_method *method) {
+bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method) {
   DCHECK(method != NULL);
 
   const bjvm_attribute_code *code = method->code;
-  DCHECK(
-      code !=
-      NULL); // TODO: what to do with native methods which call back into bjvm?
+  DCHECK(code);
 
   const size_t header_bytes = sizeof(bjvm_stack_frame);
   DCHECK(header_bytes % 8 == 0);
@@ -3924,6 +3922,11 @@ bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread,
   thread->frame_buffer_used += total;
   *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) =
       frame;
+  frame->max_locals = code->max_locals;
+  frame->max_stack = code->max_stack;
+  frame->program_counter = 0;
+  frame->stack_depth = 0;
+  frame->method = method;
 
   return frame;
 }
@@ -3960,6 +3963,60 @@ void free_classdesc(void* classdesc_) {
   }
 }
 
+typedef struct {
+  bjvm_utf8 name;
+  bjvm_utf8 descriptor;
+
+  bjvm_native_callback callback;
+} native_entry;
+
+typedef struct {
+  native_entry* entries;
+  int entries_count;
+  int entries_cap;
+} native_entries;
+
+void free_native_entries(void* entries_) {
+  if (!entries_) return;
+
+  native_entries* entries = entries_;
+  for (int i = 0; i < entries->entries_count; i++) {
+    free_utf8(entries->entries[i].name);
+    free_utf8(entries->entries[i].descriptor);
+  }
+  free(entries);
+}
+
+void bjvm_register_native(bjvm_vm *vm, const char *class_name,
+    const char *method_name, const char *method_descriptor, bjvm_native_callback callback) {
+  bjvm_utf8 class = bjvm_make_utf8_cstr(class_name);
+
+  native_entries* existing = bjvm_hash_table_lookup(&vm->natives, class.chars, class.len);
+  if (!existing) {
+    existing = calloc(1, sizeof(native_entries));
+    (void)bjvm_hash_table_insert(&vm->natives, class.chars, class.len, existing);
+  }
+  free_utf8(class);
+
+  native_entry* ent = VECTOR_PUSH(existing->entries, existing->entries_count, existing->entries_cap);
+  ent->name = bjvm_make_utf8_cstr(method_name);
+  ent->descriptor = bjvm_make_utf8_cstr(method_descriptor);
+  ent->callback = callback;
+}
+
+int bjvm_System_registerNatives(bjvm_thread *thread, bjvm_obj_header* obj, bjvm_stack_value* args, int argc, bjvm_stack_value* ret) {
+  DCHECK(obj == NULL);
+  DCHECK(argc == 0);
+
+  bjvm_utf8 sys = bjvm_make_utf8(L"java/lang/System");
+  bjvm_classdesc* java_lang_System = bootstrap_class_create(thread, sys);
+
+  printf("CALLED registerNatives\n");
+
+  free_utf8(sys);
+  return 0;
+}
+
 bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   bjvm_vm *vm = malloc(sizeof(bjvm_vm));
 
@@ -3969,6 +4026,9 @@ bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   vm->classpath_manager = calloc(1, sizeof(bjvm_classpath_manager));
   vm->classes = bjvm_make_hash_table(free_classdesc, 0.75, 16);
   vm->inchoate_classes = bjvm_make_hash_table(NULL, 0.75, 16);
+  vm->natives = bjvm_make_hash_table(free_native_entries, 0.75, 16);
+
+  bjvm_register_native(vm, "java/lang/System", "registerNatives", "()V", bjvm_System_registerNatives);
 
   return vm;
 }
@@ -4000,12 +4060,6 @@ void bjvm_free_vm(bjvm_vm *vm) {
   free(vm);
 }
 
-int bjvm_initialize_vm(bjvm_vm *vm) {
-  // Read and load java/lang/Object and java/lang/ClassLoader
-  (void)vm;
-  return 0;
-}
-
 void bjvm_fill_default_thread_options(bjvm_thread_options *options) {
   options->stack_space = 1 << 20;
   options->js_jit_enabled = true;
@@ -4017,6 +4071,18 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   thr->frame_buffer =
       calloc(1, thr->frame_buffer_capacity = options.stack_space);
   thr->js_jit_enabled = options.js_jit_enabled;
+
+  // Call System.initializeSystemClass()
+  bjvm_utf8 java_lang_System = bjvm_make_utf8(L"java/lang/System");
+  bjvm_classdesc* desc = bootstrap_class_create(thr, java_lang_System);
+  free_utf8(java_lang_System);
+  bjvm_initialize_class(thr, desc);
+
+  bjvm_cp_method *method = bjvm_get_method(desc, "initializeSystemClass", "()V", false, false);
+  bjvm_stack_value args[1] = { { .obj = nullptr } };
+  bjvm_stack_value ret;
+  bjvm_thread_start(thr, method, args, &ret);
+
   return thr;
 }
 
@@ -4128,7 +4194,7 @@ void fill_array_classdesc(bjvm_thread* thread, bjvm_classdesc* base) {
   fields->descriptor = I;
 }
 
-bjvm_primitive_array_classdesc *primitive_arr_classdesc(
+bjvm_classdesc *primitive_arr_classdesc(
   bjvm_thread *thread, int dimensions, bjvm_classdesc_kind classdesc_kind, bjvm_type_kind prim_kind
 ) {
   bjvm_primitive_array_classdesc *result = calloc(1, sizeof(bjvm_primitive_array_classdesc));
@@ -4142,7 +4208,7 @@ bjvm_primitive_array_classdesc *primitive_arr_classdesc(
   result->dimensions = dimensions;
   result->element_type = prim_kind;
 
-  return result;
+  return (bjvm_classdesc*) result;
 }
 
 void free_base_arr_classdesc(bjvm_classdesc* base) {
@@ -4161,7 +4227,7 @@ void free_primitive_arr_classdesc(bjvm_primitive_array_classdesc *desc) {
   free(desc);
 }
 
-bjvm_array_classdesc * ordinary_arr_classdesc(bjvm_thread * thread, bjvm_classdesc *base, int dimensions) {
+bjvm_classdesc * ordinary_arr_classdesc(bjvm_thread * thread, bjvm_classdesc *base, int dimensions) {
   bjvm_array_classdesc *result = calloc(1, sizeof(bjvm_array_classdesc));
   result->base.kind = BJVM_CLASSDESC_KIND_ORDINARY_ARRAY;
   result->base.state = base->state;
@@ -4175,6 +4241,8 @@ bjvm_array_classdesc * ordinary_arr_classdesc(bjvm_thread * thread, bjvm_classde
     result->base_component = array_base->base_component;
     DCHECK(result->dimensions == array_base->dimensions + 1);
   }
+
+  return (bjvm_classdesc*)result;
 }
 
 int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info);
@@ -4182,8 +4250,6 @@ int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info);
 // name = "java/lang/Object"
 bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
   bjvm_vm *vm = thread->vm;
-
-  printf("Loading class %S\n", name.chars);
 
   int dimensions = 0;
   const wchar_t *chars = name.chars;
@@ -4196,8 +4262,8 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
 
   if (dimensions) {  // array type, like [[J or [[Ljava/lang/String;
     if (*chars != 'L') {
-      bjvm_primitive_array_classdesc* desc = bjvm_hash_table_lookup(&vm->classes, chars, remaining_len);
-      if (desc) return (bjvm_classdesc*) desc;
+      bjvm_classdesc* desc = bjvm_hash_table_lookup(&vm->classes, chars, remaining_len);
+      if (desc) return  desc;
       switch (*chars) {
         case 'J':
           desc = primitive_arr_classdesc(thread, dimensions, BJVM_CLASSDESC_KIND_LONG_ARRAY, BJVM_TYPE_KIND_LONG);
@@ -4228,12 +4294,12 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
       }
 
       free(bjvm_hash_table_insert(&vm->classes, chars, (int)remaining_len, desc));
-      return (bjvm_classdesc*) desc;
-    } else {  // *chars == 'L'
-      chars++;
-      DCHECK(remaining_len >= 3);
-      remaining_len -= 2;
+      return desc;
     }
+
+    chars++;
+    DCHECK(remaining_len >= 3);
+    remaining_len -= 2;
   }
 
   // Check whether the class is already loaded
@@ -4241,6 +4307,8 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
       bjvm_hash_table_lookup(&vm->classes, chars, remaining_len);
 
   if (!base_class) {
+    printf("Loading class %S\n", name.chars);
+
     // Add entry to inchoate_classes
     (void)bjvm_hash_table_insert(&vm->inchoate_classes, name.chars, name.len, (void*) 1);
 
@@ -4306,8 +4374,27 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
       }
     }
 
+    // Look up in the native methods list and add native handles as appropriate
+    native_entries* entries = bjvm_hash_table_lookup(&vm->natives, name.chars, name.len);
+    if (entries) {
+      for (int i = 0; i < entries->entries_count; i++) {
+        native_entry* entry = entries->entries + i;
+
+        for (int j = 0; j < base_class->methods_count; ++j) {
+          bjvm_cp_method* method = base_class->methods + j;
+
+          if (utf8_equals_utf8(method->name, &entry->name) && utf8_equals_utf8(method->descriptor, &entry->descriptor)) {
+            printf("REGISTERED NATIVE!!\n");
+            method->native_handle = entry->callback;
+            break;
+          }
+        }
+      }
+    }
+
     // Remove from inchoate_classes
     (void)bjvm_hash_table_delete(&vm->inchoate_classes, name.chars, name.len);
+    (void)bjvm_hash_table_insert(&vm->classes, chars, (int)remaining_len, base_class);
   }
 
   // Derive nth dimension
@@ -4316,16 +4403,14 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name) {
   while (dimensions--) {
     if (!result->array_type)
       result->array_type = ordinary_arr_classdesc(thread, result, dimensions);
-    result = (bjvm_classdesc*) result->array_type;
+    result = result->array_type;
   }
-
-  (void)bjvm_hash_table_insert(&vm->classes, chars, (int)remaining_len, result);
 
   return result;
 }
 
-int bootstrap_array_class_link(bjvm_thread *thread, bjvm_array_classdesc *classdesc) {
-  int status = bootstrap_class_link(thread, classdesc->base_component);
+int bjvm_link_array_class(bjvm_thread *thread, bjvm_array_classdesc *classdesc) {
+  int status = bjvm_link_class(thread, classdesc->base_component);
   if (status) {
     // TODO mark all arrays of this class as fucked up
     UNREACHABLE();
@@ -4375,7 +4460,7 @@ int allocate_field(int* current, bjvm_type_kind kind) {
   return result;
 }
 
-int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc) {
+int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc) {
   DCHECK(classdesc);
   printf("Linking class %S\n", classdesc->this_class->name->chars);
   if (classdesc->state != BJVM_CD_STATE_LOADED)  // already linked
@@ -4383,12 +4468,12 @@ int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc) {
 
   if (classdesc->kind != BJVM_CLASSDESC_KIND_ORDINARY) {
     DCHECK(classdesc->kind == BJVM_CLASSDESC_KIND_ORDINARY_ARRAY);
-    return bootstrap_array_class_link(thread, (bjvm_array_classdesc*) classdesc);
+    return bjvm_link_array_class(thread, (bjvm_array_classdesc*) classdesc);
   }
 
   // Link superclasses
   if (classdesc->super_class) {
-    int status = bootstrap_class_link(thread, classdesc->super_class->classdesc);
+    int status = bjvm_link_class(thread, classdesc->super_class->classdesc);
     if (status) {
       // TODO raise VerifyError
       classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
@@ -4398,7 +4483,7 @@ int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc) {
 
   // Link superinterfaces
   for (int i = 0; i < classdesc->interfaces_count; ++i) {
-    int status = bootstrap_class_link(thread, classdesc->interfaces[i]->classdesc);
+    int status = bjvm_link_class(thread, classdesc->interfaces[i]->classdesc);
     if (status) {
       // TODO raise VerifyError
       classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
@@ -4423,7 +4508,7 @@ int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc) {
   }
 
   // Assign memory locations to all static/non-static fields
-  int static_offset = 0, nonstatic_offset = 0;
+  int static_offset = classdesc->super_class ? classdesc->super_class->classdesc->data_bytes : 0, nonstatic_offset = 0;
   for (int field_i = 0; field_i < classdesc->fields_count; ++field_i) {
     bjvm_cp_field *field = classdesc->fields + field_i;
     bjvm_type_kind kind = field->parsed_descriptor.kind;
@@ -4434,7 +4519,34 @@ int bootstrap_class_link(bjvm_thread *thread, bjvm_classdesc *classdesc) {
 
   // Create static field memory, initializing all to 0
   classdesc->static_fields = calloc(static_offset, 1);
+  classdesc->data_bytes = nonstatic_offset;
+
   return 0;
+}
+
+int bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_stack_value *result);
+
+int bjvm_initialize_class(bjvm_thread *thread, bjvm_classdesc *classdesc) {
+  DCHECK(classdesc);
+  if (classdesc->state == BJVM_CD_STATE_INITIALIZED) return 0; // already initialized
+  if (classdesc->state != BJVM_CD_STATE_LINKED) {
+    int error = bjvm_link_class(thread, classdesc);
+    if (error) return error;
+  }
+
+  classdesc->state = BJVM_CD_STATE_INITIALIZED;
+
+  printf("Initializing class %S\n", classdesc->this_class->name->chars);
+
+  bjvm_cp_method* clinit = bjvm_get_method(classdesc, "<clinit>", "()V", false, false);
+  int error = 0;
+  if (clinit) {
+    bjvm_stack_frame* frame = bjvm_push_frame(thread, clinit);
+    error = bjvm_bytecode_interpret(thread, frame, NULL);
+    bjvm_pop_frame(thread, frame);
+  }
+  classdesc->state = error ? BJVM_CD_STATE_LINKAGE_ERROR : BJVM_CD_STATE_INITIALIZED;
+  return error;
 }
 
 bjvm_stack_value checked_pop(bjvm_stack_frame *frame) {
@@ -4475,35 +4587,50 @@ bool method_candidate_matches(const bjvm_cp_method *candidate,
 bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor,
                                    bjvm_utf8 *name,
                                    bjvm_utf8 *method_descriptor,
+                                   bool search_superclasses,
                                    bool search_superinterfaces) {
   DCHECK(descriptor->state >= BJVM_CD_STATE_LINKED);
   bjvm_classdesc *search = descriptor;
   // if the object is an array and we're looking for a superclass method, the method must be on a superclass
-  if (search->kind != BJVM_CLASSDESC_KIND_ORDINARY)
+  if (search->kind != BJVM_CLASSDESC_KIND_ORDINARY && search_superclasses)
     search = search->this_class->classdesc;
   while (search) {
     for (int i = 0; i < search->methods_count; ++i)
       if (method_candidate_matches(search->methods + i, name, method_descriptor))
         return search->methods + i;
     search = search->super_class->classdesc;
+    if (!search_superclasses) break;
   }
   if (!search_superinterfaces) return NULL;
 
   for (int i = 0; i < descriptor->interfaces_count; ++i) {
-    bjvm_cp_method *result = bjvm_method_lookup(descriptor->interfaces[i]->classdesc, name, method_descriptor, true);
+    bjvm_cp_method *result = bjvm_method_lookup(descriptor->interfaces[i]->classdesc, name, method_descriptor, false, true);
     if (result) return result;
   }
 
   return NULL;
 }
 
-bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor) {
+bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor, bool superclasses, bool superinterfaces) {
   bjvm_utf8 name_wide = bjvm_make_utf8_cstr(name), descriptor_wide = bjvm_make_utf8_cstr(descriptor);
-  bjvm_cp_method* result = bjvm_method_lookup(classdesc, &name_wide, &descriptor_wide, true);
+  bjvm_cp_method* result = bjvm_method_lookup(classdesc, &name_wide, &descriptor_wide, superclasses, superinterfaces);
   free_utf8(name_wide);
   free_utf8(descriptor_wide);
   return result;
 }
+
+void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result) {
+  DCHECK(thread->frames_count == 0);
+  DCHECK(method->access_flags & BJVM_ACCESS_STATIC);
+
+  bjvm_stack_frame *frame = bjvm_push_frame(thread, method);
+  for (int i = 0; i < method->parsed_descriptor->args_count; ++i) {
+    frame->values[i] = args[i];
+  }
+  bjvm_bytecode_interpret(thread, frame, result);
+  bjvm_pop_frame(thread, frame);
+}
+
 
 int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info) {
   // TODO use current class loader
@@ -4525,537 +4652,723 @@ int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info* info) {
   return 0;
 }
 
-bjvm_obj_header *bjvm_resolve_method(bjvm_thread *thread, bjvm_cp_method_info *info) {
-
+void instantiate_array(bjvm_thread* thread, bjvm_classdesc *classdesc) {
+  if (classdesc->array_type) return;
+  if (classdesc->kind == BJVM_CLASSDESC_KIND_ORDINARY)
+    classdesc->array_type = ordinary_arr_classdesc(thread, classdesc, 1);
+  else if (classdesc->kind == BJVM_CLASSDESC_KIND_ORDINARY_ARRAY) {
+    bjvm_array_classdesc* arr = (bjvm_array_classdesc*) classdesc;
+    classdesc->array_type = ordinary_arr_classdesc(thread, arr->base_component, arr->dimensions + 1);
+  } else {
+    bjvm_primitive_array_classdesc* arr = (bjvm_primitive_array_classdesc*) classdesc;
+    classdesc->array_type = primitive_arr_classdesc(thread, arr->dimensions + 1, classdesc->kind, arr->element_type);
+  }
 }
 
-void bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
-                             bjvm_attribute_code *code) {
-  bjvm_bytecode_insn insn = code->code[frame->program_counter];
+bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 *name, bjvm_utf8 *descriptor) {
+  for (int i = 0; i < classdesc->fields_count; ++i) {
+    bjvm_cp_field *field = classdesc->fields + i;
+    if (utf8_equals_utf8(field->name, name) && utf8_equals_utf8(field->descriptor, descriptor)) {
+      return field;
+    }
+  }
+  return NULL;
+}
 
-  switch (insn.kind) {
-  case bjvm_bc_insn_nop:
+void store_stack_value(void * field_location, bjvm_stack_value value, bjvm_type_kind kind) {
+  switch (kind) {
+    case BJVM_TYPE_KIND_BOOLEAN:
+    case BJVM_TYPE_KIND_BYTE:
+      *(uint8_t*)field_location = value.i;
     break;
-  case bjvm_bc_insn_aaload: {
+    case BJVM_TYPE_KIND_CHAR:
+    case BJVM_TYPE_KIND_SHORT:
+      *(uint16_t*)field_location = value.i;
+    break;
+    case BJVM_TYPE_KIND_FLOAT:
+      *(float*)field_location = value.f;
+    break;
+    case BJVM_TYPE_KIND_DOUBLE:
+      *(double*)field_location = value.d;
+    break;
+    case BJVM_TYPE_KIND_INT:
+      *(int*)field_location = value.i;
+      break;
+    case BJVM_TYPE_KIND_LONG:
+      *(long*)field_location = value.l;
+      break;
+    case BJVM_TYPE_KIND_REFERENCE:
+      *(void**)field_location = value.obj;
+      break;
+    case BJVM_TYPE_KIND_VOID:
+    case BJVM_TYPE_KIND_RETURN_ADDRESS:
+    default:
+      UNREACHABLE();
   }
-  case bjvm_bc_insn_aastore:
-    UNREACHABLE("bjvm_bc_insn_aastore");
-    break;
-  case bjvm_bc_insn_aconst_null:
-    checked_push(frame, (bjvm_stack_value){.obj = NULL});
-    break;
-  case bjvm_bc_insn_areturn:
-    UNREACHABLE("bjvm_bc_insn_areturn");
-    break;
-  case bjvm_bc_insn_arraylength:
-    UNREACHABLE("bjvm_bc_insn_arraylength");
-    break;
-  case bjvm_bc_insn_athrow: {
-    bjvm_raise_exception(thread, checked_pop(frame).obj);
-    break;
-  }
-  case bjvm_bc_insn_baload:
-    UNREACHABLE("bjvm_bc_insn_baload");
-    break;
-  case bjvm_bc_insn_bastore:
-    UNREACHABLE("bjvm_bc_insn_bastore");
-    break;
-  case bjvm_bc_insn_caload:
-    UNREACHABLE("bjvm_bc_insn_caload");
-    break;
-  case bjvm_bc_insn_castore:
-    UNREACHABLE("bjvm_bc_insn_castore");
-    break;
-  case bjvm_bc_insn_d2f: {
-    checked_push(frame, (bjvm_stack_value){.f = (float)checked_pop(frame).d});
-    break;
-  }
-  case bjvm_bc_insn_d2i: {
-    checked_push(frame, (bjvm_stack_value){.i = (int)checked_pop(frame).d});
-    break;
-  }
-  case bjvm_bc_insn_d2l: {
-    checked_push(frame, (bjvm_stack_value){.l = (long)checked_pop(frame).d});
-    break;
-  }
-  case bjvm_bc_insn_dadd:
-    UNREACHABLE("bjvm_bc_insn_dadd");
-    break;
-  case bjvm_bc_insn_daload:
-    UNREACHABLE("bjvm_bc_insn_daload");
-    break;
-  case bjvm_bc_insn_dastore:
-    UNREACHABLE("bjvm_bc_insn_dastore");
-    break;
-  case bjvm_bc_insn_dcmpg:
-    UNREACHABLE("bjvm_bc_insn_dcmpg");
-    break;
-  case bjvm_bc_insn_dcmpl:
-    UNREACHABLE("bjvm_bc_insn_dcmpl");
-    break;
-  case bjvm_bc_insn_ddiv:
-    UNREACHABLE("bjvm_bc_insn_ddiv");
-    break;
-  case bjvm_bc_insn_dmul:
-    UNREACHABLE("bjvm_bc_insn_dmul");
-    break;
-  case bjvm_bc_insn_dneg:
-    UNREACHABLE("bjvm_bc_insn_dneg");
-    break;
-  case bjvm_bc_insn_drem:
-    UNREACHABLE("bjvm_bc_insn_drem");
-    break;
-  case bjvm_bc_insn_dreturn:
-    UNREACHABLE("bjvm_bc_insn_dreturn");
-    break;
-  case bjvm_bc_insn_dsub:
-    UNREACHABLE("bjvm_bc_insn_dsub");
-    break;
-  case bjvm_bc_insn_dup:
-    UNREACHABLE("bjvm_bc_insn_dup");
-    break;
-  case bjvm_bc_insn_dup_x1:
-    UNREACHABLE("bjvm_bc_insn_dup_x1");
-    break;
-  case bjvm_bc_insn_dup_x2:
-    UNREACHABLE("bjvm_bc_insn_dup_x2");
-    break;
-  case bjvm_bc_insn_dup2:
-    UNREACHABLE("bjvm_bc_insn_dup2");
-    break;
-  case bjvm_bc_insn_dup2_x1:
-    UNREACHABLE("bjvm_bc_insn_dup2_x1");
-    break;
-  case bjvm_bc_insn_dup2_x2:
-    UNREACHABLE("bjvm_bc_insn_dup2_x2");
-    break;
-  case bjvm_bc_insn_f2d:
-    UNREACHABLE("bjvm_bc_insn_f2d");
-    break;
-  case bjvm_bc_insn_f2i:
-    UNREACHABLE("bjvm_bc_insn_f2i");
-    break;
-  case bjvm_bc_insn_f2l:
-    UNREACHABLE("bjvm_bc_insn_f2l");
-    break;
-  case bjvm_bc_insn_fadd:
-    UNREACHABLE("bjvm_bc_insn_fadd");
-    break;
-  case bjvm_bc_insn_faload:
-    UNREACHABLE("bjvm_bc_insn_faload");
-    break;
-  case bjvm_bc_insn_fastore:
-    UNREACHABLE("bjvm_bc_insn_fastore");
-    break;
-  case bjvm_bc_insn_fcmpg:
-    UNREACHABLE("bjvm_bc_insn_fcmpg");
-    break;
-  case bjvm_bc_insn_fcmpl:
-    UNREACHABLE("bjvm_bc_insn_fcmpl");
-    break;
-  case bjvm_bc_insn_fdiv:
-    UNREACHABLE("bjvm_bc_insn_fdiv");
-    break;
-  case bjvm_bc_insn_fmul:
-    UNREACHABLE("bjvm_bc_insn_fmul");
-    break;
-  case bjvm_bc_insn_fneg:
-    UNREACHABLE("bjvm_bc_insn_fneg");
-    break;
-  case bjvm_bc_insn_frem:
-    UNREACHABLE("bjvm_bc_insn_frem");
-    break;
-  case bjvm_bc_insn_freturn:
-    UNREACHABLE("bjvm_bc_insn_freturn");
-    break;
-  case bjvm_bc_insn_fsub:
-    UNREACHABLE("bjvm_bc_insn_fsub");
-    break;
-  case bjvm_bc_insn_i2b:
-    UNREACHABLE("bjvm_bc_insn_i2b");
-    break;
-  case bjvm_bc_insn_i2c:
-    UNREACHABLE("bjvm_bc_insn_i2c");
-    break;
-  case bjvm_bc_insn_i2d:
-    UNREACHABLE("bjvm_bc_insn_i2d");
-    break;
-  case bjvm_bc_insn_i2f:
-    UNREACHABLE("bjvm_bc_insn_i2f");
-    break;
-  case bjvm_bc_insn_i2l:
-    UNREACHABLE("bjvm_bc_insn_i2l");
-    break;
-  case bjvm_bc_insn_i2s:
-    UNREACHABLE("bjvm_bc_insn_i2s");
-    break;
-  case bjvm_bc_insn_iadd: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i, c;
-    __builtin_add_overflow(a, b, &c);
-    checked_push(frame, (bjvm_stack_value){.i = c});
-    break;
-  }
-  case bjvm_bc_insn_iaload:
-    UNREACHABLE("bjvm_bc_insn_iaload");
-    break;
-  case bjvm_bc_insn_iand: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    checked_push(frame, (bjvm_stack_value){.i = a & b});
-    break;
-  }
-  case bjvm_bc_insn_iastore:
-    UNREACHABLE("bjvm_bc_insn_iastore");
-    break;
-  case bjvm_bc_insn_idiv: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    DCHECK(b != 0); // TODO
-    checked_push(frame, (bjvm_stack_value){.i = java_idiv(a, b)});
-    break;
-  }
-  case bjvm_bc_insn_imul: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i, c;
-    __builtin_mul_overflow(a, b, &c);
-    checked_push(frame, (bjvm_stack_value){.i = c});
-    break;
-  }
-  case bjvm_bc_insn_ineg: {
-    int a = checked_pop(frame).i, b;
-    __builtin_sub_overflow(0, a, &b); // fuck u UB
-    checked_push(frame, (bjvm_stack_value){.i = b});
-    break;
-  }
-  case bjvm_bc_insn_ior: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    checked_push(frame, (bjvm_stack_value){.i = a | b});
-    break;
-  }
-  case bjvm_bc_insn_irem:
-    UNREACHABLE("bjvm_bc_insn_irem");
-    break;
-  case bjvm_bc_insn_ireturn:
-    UNREACHABLE("bjvm_bc_insn_ireturn");
-    break;
-  case bjvm_bc_insn_ishl: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    uint32_t c = ((uint32_t)a) << (b & 0x1f); // fuck u UB
-    checked_push(frame, (bjvm_stack_value){.i = (int)c});
-    break;
-  }
-  case bjvm_bc_insn_ishr: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    checked_push(frame, (bjvm_stack_value){.i = a >> b});
-    break;
-  }
-  case bjvm_bc_insn_isub: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i, c;
-    __builtin_sub_overflow(a, b, &c);
-    checked_push(frame, (bjvm_stack_value){.i = c});
-    break;
-  }
-  case bjvm_bc_insn_iushr: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    uint32_t c = ((uint32_t)a) >> (b & 0x1f);
-    checked_push(frame, (bjvm_stack_value){.i = (int)c});
-    break;
-  }
-  case bjvm_bc_insn_ixor: {
-    int a = checked_pop(frame).i, b = checked_pop(frame).i;
-    checked_push(frame, (bjvm_stack_value){.i = a ^ b});
-    break;
-  }
-  case bjvm_bc_insn_l2d: {
-    checked_push(frame, (bjvm_stack_value){.d = (double)checked_pop(frame).l});
-    break;
-  }
-  case bjvm_bc_insn_l2f: {
-    checked_push(frame, (bjvm_stack_value){.f = (float)checked_pop(frame).l});
-    break;
-  }
-  case bjvm_bc_insn_l2i: {
-    checked_push(frame, (bjvm_stack_value){.f = (int)checked_pop(frame).l});
-    break;
-  }
-  case bjvm_bc_insn_ladd: {
-    long a = checked_pop(frame).l, b = checked_pop(frame).l, c;
-    __builtin_add_overflow(a, b, &c);
-    checked_push(frame, (bjvm_stack_value){.l = c});
-    break;
-  }
-  case bjvm_bc_insn_laload:
-    UNREACHABLE("bjvm_bc_insn_laload");
-    break;
-  case bjvm_bc_insn_land: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    checked_push(frame, (bjvm_stack_value){.l = a & b});
-    break;
-  }
-  case bjvm_bc_insn_lastore:
-    UNREACHABLE("bjvm_bc_insn_lastore");
-    break;
-  case bjvm_bc_insn_lcmp: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    int sign = a > b ? 1 : a == b ? 0 : -1;
-    checked_push(frame, (bjvm_stack_value){.i = sign});
-    break;
-  }
-  case bjvm_bc_insn_ldiv: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    DCHECK(b != 0); // TODO
-    checked_push(frame, (bjvm_stack_value){.l = java_ldiv(a, b)});
-    break;
-  }
-  case bjvm_bc_insn_lmul: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
-    __builtin_mul_overflow(a, b, &c);
-    checked_push(frame, (bjvm_stack_value){.l = c});
-    break;
-  }
-  case bjvm_bc_insn_lneg: {
-    int64_t a = checked_pop(frame).l, b;
-    __builtin_sub_overflow(0, a, &b);
-    checked_push(frame, (bjvm_stack_value){.l = b});
-    break;
-  }
-  case bjvm_bc_insn_lor: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    checked_push(frame, (bjvm_stack_value){.l = a | b});
-    break;
-  }
-  case bjvm_bc_insn_lrem:
-    UNREACHABLE("bjvm_bc_insn_lrem");
-    break;
-  case bjvm_bc_insn_lreturn:
-    UNREACHABLE("bjvm_bc_insn_lreturn");
-    break;
-  case bjvm_bc_insn_lshl: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    uint64_t c = ((uint64_t)a) << (b & 0x3f); // fuck u UB
-    checked_push(frame, (bjvm_stack_value){.l = (int64_t)c});
-    break;
-  }
-  case bjvm_bc_insn_lshr: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    checked_push(frame, (bjvm_stack_value){.l = a >> b});
-    break;
-  }
-  case bjvm_bc_insn_lsub: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
-    __builtin_sub_overflow(a, b, &c);
-    checked_push(frame, (bjvm_stack_value){.l = c});
-    break;
-  }
-  case bjvm_bc_insn_lushr: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    checked_push(frame, (bjvm_stack_value){.l = (int64_t)((uint64_t)a >> b)});
-    break;
-  }
-  case bjvm_bc_insn_lxor: {
-    int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
-    checked_push(frame, (bjvm_stack_value){.l = a ^ b});
-    break;
-  }
-  case bjvm_bc_insn_monitorenter:
-    UNREACHABLE("bjvm_bc_insn_monitorenter");
-    break;
-  case bjvm_bc_insn_monitorexit:
-    UNREACHABLE("bjvm_bc_insn_monitorexit");
-    break;
-  case bjvm_bc_insn_pop:
-    checked_pop(frame);
-    break;
-  case bjvm_bc_insn_pop2:
-    checked_pop(frame);
-    checked_pop(frame);
-    break;
-  case bjvm_bc_insn_return:
-    UNREACHABLE("bjvm_bc_insn_return");
-    break;
-  case bjvm_bc_insn_saload:
-    UNREACHABLE("bjvm_bc_insn_saload");
-    break;
-  case bjvm_bc_insn_sastore:
-    UNREACHABLE("bjvm_bc_insn_sastore");
-    break;
-  case bjvm_bc_insn_swap:
-    UNREACHABLE("bjvm_bc_insn_swap");
-    break;
-  case bjvm_bc_insn_anewarray:
-    UNREACHABLE("bjvm_bc_insn_anewarray");
-    break;
-  case bjvm_bc_insn_checkcast:
-    UNREACHABLE("bjvm_bc_insn_checkcast");
-    break;
-  case bjvm_bc_insn_getfield:
-    UNREACHABLE("bjvm_bc_insn_getfield");
-    break;
-  case bjvm_bc_insn_getstatic:
-    UNREACHABLE("bjvm_bc_insn_getstatic");
-    break;
-  case bjvm_bc_insn_instanceof:
-    UNREACHABLE("bjvm_bc_insn_instanceof");
-    break;
-  case bjvm_bc_insn_invokedynamic:
-    UNREACHABLE("bjvm_bc_insn_invokedynamic");
-    break;
-  case bjvm_bc_insn_new:
-    UNREACHABLE("bjvm_bc_insn_new");
-    break;
-  case bjvm_bc_insn_putfield:
-    UNREACHABLE("bjvm_bc_insn_putfield");
-    break;
-  case bjvm_bc_insn_putstatic:
-    UNREACHABLE("bjvm_bc_insn_putstatic");
-    break;
-  case bjvm_bc_insn_invokevirtual: {
-    DCHECK(insn.cp->kind == BJVM_CP_KIND_METHOD_REF ||
-           insn.cp->kind == BJVM_CP_KIND_INTERFACE_METHOD_REF);
+}
 
-    const bjvm_cp_method_info *info = &insn.cp->methodref;
-    bjvm_obj_header *obj = checked_pop(frame).obj;
+bjvm_stack_value load_stack_value(void* field_location, bjvm_type_kind kind) {
+  bjvm_stack_value result;
+  switch (kind) {
+    case BJVM_TYPE_KIND_BOOLEAN:
+    case BJVM_TYPE_KIND_BYTE:
+      result.i = *(uint8_t*)field_location;
+    break;
+    case BJVM_TYPE_KIND_CHAR:
+    case BJVM_TYPE_KIND_SHORT:
+      result.i = *(uint16_t*)field_location;
+    break;
+    case BJVM_TYPE_KIND_FLOAT:
+      result.f = *(float*)field_location;
+    break;
+    case BJVM_TYPE_KIND_DOUBLE:
+      result.d = *(double*)field_location;
+    break;
+    case BJVM_TYPE_KIND_INT:
+      result.i = *(int*)field_location;
+    break;
+    case BJVM_TYPE_KIND_LONG:
+      result.l = *(long*)field_location;
+    break;
+     case BJVM_TYPE_KIND_REFERENCE:
+      result.obj = *(void**)field_location;
+      break;
+    case BJVM_TYPE_KIND_VOID:
+    case BJVM_TYPE_KIND_RETURN_ADDRESS:
+    default:
+      UNREACHABLE();
+  }
+  return result;
+}
 
-    DCHECK(obj->descriptor->state == BJVM_CD_STATE_INITIALIZED);
+int bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_stack_value* result) {
+  bjvm_cp_method *method = frame->method;
 
-    bjvm_obj_header* resolution_error = bjvm_resolve_method(thread, info);
+  printf("Calling method %S on class %S\n", method->name->chars, method->my_class->this_class->name->chars);
 
-    bjvm_cp_method *method =
-        bjvm_method_lookup(obj->descriptor, info->name_and_type->name,
-                           info->name_and_type->descriptor, false);
-    if (!method) {
+  while (true) {
+    bjvm_bytecode_insn insn = method->code->code[frame->program_counter];
+    switch (insn.kind) {
+      case bjvm_bc_insn_nop:
+        break;
+      case bjvm_bc_insn_aaload: {
+        break;
+      }
+      case bjvm_bc_insn_aastore:
+        UNREACHABLE("bjvm_bc_insn_aastore");
+      break;
+      case bjvm_bc_insn_aconst_null:
+        checked_push(frame, (bjvm_stack_value){.obj = NULL});
+      break;
+      case bjvm_bc_insn_areturn:
+        UNREACHABLE("bjvm_bc_insn_areturn");
+      break;
+      case bjvm_bc_insn_arraylength:
+        UNREACHABLE("bjvm_bc_insn_arraylength");
+      break;
+      case bjvm_bc_insn_athrow: {
+        bjvm_raise_exception(thread, checked_pop(frame).obj);
+        break;
+      }
+      case bjvm_bc_insn_baload:
+        UNREACHABLE("bjvm_bc_insn_baload");
+      break;
+      case bjvm_bc_insn_bastore:
+        UNREACHABLE("bjvm_bc_insn_bastore");
+      break;
+      case bjvm_bc_insn_caload:
+        UNREACHABLE("bjvm_bc_insn_caload");
+      break;
+      case bjvm_bc_insn_castore:
+        UNREACHABLE("bjvm_bc_insn_castore");
+      break;
+      case bjvm_bc_insn_d2f: {
+        checked_push(frame, (bjvm_stack_value){.f = (float)checked_pop(frame).d});
+        break;
+      }
+      case bjvm_bc_insn_d2i: {
+        checked_push(frame, (bjvm_stack_value){.i = (int)checked_pop(frame).d});
+        break;
+      }
+      case bjvm_bc_insn_d2l: {
+        checked_push(frame, (bjvm_stack_value){.l = (long)checked_pop(frame).d});
+        break;
+      }
+      case bjvm_bc_insn_dadd:
+        UNREACHABLE("bjvm_bc_insn_dadd");
+      break;
+      case bjvm_bc_insn_daload:
+        UNREACHABLE("bjvm_bc_insn_daload");
+      break;
+      case bjvm_bc_insn_dastore:
+        UNREACHABLE("bjvm_bc_insn_dastore");
+      break;
+      case bjvm_bc_insn_dcmpg:
+        UNREACHABLE("bjvm_bc_insn_dcmpg");
+      break;
+      case bjvm_bc_insn_dcmpl:
+        UNREACHABLE("bjvm_bc_insn_dcmpl");
+      break;
+      case bjvm_bc_insn_ddiv:
+        UNREACHABLE("bjvm_bc_insn_ddiv");
+      break;
+      case bjvm_bc_insn_dmul:
+        UNREACHABLE("bjvm_bc_insn_dmul");
+      break;
+      case bjvm_bc_insn_dneg:
+        UNREACHABLE("bjvm_bc_insn_dneg");
+      break;
+      case bjvm_bc_insn_drem:
+        UNREACHABLE("bjvm_bc_insn_drem");
+      break;
+      case bjvm_bc_insn_dreturn:
+        UNREACHABLE("bjvm_bc_insn_dreturn");
+      break;
+      case bjvm_bc_insn_dsub:
+        UNREACHABLE("bjvm_bc_insn_dsub");
+      break;
+      case bjvm_bc_insn_dup:
+        UNREACHABLE("bjvm_bc_insn_dup");
+      break;
+      case bjvm_bc_insn_dup_x1:
+        UNREACHABLE("bjvm_bc_insn_dup_x1");
+      break;
+      case bjvm_bc_insn_dup_x2:
+        UNREACHABLE("bjvm_bc_insn_dup_x2");
+      break;
+      case bjvm_bc_insn_dup2:
+        UNREACHABLE("bjvm_bc_insn_dup2");
+      break;
+      case bjvm_bc_insn_dup2_x1:
+        UNREACHABLE("bjvm_bc_insn_dup2_x1");
+      break;
+      case bjvm_bc_insn_dup2_x2:
+        UNREACHABLE("bjvm_bc_insn_dup2_x2");
+      break;
+      case bjvm_bc_insn_f2d:
+        UNREACHABLE("bjvm_bc_insn_f2d");
+      break;
+      case bjvm_bc_insn_f2i:
+        UNREACHABLE("bjvm_bc_insn_f2i");
+      break;
+      case bjvm_bc_insn_f2l:
+        UNREACHABLE("bjvm_bc_insn_f2l");
+      break;
+      case bjvm_bc_insn_fadd:
+        UNREACHABLE("bjvm_bc_insn_fadd");
+      break;
+      case bjvm_bc_insn_faload:
+        UNREACHABLE("bjvm_bc_insn_faload");
+      break;
+      case bjvm_bc_insn_fastore:
+        UNREACHABLE("bjvm_bc_insn_fastore");
+      break;
+      case bjvm_bc_insn_fcmpg:
+        UNREACHABLE("bjvm_bc_insn_fcmpg");
+      break;
+      case bjvm_bc_insn_fcmpl:
+        UNREACHABLE("bjvm_bc_insn_fcmpl");
+      break;
+      case bjvm_bc_insn_fdiv:
+        UNREACHABLE("bjvm_bc_insn_fdiv");
+      break;
+      case bjvm_bc_insn_fmul:
+        UNREACHABLE("bjvm_bc_insn_fmul");
+      break;
+      case bjvm_bc_insn_fneg:
+        UNREACHABLE("bjvm_bc_insn_fneg");
+      break;
+      case bjvm_bc_insn_frem:
+        UNREACHABLE("bjvm_bc_insn_frem");
+      break;
+      case bjvm_bc_insn_freturn:
+        UNREACHABLE("bjvm_bc_insn_freturn");
+      break;
+      case bjvm_bc_insn_fsub:
+        UNREACHABLE("bjvm_bc_insn_fsub");
+      break;
+      case bjvm_bc_insn_i2b:
+        UNREACHABLE("bjvm_bc_insn_i2b");
+      break;
+      case bjvm_bc_insn_i2c:
+        UNREACHABLE("bjvm_bc_insn_i2c");
+      break;
+      case bjvm_bc_insn_i2d:
+        UNREACHABLE("bjvm_bc_insn_i2d");
+      break;
+      case bjvm_bc_insn_i2f:
+        UNREACHABLE("bjvm_bc_insn_i2f");
+      break;
+      case bjvm_bc_insn_i2l:
+        UNREACHABLE("bjvm_bc_insn_i2l");
+      break;
+      case bjvm_bc_insn_i2s:
+        UNREACHABLE("bjvm_bc_insn_i2s");
+      break;
+      case bjvm_bc_insn_iadd: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i, c;
+        __builtin_add_overflow(a, b, &c);
+        checked_push(frame, (bjvm_stack_value){.i = c});
+        break;
+      }
+      case bjvm_bc_insn_iaload:
+        UNREACHABLE("bjvm_bc_insn_iaload");
+      break;
+      case bjvm_bc_insn_iand: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        checked_push(frame, (bjvm_stack_value){.i = a & b});
+        break;
+      }
+      case bjvm_bc_insn_iastore:
+        UNREACHABLE("bjvm_bc_insn_iastore");
+      break;
+      case bjvm_bc_insn_idiv: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        DCHECK(b != 0); // TODO
+        checked_push(frame, (bjvm_stack_value){.i = java_idiv(a, b)});
+        break;
+      }
+      case bjvm_bc_insn_imul: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i, c;
+        __builtin_mul_overflow(a, b, &c);
+        checked_push(frame, (bjvm_stack_value){.i = c});
+        break;
+      }
+      case bjvm_bc_insn_ineg: {
+        int a = checked_pop(frame).i, b;
+        __builtin_sub_overflow(0, a, &b); // fuck u UB
+        checked_push(frame, (bjvm_stack_value){.i = b});
+        break;
+      }
+      case bjvm_bc_insn_ior: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        checked_push(frame, (bjvm_stack_value){.i = a | b});
+        break;
+      }
+      case bjvm_bc_insn_irem:
+        UNREACHABLE("bjvm_bc_insn_irem");
+      break;
+      case bjvm_bc_insn_ireturn:
+        UNREACHABLE("bjvm_bc_insn_ireturn");
+      break;
+      case bjvm_bc_insn_ishl: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        uint32_t c = ((uint32_t)a) << (b & 0x1f); // fuck u UB
+        checked_push(frame, (bjvm_stack_value){.i = (int)c});
+        break;
+      }
+      case bjvm_bc_insn_ishr: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        checked_push(frame, (bjvm_stack_value){.i = a >> b});
+        break;
+      }
+      case bjvm_bc_insn_isub: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i, c;
+        __builtin_sub_overflow(a, b, &c);
+        checked_push(frame, (bjvm_stack_value){.i = c});
+        break;
+      }
+      case bjvm_bc_insn_iushr: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        uint32_t c = ((uint32_t)a) >> (b & 0x1f);
+        checked_push(frame, (bjvm_stack_value){.i = (int)c});
+        break;
+      }
+      case bjvm_bc_insn_ixor: {
+        int a = checked_pop(frame).i, b = checked_pop(frame).i;
+        checked_push(frame, (bjvm_stack_value){.i = a ^ b});
+        break;
+      }
+      case bjvm_bc_insn_l2d: {
+        checked_push(frame, (bjvm_stack_value){.d = (double)checked_pop(frame).l});
+        break;
+      }
+      case bjvm_bc_insn_l2f: {
+        checked_push(frame, (bjvm_stack_value){.f = (float)checked_pop(frame).l});
+        break;
+      }
+      case bjvm_bc_insn_l2i: {
+        checked_push(frame, (bjvm_stack_value){.f = (int)checked_pop(frame).l});
+        break;
+      }
+      case bjvm_bc_insn_ladd: {
+        long a = checked_pop(frame).l, b = checked_pop(frame).l, c;
+        __builtin_add_overflow(a, b, &c);
+        checked_push(frame, (bjvm_stack_value){.l = c});
+        break;
+      }
+      case bjvm_bc_insn_laload:
+        UNREACHABLE("bjvm_bc_insn_laload");
+      break;
+      case bjvm_bc_insn_land: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        checked_push(frame, (bjvm_stack_value){.l = a & b});
+        break;
+      }
+      case bjvm_bc_insn_lastore:
+        UNREACHABLE("bjvm_bc_insn_lastore");
+      break;
+      case bjvm_bc_insn_lcmp: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        int sign = a > b ? 1 : a == b ? 0 : -1;
+        checked_push(frame, (bjvm_stack_value){.i = sign});
+        break;
+      }
+      case bjvm_bc_insn_ldiv: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        DCHECK(b != 0); // TODO
+        checked_push(frame, (bjvm_stack_value){.l = java_ldiv(a, b)});
+        break;
+      }
+      case bjvm_bc_insn_lmul: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
+        __builtin_mul_overflow(a, b, &c);
+        checked_push(frame, (bjvm_stack_value){.l = c});
+        break;
+      }
+      case bjvm_bc_insn_lneg: {
+        int64_t a = checked_pop(frame).l, b;
+        __builtin_sub_overflow(0, a, &b);
+        checked_push(frame, (bjvm_stack_value){.l = b});
+        break;
+      }
+      case bjvm_bc_insn_lor: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        checked_push(frame, (bjvm_stack_value){.l = a | b});
+        break;
+      }
+      case bjvm_bc_insn_lrem:
+        UNREACHABLE("bjvm_bc_insn_lrem");
+      break;
+      case bjvm_bc_insn_lreturn:
+        UNREACHABLE("bjvm_bc_insn_lreturn");
+      break;
+      case bjvm_bc_insn_lshl: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        uint64_t c = ((uint64_t)a) << (b & 0x3f); // fuck u UB
+        checked_push(frame, (bjvm_stack_value){.l = (int64_t)c});
+        break;
+      }
+      case bjvm_bc_insn_lshr: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        checked_push(frame, (bjvm_stack_value){.l = a >> b});
+        break;
+      }
+      case bjvm_bc_insn_lsub: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
+        __builtin_sub_overflow(a, b, &c);
+        checked_push(frame, (bjvm_stack_value){.l = c});
+        break;
+      }
+      case bjvm_bc_insn_lushr: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        checked_push(frame, (bjvm_stack_value){.l = (int64_t)((uint64_t)a >> b)});
+        break;
+      }
+      case bjvm_bc_insn_lxor: {
+        int64_t a = checked_pop(frame).l, b = checked_pop(frame).l;
+        checked_push(frame, (bjvm_stack_value){.l = a ^ b});
+        break;
+      }
+      case bjvm_bc_insn_monitorenter:
+        UNREACHABLE("bjvm_bc_insn_monitorenter");
+      break;
+      case bjvm_bc_insn_monitorexit:
+        UNREACHABLE("bjvm_bc_insn_monitorexit");
+      break;
+      case bjvm_bc_insn_pop:
+        checked_pop(frame);
+      break;
+      case bjvm_bc_insn_pop2:
+        checked_pop(frame);
+      checked_pop(frame);
+      break;
+      case bjvm_bc_insn_return: {
+        goto done;
+      }
+      case bjvm_bc_insn_saload:
+        UNREACHABLE("bjvm_bc_insn_saload");
+      break;
+      case bjvm_bc_insn_sastore:
+        UNREACHABLE("bjvm_bc_insn_sastore");
+      break;
+      case bjvm_bc_insn_swap:
+        UNREACHABLE("bjvm_bc_insn_swap");
+      break;
+      case bjvm_bc_insn_anewarray: {
+        int count = checked_pop(frame).i;
+        bjvm_cp_class_info* info = &insn.cp->class_info;
 
+        int error = bjvm_resolve_class(thread, info);
+        if (error) goto done;
+        DCHECK(info->classdesc);
+
+        if (!info->classdesc->array_type)
+          instantiate_array(thread, info->classdesc);
+        DCHECK(info->classdesc->array_type);
+
+        printf("Creating array of %S\n", info->name->chars);
+
+        bjvm_obj_header* array = calloc(1, (sizeof(bjvm_obj_header) + 4 + 7) & ~7 + count * sizeof(void*));
+        array->descriptor = info->classdesc->array_type;
+
+        *(int*)array = count;
+        checked_push(frame, (bjvm_stack_value) { .obj = array });
+        break;
+      }
+      case bjvm_bc_insn_checkcast:
+        UNREACHABLE("bjvm_bc_insn_checkcast");
+      break;
+      case bjvm_bc_insn_getfield:
+        UNREACHABLE("bjvm_bc_insn_getfield");
+      break;
+      case bjvm_bc_insn_instanceof:
+        UNREACHABLE("bjvm_bc_insn_instanceof");
+      break;
+      case bjvm_bc_insn_invokedynamic:
+        UNREACHABLE("bjvm_bc_insn_invokedynamic");
+      break;
+      case bjvm_bc_insn_new:
+        UNREACHABLE("bjvm_bc_insn_new");
+        break;
+      case bjvm_bc_insn_putfield:
+        UNREACHABLE("bjvm_bc_insn_putfield");
+      break;
+      case bjvm_bc_insn_getstatic:
+      case bjvm_bc_insn_putstatic: {
+        bjvm_cp_field_info* field_info = &insn.cp->fieldref_info;
+        bjvm_cp_class_info* class = field_info->class_info;
+
+        int error = bjvm_resolve_class(thread, class);
+        if (error) goto done;
+
+        bjvm_initialize_class(thread, class->classdesc);
+        bjvm_cp_field* field = bjvm_field_lookup(class->classdesc, field_info->nat->name, field_info->nat->descriptor);
+        if (!field) {
+          // TODO IncompatibleClassChangeError
+          UNREACHABLE();
+        }
+
+        void* field_location = &class->classdesc->static_fields[field->byte_offset];
+        bjvm_type_kind kind = field_info->parsed_descriptor->kind;
+        if (insn.kind == bjvm_bc_insn_putstatic) {
+          store_stack_value(field_location, checked_pop(frame), kind);
+        } else {
+          checked_push(frame, load_stack_value(field_location, kind));
+        }
+
+        break;
+      }
+      case bjvm_bc_insn_invokespecial:
+      case bjvm_bc_insn_invokeinterface:
+      case bjvm_bc_insn_invokevirtual: {
+        DCHECK(insn.cp->kind == BJVM_CP_KIND_METHOD_REF ||
+               insn.cp->kind == BJVM_CP_KIND_INTERFACE_METHOD_REF);
+
+        const bjvm_cp_method_info *info = &insn.cp->methodref;
+        int args = method->parsed_descriptor->args_count + 1;
+        DCHECK(args <= frame->stack_depth);
+
+        bjvm_obj_header *obj = frame->values[frame->stack_depth - args].obj;
+        if (obj == NULL) {
+          // TODO NullPointerException
+          UNREACHABLE();
+        }
+
+        bjvm_classdesc* lookup_on = insn.kind == bjvm_bc_insn_invokespecial ? frame->method->my_class : obj->descriptor;
+
+        DCHECK(lookup_on->state == BJVM_CD_STATE_INITIALIZED);
+        bjvm_cp_method *method =
+            bjvm_method_lookup(lookup_on, info->name_and_type->name,
+                               info->name_and_type->descriptor, true, insn.kind == bjvm_bc_insn_invokeinterface);
+        if (!method) {
+          // TODO IncompatibleClassChangeError
+          UNREACHABLE();
+        }
+
+        bjvm_stack_value invoked_result;
+        if (method->access_flags & BJVM_ACCESS_NATIVE) {
+          if (!method->native_handle) {
+            // TODO UnsatisfiedLinkError
+            UNREACHABLE();
+          }
+
+          method->native_handle(thread, obj, frame->values + frame->stack_depth - args + 1, args - 1, &invoked_result);
+        } else {
+          bjvm_stack_frame* invoked_frame = bjvm_push_frame(thread, method);
+          for (int i = 0; i < args; ++i) {
+            invoked_frame->values[args - i - 1 + frame->max_stack] = checked_pop(frame);
+          }
+
+          int err = bjvm_bytecode_interpret(thread, invoked_frame, &invoked_result);
+          bjvm_pop_frame(thread, invoked_frame);
+          if (err) goto done;
+        }
+        if (method->parsed_descriptor->return_type.kind != BJVM_TYPE_KIND_VOID)
+          checked_push(frame, invoked_result);
+
+        break;
+      }
+      case bjvm_bc_insn_invokestatic: {
+        const bjvm_cp_method_info *info = &insn.cp->methodref;
+        bjvm_cp_class_info *class = info->class_info;
+
+        int error = bjvm_resolve_class(thread, class);
+        if (error) goto done;
+
+        error = bjvm_initialize_class(thread, class->classdesc);
+        if (error) goto done;
+
+        bjvm_cp_method *method = bjvm_method_lookup(class->classdesc, info->name_and_type->name, info->name_and_type->descriptor, false, false);
+        if (!method) {
+          // TODO IncompatibleClassChangeError
+          UNREACHABLE();
+        }
+
+        int args = method->parsed_descriptor->args_count;
+        DCHECK(args <= frame->stack_depth);
+
+        bjvm_stack_value invoked_result;
+        if (method->access_flags & BJVM_ACCESS_NATIVE) {
+          if (!method->native_handle) {
+            // Print method name and class and descriptor
+            printf("Method %S on class %S with descriptor %S is native but has no native handle\n", method->name->chars, method->my_class->this_class->name->chars, method->descriptor->chars);
+            // TODO UnsatisfiedLinkError
+            UNREACHABLE();
+          }
+
+          method->native_handle(thread, NULL, frame->values + frame->stack_depth - args, args, &invoked_result);
+        } else {
+          bjvm_stack_frame* invoked_frame = bjvm_push_frame(thread, method);
+          for (int i = 0; i < args; ++i) {
+            invoked_frame->values[args - i - 1 + frame->max_stack] = checked_pop(frame);
+          }
+
+          int err = bjvm_bytecode_interpret(thread, invoked_frame, &invoked_result);
+          bjvm_pop_frame(thread, invoked_frame);
+          if (err) goto done;
+        }
+
+        if (method->parsed_descriptor->return_type.kind != BJVM_TYPE_KIND_VOID)
+          checked_push(frame, invoked_result);
+        break;
+      }
+      case bjvm_bc_insn_ldc:
+        UNREACHABLE("bjvm_bc_insn_ldc");
+      break;
+      case bjvm_bc_insn_ldc2_w:
+        UNREACHABLE("bjvm_bc_insn_ldc2_w");
+      break;
+      case bjvm_bc_insn_aload:
+      case bjvm_bc_insn_lload:
+      case bjvm_bc_insn_iload:
+      case bjvm_bc_insn_fload:
+      case bjvm_bc_insn_dload: {
+        checked_push(frame, frame->values[frame->max_stack + insn.index]);
+        break;
+      }
+      case bjvm_bc_insn_dstore:
+      case bjvm_bc_insn_fstore:
+      case bjvm_bc_insn_astore:
+      case bjvm_bc_insn_lstore:
+      case bjvm_bc_insn_istore: {
+        frame->values[frame->max_stack + insn.index] = checked_pop(frame);
+        break;
+      }
+      case bjvm_bc_insn_goto: {
+        insn.program_counter = insn.index;
+        continue;
+      }
+      case bjvm_bc_insn_jsr:
+        UNREACHABLE("bjvm_bc_insn_jsr");
+      break;
+      case bjvm_bc_insn_if_acmpeq:
+        UNREACHABLE("bjvm_bc_insn_if_acmpeq");
+      break;
+      case bjvm_bc_insn_if_acmpne:
+        UNREACHABLE("bjvm_bc_insn_if_acmpne");
+      break;
+#define MAKE_INT_COMPARE(op) { \
+  int b = checked_pop(frame).i, a = checked_pop(frame).i; \
+  if (a op b) { insn.program_counter = insn.index; continue; } \
+        break; \
+    }
+      case bjvm_bc_insn_if_icmpeq:
+        MAKE_INT_COMPARE(==);
+      case bjvm_bc_insn_if_icmpne:
+        MAKE_INT_COMPARE(!=);
+      case bjvm_bc_insn_if_icmplt:
+        MAKE_INT_COMPARE(<);
+      case bjvm_bc_insn_if_icmpge:
+        MAKE_INT_COMPARE(>=);
+      case bjvm_bc_insn_if_icmpgt:
+        MAKE_INT_COMPARE(>);
+      case bjvm_bc_insn_if_icmple:
+        MAKE_INT_COMPARE(<=);
+
+#undef MAKE_INT_COMPARE
+#define MAKE_INT_COMPARE(op) { \
+int a = checked_pop(frame).i; \
+if (a op 0) { insn.program_counter = insn.index; continue; } \
+break; \
+}
+
+      case bjvm_bc_insn_ifeq:
+        MAKE_INT_COMPARE(==);
+      case bjvm_bc_insn_ifne:
+        MAKE_INT_COMPARE(!=);
+      case bjvm_bc_insn_iflt:
+        MAKE_INT_COMPARE(<);
+      case bjvm_bc_insn_ifge:
+        MAKE_INT_COMPARE(>=);
+      case bjvm_bc_insn_ifgt:
+        MAKE_INT_COMPARE(>);
+      case bjvm_bc_insn_ifle:
+        MAKE_INT_COMPARE(<=);
+      case bjvm_bc_insn_ifnonnull:
+        MAKE_INT_COMPARE(!=);
+      case bjvm_bc_insn_ifnull:
+        MAKE_INT_COMPARE(==)
+
+#undef MAKE_INT_COMPARE
+      case bjvm_bc_insn_iconst: {
+        checked_push(frame, (bjvm_stack_value){.i = (int)insn.integer_imm});
+        break;
+      }
+      case bjvm_bc_insn_dconst: {
+        checked_push(frame, (bjvm_stack_value){.d = (int)insn.d_imm});
+        break;
+      }
+      case bjvm_bc_insn_fconst: {
+        checked_push(frame, (bjvm_stack_value){.f = (int)insn.f_imm});
+        break;
+      }
+      case bjvm_bc_insn_lconst:
+        UNREACHABLE("bjvm_bc_insn_lconst");
+      break;
+      case bjvm_bc_insn_iinc:
+        UNREACHABLE("bjvm_bc_insn_iinc");
+      break;
+      case bjvm_bc_insn_multianewarray:
+        UNREACHABLE("bjvm_bc_insn_multianewarray");
+      break;
+      case bjvm_bc_insn_newarray:
+        UNREACHABLE("bjvm_bc_insn_newarray");
+      break;
+      case bjvm_bc_insn_tableswitch:
+        UNREACHABLE("bjvm_bc_insn_tableswitch");
+      break;
+      case bjvm_bc_insn_lookupswitch:
+        UNREACHABLE("bjvm_bc_insn_lookupswitch");
+      break;
+      case bjvm_bc_insn_ret:
+        UNREACHABLE("bjvm_bc_insn_ret");
+      break;
     }
 
-    break;
-  }
-  case bjvm_bc_insn_invokespecial:
-    UNREACHABLE("bjvm_bc_insn_invokespecial");
-    break;
-  case bjvm_bc_insn_invokestatic:
-    UNREACHABLE("bjvm_bc_insn_invokestatic");
-    break;
-  case bjvm_bc_insn_ldc:
-    UNREACHABLE("bjvm_bc_insn_ldc");
-    break;
-  case bjvm_bc_insn_ldc2_w:
-    UNREACHABLE("bjvm_bc_insn_ldc2_w");
-    break;
-  case bjvm_bc_insn_dload:
-    UNREACHABLE("bjvm_bc_insn_dload");
-    break;
-  case bjvm_bc_insn_fload:
-    UNREACHABLE("bjvm_bc_insn_fload");
-    break;
-  case bjvm_bc_insn_iload:
-    UNREACHABLE("bjvm_bc_insn_iload");
-    break;
-  case bjvm_bc_insn_lload:
-    UNREACHABLE("bjvm_bc_insn_lload");
-    break;
-  case bjvm_bc_insn_dstore:
-    UNREACHABLE("bjvm_bc_insn_dstore");
-    break;
-  case bjvm_bc_insn_fstore:
-    UNREACHABLE("bjvm_bc_insn_fstore");
-    break;
-  case bjvm_bc_insn_istore:
-    UNREACHABLE("bjvm_bc_insn_istore");
-    break;
-  case bjvm_bc_insn_lstore:
-    UNREACHABLE("bjvm_bc_insn_lstore");
-    break;
-  case bjvm_bc_insn_aload:
-    UNREACHABLE("bjvm_bc_insn_aload");
-    break;
-  case bjvm_bc_insn_astore:
-    UNREACHABLE("bjvm_bc_insn_astore");
-    break;
-  case bjvm_bc_insn_goto:
-    UNREACHABLE("bjvm_bc_insn_goto");
-    break;
-  case bjvm_bc_insn_jsr:
-    UNREACHABLE("bjvm_bc_insn_jsr");
-    break;
-  case bjvm_bc_insn_if_acmpeq:
-    UNREACHABLE("bjvm_bc_insn_if_acmpeq");
-    break;
-  case bjvm_bc_insn_if_acmpne:
-    UNREACHABLE("bjvm_bc_insn_if_acmpne");
-    break;
-  case bjvm_bc_insn_if_icmpeq:
-    UNREACHABLE("bjvm_bc_insn_if_icmpeq");
-    break;
-  case bjvm_bc_insn_if_icmpne:
-    UNREACHABLE("bjvm_bc_insn_if_icmpne");
-    break;
-  case bjvm_bc_insn_if_icmplt:
-    UNREACHABLE("bjvm_bc_insn_if_icmplt");
-    break;
-  case bjvm_bc_insn_if_icmpge:
-    UNREACHABLE("bjvm_bc_insn_if_icmpge");
-    break;
-  case bjvm_bc_insn_if_icmpgt:
-    UNREACHABLE("bjvm_bc_insn_if_icmpgt");
-    break;
-  case bjvm_bc_insn_if_icmple:
-    UNREACHABLE("bjvm_bc_insn_if_icmple");
-    break;
-  case bjvm_bc_insn_ifeq:
-    UNREACHABLE("bjvm_bc_insn_ifeq");
-    break;
-  case bjvm_bc_insn_ifne:
-    UNREACHABLE("bjvm_bc_insn_ifne");
-    break;
-  case bjvm_bc_insn_iflt:
-    UNREACHABLE("bjvm_bc_insn_iflt");
-    break;
-  case bjvm_bc_insn_ifge:
-    UNREACHABLE("bjvm_bc_insn_ifge");
-    break;
-  case bjvm_bc_insn_ifgt:
-    UNREACHABLE("bjvm_bc_insn_ifgt");
-    break;
-  case bjvm_bc_insn_ifle:
-    UNREACHABLE("bjvm_bc_insn_ifle");
-    break;
-  case bjvm_bc_insn_ifnonnull:
-    UNREACHABLE("bjvm_bc_insn_ifnonnull");
-    break;
-  case bjvm_bc_insn_ifnull:
-    UNREACHABLE("bjvm_bc_insn_ifnull");
-    break;
-  case bjvm_bc_insn_iconst:
-    UNREACHABLE("bjvm_bc_insn_iconst");
-    break;
-  case bjvm_bc_insn_dconst:
-    UNREACHABLE("bjvm_bc_insn_dconst");
-    break;
-  case bjvm_bc_insn_fconst:
-    UNREACHABLE("bjvm_bc_insn_fconst");
-    break;
-  case bjvm_bc_insn_lconst:
-    UNREACHABLE("bjvm_bc_insn_lconst");
-    break;
-  case bjvm_bc_insn_iinc:
-    UNREACHABLE("bjvm_bc_insn_iinc");
-    break;
-  case bjvm_bc_insn_invokeinterface:
-    UNREACHABLE("bjvm_bc_insn_invokeinterface");
-    break;
-  case bjvm_bc_insn_multianewarray:
-    UNREACHABLE("bjvm_bc_insn_multianewarray");
-    break;
-  case bjvm_bc_insn_newarray:
-    UNREACHABLE("bjvm_bc_insn_newarray");
-    break;
-  case bjvm_bc_insn_tableswitch:
-    UNREACHABLE("bjvm_bc_insn_tableswitch");
-    break;
-  case bjvm_bc_insn_lookupswitch:
-    UNREACHABLE("bjvm_bc_insn_lookupswitch");
-    break;
-  case bjvm_bc_insn_ret:
-    UNREACHABLE("bjvm_bc_insn_ret");
-    break;
+    frame->program_counter++;
   }
 
-  frame->program_counter++;
+  done:;
+  return thread->current_exception != NULL;
 }
