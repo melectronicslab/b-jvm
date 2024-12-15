@@ -503,7 +503,9 @@ typedef union {
   bjvm_obj_header *obj; // reference type
 } bjvm_stack_value;
 
-typedef int (*bjvm_native_callback)(bjvm_thread* vm, bjvm_obj_header* obj, bjvm_stack_value* args, int argc, bjvm_stack_value* ret);
+typedef int (*bjvm_native_callback)(bjvm_thread *vm, bjvm_obj_header *obj,
+                                    bjvm_stack_value *args, int argc,
+                                    bjvm_stack_value *ret);
 
 typedef struct bjvm_cp_method {
   bjvm_access_flags access_flags;
@@ -588,7 +590,7 @@ typedef struct bjvm_classdesc {
   uint16_t minor_version;
   uint16_t major_version;
 
-  uint8_t* static_fields;
+  uint8_t *static_fields;
   int data_bytes;
 } bjvm_classdesc;
 
@@ -615,7 +617,7 @@ typedef struct bjvm_ordinary_class {
 } bjvm_ordinary_classdesc;
 
 // Appears at the top of every object -- corresponds to HotSpot's oopDesc
-typedef struct bjvm_obj_header{
+typedef struct bjvm_obj_header {
   volatile bjvm_mark_word_t mark_word;
   bjvm_classdesc *descriptor;
 } bjvm_obj_header;
@@ -706,17 +708,19 @@ typedef struct bjvm_vm {
   // Native methods in javah form
   bjvm_string_hash_table natives;
 
-  int (*load_classfile)(const char* filename, void* param, uint8_t** bytes, size_t* len);
-  void* load_classfile_param;
+  int (*load_classfile)(const char *filename, void *param, uint8_t **bytes,
+                        size_t *len);
+  void *load_classfile_param;
 } bjvm_vm;
 
 typedef struct {
   bool unused;
 
-  // Callback to load a classfile from the classpath. Returns 0 on success, nonzero on failure. Pointer passed to
-  // bytes will be free()-d by the VM.
-  int (*load_classfile)(const char* filename, void* param, uint8_t** bytes, size_t* len);
-  void* load_classfile_param;
+  // Callback to load a classfile from the classpath. Returns 0 on success,
+  // nonzero on failure. Pointer passed to bytes will be free()-d by the VM.
+  int (*load_classfile)(const char *filename, void *param, uint8_t **bytes,
+                        size_t *len);
+  void *load_classfile_param;
 } bjvm_vm_options;
 
 typedef struct {
@@ -725,7 +729,7 @@ typedef struct {
   int max_locals;
   int stack_depth;
 
-  bjvm_cp_method* method;
+  bjvm_cp_method *method;
 
   // First max_locals bjvm_stack_values, then max_stack more
   bjvm_stack_value values[];
@@ -783,10 +787,11 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options);
 void bjvm_free_thread(bjvm_thread *thread);
 
 /**
- * Directly add the given classfile as accessible to the VM, bypassing the callback to load_classfile.
+ * Directly add the given classfile as accessible to the VM, bypassing the
+ * callback to load_classfile.
  */
 int bjvm_vm_preregister_classfile(bjvm_vm *vm, const wchar_t *filename,
-                               const uint8_t *bytes, size_t len);
+                                  const uint8_t *bytes, size_t len);
 
 /**
  * Read the classfile in the class path. Returns -1 on failure to find the
@@ -862,11 +867,17 @@ void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
 bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name);
 int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
-bjvm_cp_method *bjvm_get_method(bjvm_classdesc* classdesc, const char* name, const char* descriptor, bool superclasses, bool superinterfaces);
+bjvm_cp_method *bjvm_get_method(bjvm_classdesc *classdesc, const char *name,
+                                const char *descriptor, bool superclasses,
+                                bool superinterfaces);
 bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
-void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result);
+void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method,
+                       bjvm_stack_value *args, bjvm_stack_value *result);
 int bjvm_initialize_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
-void bjvm_register_native(bjvm_vm *vm, const char *class_name, const char *method_name, const char *method_descriptor, bjvm_native_callback callback);
+void bjvm_register_native(bjvm_vm *vm, const char *class_name,
+                          const char *method_name,
+                          const char *method_descriptor,
+                          bjvm_native_callback callback);
 
 #ifdef __cplusplus
 }

@@ -349,31 +349,32 @@ TEST_CASE("parse_field_descriptor valid cases") {
   free_field_descriptor(java_lang_String);
 }
 
-int load_classfile(const char* filename, void* param, uint8_t** bytes, size_t* len) {
-  const char** classpath = (const char**) param;
-  std::vector<std::string> paths { "jre8/" };
+int load_classfile(const char *filename, void *param, uint8_t **bytes,
+                   size_t *len) {
+  const char **classpath = (const char **)param;
+  std::vector<std::string> paths{"jre8/"};
   for (int i = 0; classpath && classpath[i]; ++i) {
     paths.emplace_back(classpath[i]);
   }
-  for (const auto& path : paths) {
+  for (const auto &path : paths) {
     std::string file = path + std::string(filename);
     try {
       auto file_data = ReadFile(file);
       if (file_data.size() > 0) {
-        auto* data = (uint8_t*)malloc(file_data.size());
+        auto *data = (uint8_t *)malloc(file_data.size());
         memcpy(data, file_data.data(), file_data.size());
         *bytes = data;
         *len = file_data.size();
         return 0;
       }
-    } catch (const std::runtime_error& e) {
+    } catch (const std::runtime_error &e) {
     }
   }
 
   return -1;
 }
 
-bjvm_vm *create_vm(bool preregister, const char** classpath = nullptr) {
+bjvm_vm *create_vm(bool preregister, const char **classpath = nullptr) {
   bjvm_vm_options options = {};
 
   options.load_classfile = load_classfile;
@@ -392,7 +393,7 @@ TEST_CASE("VM initialization") {
 }
 
 TEST_CASE("Playground") {
-  const char* cp[2] = { "test_files/playground/", nullptr };
+  const char *cp[2] = {"test_files/playground/", nullptr};
   bjvm_vm *vm = create_vm(false, cp);
 
   bjvm_thread_options options;
@@ -400,12 +401,13 @@ TEST_CASE("Playground") {
   bjvm_thread *thr = bjvm_create_thread(vm, options);
 
   bjvm_utf8 java_lang_Object = bjvm_make_utf8(L"Main");
-  bjvm_classdesc* desc = bootstrap_class_create(thr, java_lang_Object);
+  bjvm_classdesc *desc = bootstrap_class_create(thr, java_lang_Object);
   int status = bjvm_initialize_class(thr, desc);
   REQUIRE(status == 0);
 
-  bjvm_cp_method *method = bjvm_get_method(desc, "main", "([Ljava/lang/String;)V", false, false);
-  bjvm_stack_value args[1] = { { .obj = nullptr } };
+  bjvm_cp_method *method =
+      bjvm_get_method(desc, "main", "([Ljava/lang/String;)V", false, false);
+  bjvm_stack_value args[1] = {{.obj = nullptr}};
 
   bjvm_thread_start(thr, method, args, NULL);
 
