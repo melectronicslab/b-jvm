@@ -4180,12 +4180,12 @@ int bjvm_Class_getModifiers(bjvm_thread *thread, bjvm_obj_header *obj,
   return 0;
 }
 
-bjvm_obj_header *bjvm_get_class_mirror(bjvm_thread *thread,
+struct bjvm_native_Class *bjvm_get_class_mirror(bjvm_thread *thread,
                                        bjvm_classdesc *classdesc);
 
 int bjvm_Object_getClass(bjvm_thread *thread, bjvm_obj_header *obj,
                          bjvm_stack_value *, int, bjvm_stack_value *ret) {
-  ret->obj = bjvm_get_class_mirror(thread, obj->descriptor);
+  ret->obj = (void*)bjvm_get_class_mirror(thread, obj->descriptor);
   return 0;
 }
 
@@ -4209,7 +4209,7 @@ int bjvm_Class_getClassLoader(bjvm_thread *thread, bjvm_obj_header *obj,
   return 0;
 }
 
-bjvm_obj_header *make_string(bjvm_thread *thread, const wchar_t *chars);
+bjvm_obj_header *make_string(bjvm_thread *thread, const wchar_t *chars, int len);
 void read_string(bjvm_obj_header *obj, short **buf, size_t *len) {
   assert(obj->descriptor->kind == BJVM_CD_KIND_ORDINARY);
   assert(utf8_equals(&obj->descriptor->name, "java/lang/String"));
@@ -4225,7 +4225,7 @@ int bjvm_Class_getName(bjvm_thread *thread, bjvm_obj_header *obj,
                        bjvm_stack_value *args, int argc,
                        bjvm_stack_value *ret) {
   bjvm_classdesc *classdesc = bjvm_unmirror(obj);
-  ret->obj = make_string(thread, classdesc->name.chars);
+  ret->obj = bjvm_intern_string(thread, classdesc->name.chars, classdesc->name.len);
   return 0;
 }
 
@@ -4640,7 +4640,7 @@ bjvm_obj_header *bjvm_intern_string(bjvm_thread *thread, const wchar_t *chars,
       bjvm_hash_table_lookup(&thread->vm->interned_strings, chars, len);
   if (str)
     return str;
-  bjvm_obj_header *new_str = make_string(thread, chars);
+  bjvm_obj_header *new_str = make_string(thread, chars, len);
   (void)bjvm_hash_table_insert(&thread->vm->interned_strings, chars, len,
                                new_str);
   return new_str;
@@ -4655,7 +4655,7 @@ int bjvm_raise_exception(bjvm_thread *thread, const wchar_t *exception_name,
   // Create the exception object
   bjvm_obj_header *obj = new_object(thread, classdesc);
   if (exception_string) {
-    bjvm_obj_header *str = make_string(thread, exception_string);
+    bjvm_obj_header *str = make_string(thread, exception_string, -1);
     bjvm_cp_method *method = bjvm_easy_method_lookup(
         classdesc, "<init>", "(Ljava/lang/String;)V", true, false);
     bjvm_thread_run(thread, method,
@@ -4997,7 +4997,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   bjvm_cp_method *make_thread = bjvm_easy_method_lookup(
       desc, "<init>", "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", false,
       false);
-  bjvm_obj_header *name = make_string(thr, L"main");
+  bjvm_obj_header *name = make_string(thr, L"main", -1);
   bjvm_thread_run(thr, make_thread,
                   (bjvm_stack_value[]){{.obj = thread_obj},
                                        {.obj = main_thread_group},
@@ -5802,21 +5802,19 @@ bjvm_cp_method **bjvm_unmirror_ctor(bjvm_obj_header *mirror) {
   return (bjvm_cp_method **)(mirror->fields + 16);
 }
 
-// TODO fix null byte input
-bjvm_obj_header *make_string(bjvm_thread *thread, const wchar_t *chars) {
+bjvm_obj_header *make_string(bjvm_thread *thread, const wchar_t *chars, int len) {
   bjvm_classdesc *java_lang_String =
       bootstrap_class_create(thread, L"java/lang/String");
   bjvm_initialize_class(thread, java_lang_String);
-
   struct bjvm_native_String *str = (void*)new_object(thread, java_lang_String);
-  str->value = create_primitive_array(thread, BJVM_TYPE_KIND_CHAR, wcslen(chars));
-  for (size_t i = 0; i < wcslen(chars); ++i) {
+  len = len == -1 ? wcslen(chars) : len;
+  str->value = create_primitive_array(thread, BJVM_TYPE_KIND_CHAR, len);
+  for (size_t i = 0; i < len; ++i)
     *((uint16_t *)array_data(str->value) + i) = chars[i];
-  }
-  return str;
+  return (void*)str;
 }
 
-bjvm_obj_header *bjvm_get_class_mirror(bjvm_thread *thread,
+struct bjvm_native_Class *bjvm_get_class_mirror(bjvm_thread *thread,
                                        bjvm_classdesc *classdesc) {
   if (!classdesc)
     return NULL;
@@ -5825,10 +5823,8 @@ bjvm_obj_header *bjvm_get_class_mirror(bjvm_thread *thread,
 
   bjvm_classdesc *java_lang_Class =
       bootstrap_class_create(thread, L"java/lang/Class");
-  bjvm_obj_header *class_mirror = classdesc->mirror =
-      new_object(thread, java_lang_Class);
-
-  *(void **)class_mirror->fields = classdesc;
+  struct bjvm_native_Class *class_mirror = classdesc->mirror = (void*)new_object(thread, java_lang_Class);
+  class_mirror->reflected_class = classdesc;
 
   return class_mirror;
 }

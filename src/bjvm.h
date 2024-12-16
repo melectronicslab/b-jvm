@@ -602,7 +602,7 @@ typedef struct bjvm_classdesc {
   // pointers to VM constructs)
   int imp_padding;
 
-  bjvm_obj_header *mirror;
+  struct bjvm_native_Class *mirror;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
