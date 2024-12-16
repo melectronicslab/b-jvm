@@ -415,7 +415,6 @@ TestCaseResult run_test_case(std::string folder) {
   options.load_classfile = load_classfile;
   options.load_classfile_param = classpath;
   options.write_stdout = [](int ch, void *param) {
-    printf("WRITING %c\n", ch);
     auto *result = (TestCaseResult *)param;
     result->stdout_ += (char)ch;
   };
@@ -496,6 +495,12 @@ TEST_CASE("Malformed classfiles") {
 TEST_CASE("Interning") {
   auto result = run_test_case("test_files/interning/");
   REQUIRE(result.stdout_ == "false\nfalse\ntrue\ntrue\ntrue\nfalse\ntrue\nfalse\n");
+}
+
+TEST_CASE("NegativeArraySizeException") {
+  auto result = run_test_case("test_files/negative_array_size/");
+  std::string expected = std::string(12, 'k');
+  REQUIRE(result.stdout_ == expected);
 }
 
 #if 0

@@ -613,12 +613,16 @@ typedef struct bjvm_array_classdesc {
   bjvm_classdesc base;
   int dimensions;
   bjvm_classdesc *base_component;
+
+  bjvm_array_classdesc* one_fewer;
 } bjvm_array_classdesc;
 
 typedef struct bjvm_primitive_array_classdesc {
   bjvm_classdesc base;
   int dimensions;
   bjvm_type_kind element_type;
+
+  struct bjvm_primitive_array_classdesc* one_fewer;
 } bjvm_primitive_array_classdesc;
 
 // Equivalent to HotSpot's InstanceKlass
@@ -631,8 +635,6 @@ typedef struct bjvm_ordinary_class {
 typedef struct bjvm_obj_header {
   volatile bjvm_mark_word_t mark_word;
   bjvm_classdesc *descriptor;
-
-  uint8_t fields[];
 } bjvm_obj_header;
 
 struct bjvm_class_loader;
@@ -919,7 +921,7 @@ bjvm_cp_method *bjvm_easy_method_lookup(bjvm_classdesc *classdesc,
                                         bool superclasses,
                                         bool superinterfaces);
 bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
-void bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method,
+int bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method,
                      bjvm_stack_value *args, bjvm_stack_value *result);
 int bjvm_initialize_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
 void bjvm_register_native(bjvm_vm *vm, const char *class_name,
@@ -933,7 +935,7 @@ int *array_length(bjvm_obj_header *array);
 
 void *array_data(bjvm_obj_header *array);
 
-bjvm_classdesc *bjvm_unmirror(bjvm_obj_header *mirror);
+bjvm_classdesc *bjvm_unmirror_class(bjvm_obj_header *mirror);
 
 bjvm_cp_field **bjvm_unmirror_field(bjvm_obj_header *mirror);
 
@@ -949,6 +951,7 @@ bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc,
                                       const wchar_t *name,
                                       const wchar_t *descriptor);
 bjvm_type_kind field_to_representable_kind(const bjvm_field_descriptor *field);
+int bjvm_raise_exception(bjvm_thread *thread, const wchar_t *exception_name, const wchar_t *exception_string);
 
 #include "natives.h"
 
