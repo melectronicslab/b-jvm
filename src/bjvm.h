@@ -574,7 +574,7 @@ typedef struct bjvm_classdesc {
   bjvm_constant_pool *pool;
 
   bjvm_access_flags access_flags;
-  bjvm_cp_class_info *this_class;
+  bjvm_utf8 name;
   bjvm_cp_class_info *super_class;
 
   int interfaces_count;
@@ -711,7 +711,7 @@ void *bjvm_hash_table_lookup(bjvm_string_hash_table *tbl, const wchar_t *key,
 
 void bjvm_free_hash_table(bjvm_string_hash_table tbl);
 
-typedef void (*bjvm_write_byte)(int ch, void* param);
+typedef void (*bjvm_write_byte)(int ch, void *param);
 
 typedef struct bjvm_vm {
   void *classpath_manager;
@@ -738,7 +738,7 @@ typedef struct bjvm_vm {
   bjvm_write_byte write_stderr;
 
   // Passed to write_stdout/write_stderr
-  void* write_byte_param;
+  void *write_byte_param;
 } bjvm_vm;
 
 typedef struct {
@@ -754,7 +754,7 @@ typedef struct {
   bjvm_write_byte write_stdout;
   bjvm_write_byte write_stderr;
   // Passed to write_stdout/write_stderr
-  void* write_byte_param;
+  void *write_byte_param;
 } bjvm_vm_options;
 
 typedef struct {

@@ -3502,13 +3502,14 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result) {
   cf->pool = parse_constant_pool(&reader, &ctx);
 
   cf->access_flags = reader_next_u16(&reader, "access flags");
-  cf->this_class =
+  bjvm_cp_class_info *this_class =
       &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"),
                         BJVM_CP_KIND_CLASS, "this class")
            ->class_info;
+  cf->name = *this_class->name;
 
   bool is_primordial_object = cf->is_primordial_object =
-      utf8_equals(cf->this_class->name, "java/lang/Object");
+      utf8_equals(&cf->name, "java/lang/Object");
 
   uint16_t super_class = reader_next_u16(&reader, "super class");
   cf->super_class = is_primordial_object
@@ -3545,7 +3546,7 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result) {
   free_on_format_error(&ctx, cf->methods);
 
   bool in_MethodHandle =
-      utf8_equals(cf->this_class->name, "java/lang/invoke/MethodHandle");
+      utf8_equals(&cf->name, "java/lang/invoke/MethodHandle");
   for (int i = 0; i < cf->methods_count; ++i) {
     cf->methods[i] = parse_method(&reader, &ctx);
     cf->methods[i].my_class = result;
@@ -3953,7 +3954,7 @@ void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference) {
 void free_array_classdesc(bjvm_array_classdesc *classdesc) {
   if (classdesc->base.array_type) {
     classdesc->base.array_type = NULL;
-    free_array_classdesc((bjvm_array_classdesc*) classdesc->base.array_type);
+    free_array_classdesc((bjvm_array_classdesc *)classdesc->base.array_type);
   }
   free(classdesc);
 }
@@ -4025,9 +4026,8 @@ bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor,
                                    bool search_superclasses,
                                    bool search_superinterfaces);
 
-int unimplemented_native(bjvm_thread *, bjvm_obj_header *,
-                         bjvm_stack_value *, int,
-                         bjvm_stack_value *ret) {
+int unimplemented_native(bjvm_thread *, bjvm_obj_header *, bjvm_stack_value *,
+                         int, bjvm_stack_value *ret) {
   if (ret)
     ret->obj = NULL;
 }
@@ -4039,13 +4039,11 @@ int bjvm_System_initProperties(bjvm_thread *thread, bjvm_obj_header *,
                                bjvm_stack_value *args, int argc,
                                bjvm_stack_value *ret) {
   bjvm_obj_header *props_obj = args[0].obj;
-  const wchar_t *const props[][2] = {{L"file.encoding", L"UTF-8"},
-                                     {L"stdout.encoding", L"UTF-8"},
-                                     {L"native.encoding", L"UTF-8"},
-                                     {L"stderr.encoding", L"UTF-8"},
-                                     {L"line.separator", L"\n"},
-                                     {L"path.separator", L":"},
-                                        {L"file.separator", L"/"}};
+  const wchar_t *const props[][2] = {
+      {L"file.encoding", L"UTF-8"},   {L"stdout.encoding", L"UTF-8"},
+      {L"native.encoding", L"UTF-8"}, {L"stderr.encoding", L"UTF-8"},
+      {L"line.separator", L"\n"},     {L"path.separator", L":"},
+      {L"file.separator", L"/"}};
   bjvm_cp_method *put = bjvm_easy_method_lookup(
       props_obj->descriptor, "put",
       "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true, false);
@@ -4070,8 +4068,8 @@ int bjvm_System_registerNatives(bjvm_thread *thread, bjvm_obj_header *obj,
 }
 
 int bjvm_System_mapLibraryName(bjvm_thread *thread, bjvm_obj_header *obj,
-                                bjvm_stack_value *args, int argc,
-                                bjvm_stack_value *ret) {
+                               bjvm_stack_value *args, int argc,
+                               bjvm_stack_value *ret) {
   *ret = args[0];
   return 0;
 }
@@ -4215,7 +4213,7 @@ int bjvm_Class_getClassLoader(bjvm_thread *thread, bjvm_obj_header *obj,
 bjvm_obj_header *make_string(bjvm_thread *thread, const wchar_t *chars);
 void read_string(bjvm_obj_header *obj, short **buf, size_t *len) {
   assert(obj->descriptor->kind == BJVM_CD_KIND_ORDINARY);
-  assert(utf8_equals(obj->descriptor->this_class->name, "java/lang/String"));
+  assert(utf8_equals(&obj->descriptor->name, "java/lang/String"));
 
   bjvm_obj_header *array = *(bjvm_obj_header **)obj->fields;
   assert(array->descriptor->kind == BJVM_CD_KIND_CHAR_ARRAY);
@@ -4228,7 +4226,7 @@ int bjvm_Class_getName(bjvm_thread *thread, bjvm_obj_header *obj,
                        bjvm_stack_value *args, int argc,
                        bjvm_stack_value *ret) {
   bjvm_classdesc *classdesc = bjvm_unmirror(obj);
-  ret->obj = make_string(thread, classdesc->this_class->name->chars);
+  ret->obj = make_string(thread, classdesc->name.chars);
   return 0;
 }
 
@@ -4731,8 +4729,9 @@ bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   vm->write_byte_param = options.write_byte_param;
 
   bjvm_register_native(vm, "java/lang/System", "registerNatives", "()V",
-  bjvm_System_registerNatives);
-  bjvm_register_native(vm, "java/lang/System", "mapLibraryName", "(Ljava/lang/String;)Ljava/lang/String;",
+                       bjvm_System_registerNatives);
+  bjvm_register_native(vm, "java/lang/System", "mapLibraryName",
+                       "(Ljava/lang/String;)Ljava/lang/String;",
                        bjvm_System_mapLibraryName);
   bjvm_register_native(vm, "java/lang/System", "initProperties",
                        "(Ljava/util/Properties;)Ljava/util/Properties;",
@@ -5014,7 +5013,8 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   bjvm_stack_value ret;
   bjvm_thread_run(thr, method, NULL, &ret);
 
-  thr->current_exception = NULL;  // clear it for now -- since it doesn't make it all the way yet
+  thr->current_exception =
+      NULL; // clear it for now -- since it doesn't make it all the way yet
 
   return thr;
 }
@@ -5557,9 +5557,7 @@ bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor,
       if (method_candidate_matches(search->methods + i, name,
                                    method_descriptor))
         return search->methods + i;
-    if (!search_superclasses)
-      break;
-    if (search->super_class) {
+    if (search_superclasses && search->super_class) {
       search = search->super_class->classdesc;
     } else {
       break;
@@ -5869,11 +5867,12 @@ bool bjvm_instanceof(const bjvm_classdesc *o, bjvm_classdesc *classdesc) {
   return false;
 }
 
-void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *method) {
+void bjvm_unsatisfied_link_error(bjvm_thread *thread,
+                                 const bjvm_cp_method *method) {
   wchar_t err[1000] = {0};
   swprintf(err, 1000, L"Method %S on class %S with descriptor %S",
-    method->name->chars, method->my_class->this_class->name->chars,
-         method->descriptor->chars);
+           method->name->chars, method->my_class->name.chars,
+           method->descriptor->chars);
   bjvm_raise_exception(thread, L"java/lang/UnsatisfiedLinkError", err);
 }
 
@@ -5883,7 +5882,7 @@ int bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
 
 #if AGGRESSIVE_DEBUG
   printf("Calling method %S, descriptor %S, on class %S\n", method->name->chars,
-         method->descriptor->chars, method->my_class->this_class->name->chars);
+         method->descriptor->chars, method->my_class->name->chars);
 #endif
 
 start:
@@ -5895,7 +5894,7 @@ start:
          *insn_dump = insn_to_string(&insn, frame->program_counter);
     printf("Insn: %s\n", insn_to_string(&insn, frame->program_counter));
     printf("Method: %S in class %S\n", method->name->chars,
-           method->my_class->this_class->name->chars);
+           method->my_class->name->chars);
     printf("FRAME:\n%s\n", dump_frame(frame));
 
     free(dump);
@@ -6795,7 +6794,8 @@ start:
       if (count < 0) {
         wchar_t size_str[16] = {0};
         swprintf(size_str, 16, L"%d", count);
-        bjvm_raise_exception(thread, L"java.lang.NegativeArraySizeException", size_str);
+        bjvm_raise_exception(thread, L"java.lang.NegativeArraySizeException",
+                             size_str);
         goto done;
       }
 
