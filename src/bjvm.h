@@ -632,7 +632,7 @@ typedef struct bjvm_obj_header {
   volatile bjvm_mark_word_t mark_word;
   bjvm_classdesc *descriptor;
 
-  uint8_t _Alignas(8) fields[];
+  uint8_t fields[];
 } bjvm_obj_header;
 
 struct bjvm_class_loader;
@@ -733,6 +733,9 @@ typedef struct bjvm_vm {
   // Interned strings (string -> instance of java/lang/String)
   bjvm_string_hash_table interned_strings;
 
+  // Classes with implementation-required padding before other fields (map class name -> padding bytes)
+  bjvm_string_hash_table class_padding;
+
   // Write byte of stdout/stderr (if NULL, uses the default implementation)
   bjvm_write_byte write_stdout;
   bjvm_write_byte write_stderr;
@@ -824,7 +827,7 @@ typedef struct {
   bjvm_write_byte write_stderr;
 } bjvm_thread_options;
 
-void bjvm_fill_default_thread_options(bjvm_thread_options *options);
+bjvm_thread_options bjvm_default_thread_options();
 bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options);
 void bjvm_free_thread(bjvm_thread *thread);
 
@@ -945,6 +948,9 @@ bjvm_stack_value bjvm_get_field(bjvm_obj_header *obj, bjvm_cp_field *field);
 bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc,
                                       const wchar_t *name,
                                       const wchar_t *descriptor);
+bjvm_type_kind field_to_representable_kind(const bjvm_field_descriptor *field);
+
+#include "natives.h"
 
 #ifdef __cplusplus
 }

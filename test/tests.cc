@@ -402,12 +402,9 @@ TEST_CASE("VM initialization") {
 }
 
 TEST_CASE("Playground") {
-  const char *cp[2] = {"test_files/playground/", nullptr};
+  const char *cp[2] = {"test_files/interning/", nullptr};
   bjvm_vm *vm = create_vm(false, cp);
-
-  bjvm_thread_options options;
-  bjvm_fill_default_thread_options(&options);
-  bjvm_thread *thr = bjvm_create_thread(vm, options);
+  bjvm_thread *thr = bjvm_create_thread(vm, bjvm_default_thread_options());
 
   bjvm_classdesc *desc = bootstrap_class_create(thr, L"Main");
   int status = bjvm_initialize_class(thr, desc);

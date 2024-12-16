@@ -1,0 +1,12 @@
+java/lang/String
+java/lang/StackTraceElement
+java/lang/Class
+  bjvm_classdesc *reflected_class;
+java/lang/reflect/Field
+  bjvm_cp_field *reflected_field;
+java/lang/reflect/Method
+  bjvm_cp_method *reflected_method;
+java/lang/reflect/Constructor
+  bjvm_cp_method *reflected_ctor;
+java/lang/Thread
+  bjvm_thread *vm_thread;
