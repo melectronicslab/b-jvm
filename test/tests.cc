@@ -400,8 +400,7 @@ TEST_CASE("Playground") {
   bjvm_fill_default_thread_options(&options);
   bjvm_thread *thr = bjvm_create_thread(vm, options);
 
-  bjvm_utf8 java_lang_Object = bjvm_make_utf8(L"Main");
-  bjvm_classdesc *desc = bootstrap_class_create(thr, java_lang_Object);
+  bjvm_classdesc *desc = bootstrap_class_create(thr, L"Main");
   int status = bjvm_initialize_class(thr, desc);
   REQUIRE(status == 0);
 
@@ -410,8 +409,6 @@ TEST_CASE("Playground") {
   bjvm_stack_value args[1] = {{.obj = nullptr}};
 
   bjvm_thread_start(thr, method, args, NULL);
-
-  free_utf8(java_lang_Object);
 
   bjvm_free_thread(thr);
   bjvm_free_vm(vm);

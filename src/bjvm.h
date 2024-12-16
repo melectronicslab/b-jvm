@@ -25,164 +25,164 @@ extern "C" {
  */
 typedef enum {
   /** No operands */
-  bjvm_bc_insn_nop,
+  bjvm_insn_nop,
 
-  bjvm_bc_insn_aaload,
-  bjvm_bc_insn_aastore,
-  bjvm_bc_insn_aconst_null,
-  bjvm_bc_insn_areturn,
-  bjvm_bc_insn_arraylength,
-  bjvm_bc_insn_athrow,
-  bjvm_bc_insn_baload,
-  bjvm_bc_insn_bastore,
-  bjvm_bc_insn_caload,
-  bjvm_bc_insn_castore,
-  bjvm_bc_insn_d2f,
-  bjvm_bc_insn_d2i,
-  bjvm_bc_insn_d2l,
-  bjvm_bc_insn_dadd,
-  bjvm_bc_insn_daload,
-  bjvm_bc_insn_dastore,
-  bjvm_bc_insn_dcmpg,
-  bjvm_bc_insn_dcmpl,
-  bjvm_bc_insn_ddiv,
-  bjvm_bc_insn_dmul,
-  bjvm_bc_insn_dneg,
-  bjvm_bc_insn_drem,
-  bjvm_bc_insn_dreturn,
-  bjvm_bc_insn_dsub,
-  bjvm_bc_insn_dup,
-  bjvm_bc_insn_dup_x1,
-  bjvm_bc_insn_dup_x2,
-  bjvm_bc_insn_dup2,
-  bjvm_bc_insn_dup2_x1,
-  bjvm_bc_insn_dup2_x2,
-  bjvm_bc_insn_f2d,
-  bjvm_bc_insn_f2i,
-  bjvm_bc_insn_f2l,
-  bjvm_bc_insn_fadd,
-  bjvm_bc_insn_faload,
-  bjvm_bc_insn_fastore,
-  bjvm_bc_insn_fcmpg,
-  bjvm_bc_insn_fcmpl,
-  bjvm_bc_insn_fdiv,
-  bjvm_bc_insn_fmul,
-  bjvm_bc_insn_fneg,
-  bjvm_bc_insn_frem,
-  bjvm_bc_insn_freturn,
-  bjvm_bc_insn_fsub,
-  bjvm_bc_insn_i2b,
-  bjvm_bc_insn_i2c,
-  bjvm_bc_insn_i2d,
-  bjvm_bc_insn_i2f,
-  bjvm_bc_insn_i2l,
-  bjvm_bc_insn_i2s,
-  bjvm_bc_insn_iadd,
-  bjvm_bc_insn_iaload,
-  bjvm_bc_insn_iand,
-  bjvm_bc_insn_iastore,
-  bjvm_bc_insn_idiv,
-  bjvm_bc_insn_imul,
-  bjvm_bc_insn_ineg,
-  bjvm_bc_insn_ior,
-  bjvm_bc_insn_irem,
-  bjvm_bc_insn_ireturn,
-  bjvm_bc_insn_ishl,
-  bjvm_bc_insn_ishr,
-  bjvm_bc_insn_isub,
-  bjvm_bc_insn_iushr,
-  bjvm_bc_insn_ixor,
-  bjvm_bc_insn_l2d,
-  bjvm_bc_insn_l2f,
-  bjvm_bc_insn_l2i,
-  bjvm_bc_insn_ladd,
-  bjvm_bc_insn_laload,
-  bjvm_bc_insn_land,
-  bjvm_bc_insn_lastore,
-  bjvm_bc_insn_lcmp,
-  bjvm_bc_insn_ldiv,
-  bjvm_bc_insn_lmul,
-  bjvm_bc_insn_lneg,
-  bjvm_bc_insn_lor,
-  bjvm_bc_insn_lrem,
-  bjvm_bc_insn_lreturn,
-  bjvm_bc_insn_lshl,
-  bjvm_bc_insn_lshr,
-  bjvm_bc_insn_lsub,
-  bjvm_bc_insn_lushr,
-  bjvm_bc_insn_lxor,
-  bjvm_bc_insn_monitorenter,
-  bjvm_bc_insn_monitorexit,
-  bjvm_bc_insn_pop,
-  bjvm_bc_insn_pop2,
-  bjvm_bc_insn_return,
-  bjvm_bc_insn_saload,
-  bjvm_bc_insn_sastore,
-  bjvm_bc_insn_swap,
+  bjvm_insn_aaload,
+  bjvm_insn_aastore,
+  bjvm_insn_aconst_null,
+  bjvm_insn_areturn,
+  bjvm_insn_arraylength,
+  bjvm_insn_athrow,
+  bjvm_insn_baload,
+  bjvm_insn_bastore,
+  bjvm_insn_caload,
+  bjvm_insn_castore,
+  bjvm_insn_d2f,
+  bjvm_insn_d2i,
+  bjvm_insn_d2l,
+  bjvm_insn_dadd,
+  bjvm_insn_daload,
+  bjvm_insn_dastore,
+  bjvm_insn_dcmpg,
+  bjvm_insn_dcmpl,
+  bjvm_insn_ddiv,
+  bjvm_insn_dmul,
+  bjvm_insn_dneg,
+  bjvm_insn_drem,
+  bjvm_insn_dreturn,
+  bjvm_insn_dsub,
+  bjvm_insn_dup,
+  bjvm_insn_dup_x1,
+  bjvm_insn_dup_x2,
+  bjvm_insn_dup2,
+  bjvm_insn_dup2_x1,
+  bjvm_insn_dup2_x2,
+  bjvm_insn_f2d,
+  bjvm_insn_f2i,
+  bjvm_insn_f2l,
+  bjvm_insn_fadd,
+  bjvm_insn_faload,
+  bjvm_insn_fastore,
+  bjvm_insn_fcmpg,
+  bjvm_insn_fcmpl,
+  bjvm_insn_fdiv,
+  bjvm_insn_fmul,
+  bjvm_insn_fneg,
+  bjvm_insn_frem,
+  bjvm_insn_freturn,
+  bjvm_insn_fsub,
+  bjvm_insn_i2b,
+  bjvm_insn_i2c,
+  bjvm_insn_i2d,
+  bjvm_insn_i2f,
+  bjvm_insn_i2l,
+  bjvm_insn_i2s,
+  bjvm_insn_iadd,
+  bjvm_insn_iaload,
+  bjvm_insn_iand,
+  bjvm_insn_iastore,
+  bjvm_insn_idiv,
+  bjvm_insn_imul,
+  bjvm_insn_ineg,
+  bjvm_insn_ior,
+  bjvm_insn_irem,
+  bjvm_insn_ireturn,
+  bjvm_insn_ishl,
+  bjvm_insn_ishr,
+  bjvm_insn_isub,
+  bjvm_insn_iushr,
+  bjvm_insn_ixor,
+  bjvm_insn_l2d,
+  bjvm_insn_l2f,
+  bjvm_insn_l2i,
+  bjvm_insn_ladd,
+  bjvm_insn_laload,
+  bjvm_insn_land,
+  bjvm_insn_lastore,
+  bjvm_insn_lcmp,
+  bjvm_insn_ldiv,
+  bjvm_insn_lmul,
+  bjvm_insn_lneg,
+  bjvm_insn_lor,
+  bjvm_insn_lrem,
+  bjvm_insn_lreturn,
+  bjvm_insn_lshl,
+  bjvm_insn_lshr,
+  bjvm_insn_lsub,
+  bjvm_insn_lushr,
+  bjvm_insn_lxor,
+  bjvm_insn_monitorenter,
+  bjvm_insn_monitorexit,
+  bjvm_insn_pop,
+  bjvm_insn_pop2,
+  bjvm_insn_return,
+  bjvm_insn_saload,
+  bjvm_insn_sastore,
+  bjvm_insn_swap,
 
   /** Indexes into constant pool */
-  bjvm_bc_insn_anewarray,
-  bjvm_bc_insn_checkcast,
-  bjvm_bc_insn_getfield,
-  bjvm_bc_insn_getstatic,
-  bjvm_bc_insn_instanceof,
-  bjvm_bc_insn_invokedynamic,
-  bjvm_bc_insn_new,
-  bjvm_bc_insn_putfield,
-  bjvm_bc_insn_putstatic,
-  bjvm_bc_insn_invokevirtual,
-  bjvm_bc_insn_invokespecial,
-  bjvm_bc_insn_invokestatic,
-  bjvm_bc_insn_ldc,
-  bjvm_bc_insn_ldc2_w,
+  bjvm_insn_anewarray,
+  bjvm_insn_checkcast,
+  bjvm_insn_getfield,
+  bjvm_insn_getstatic,
+  bjvm_insn_instanceof,
+  bjvm_insn_invokedynamic,
+  bjvm_insn_new,
+  bjvm_insn_putfield,
+  bjvm_insn_putstatic,
+  bjvm_insn_invokevirtual,
+  bjvm_insn_invokespecial,
+  bjvm_insn_invokestatic,
+  bjvm_insn_ldc,
+  bjvm_insn_ldc2_w,
 
   /** Indexes into local variable table */
-  bjvm_bc_insn_dload,
-  bjvm_bc_insn_fload,
-  bjvm_bc_insn_iload,
-  bjvm_bc_insn_lload,
-  bjvm_bc_insn_dstore,
-  bjvm_bc_insn_fstore,
-  bjvm_bc_insn_istore,
-  bjvm_bc_insn_lstore,
-  bjvm_bc_insn_aload,
-  bjvm_bc_insn_astore,
+  bjvm_insn_dload,
+  bjvm_insn_fload,
+  bjvm_insn_iload,
+  bjvm_insn_lload,
+  bjvm_insn_dstore,
+  bjvm_insn_fstore,
+  bjvm_insn_istore,
+  bjvm_insn_lstore,
+  bjvm_insn_aload,
+  bjvm_insn_astore,
 
   /** Indexes into instruction table */
-  bjvm_bc_insn_goto,
-  bjvm_bc_insn_jsr,
+  bjvm_insn_goto,
+  bjvm_insn_jsr,
 
-  bjvm_bc_insn_if_acmpeq,
-  bjvm_bc_insn_if_acmpne,
-  bjvm_bc_insn_if_icmpeq,
-  bjvm_bc_insn_if_icmpne,
-  bjvm_bc_insn_if_icmplt,
-  bjvm_bc_insn_if_icmpge,
-  bjvm_bc_insn_if_icmpgt,
-  bjvm_bc_insn_if_icmple,
-  bjvm_bc_insn_ifeq,
-  bjvm_bc_insn_ifne,
-  bjvm_bc_insn_iflt,
-  bjvm_bc_insn_ifge,
-  bjvm_bc_insn_ifgt,
-  bjvm_bc_insn_ifle,
-  bjvm_bc_insn_ifnonnull,
-  bjvm_bc_insn_ifnull,
+  bjvm_insn_if_acmpeq,
+  bjvm_insn_if_acmpne,
+  bjvm_insn_if_icmpeq,
+  bjvm_insn_if_icmpne,
+  bjvm_insn_if_icmplt,
+  bjvm_insn_if_icmpge,
+  bjvm_insn_if_icmpgt,
+  bjvm_insn_if_icmple,
+  bjvm_insn_ifeq,
+  bjvm_insn_ifne,
+  bjvm_insn_iflt,
+  bjvm_insn_ifge,
+  bjvm_insn_ifgt,
+  bjvm_insn_ifle,
+  bjvm_insn_ifnonnull,
+  bjvm_insn_ifnull,
 
   /** Has some numerical immediate */
-  bjvm_bc_insn_iconst,
-  bjvm_bc_insn_dconst,
-  bjvm_bc_insn_fconst,
-  bjvm_bc_insn_lconst,
+  bjvm_insn_iconst,
+  bjvm_insn_dconst,
+  bjvm_insn_fconst,
+  bjvm_insn_lconst,
 
   /** Cursed */
-  bjvm_bc_insn_iinc,
-  bjvm_bc_insn_invokeinterface,
-  bjvm_bc_insn_multianewarray,
-  bjvm_bc_insn_newarray,
-  bjvm_bc_insn_tableswitch,
-  bjvm_bc_insn_lookupswitch,
-  bjvm_bc_insn_ret
+  bjvm_insn_iinc,
+  bjvm_insn_invokeinterface,
+  bjvm_insn_multianewarray,
+  bjvm_insn_newarray,
+  bjvm_insn_tableswitch,
+  bjvm_insn_lookupswitch,
+  bjvm_insn_ret
 } bjvm_insn_code_kind;
 
 typedef enum {
@@ -256,12 +256,14 @@ typedef struct {
 
 bool bjvm_is_field_wide(bjvm_field_descriptor desc);
 
+typedef struct bjvm_cp_field bjvm_cp_field;
+
 typedef struct {
   bjvm_cp_class_info *class_info;
   bjvm_cp_name_and_type *nat;
 
   bjvm_field_descriptor *parsed_descriptor;
-  // bjvm_cp_field* field;
+  bjvm_cp_field* field;
 } bjvm_cp_field_info;
 
 typedef struct bjvm_method_descriptor bjvm_method_descriptor;
@@ -526,7 +528,7 @@ typedef struct bjvm_cp_method {
   bjvm_native_callback native_handle;
 } bjvm_cp_method;
 
-typedef struct {
+typedef struct bjvm_cp_field {
   bjvm_access_flags access_flags;
   bjvm_utf8 *name;
   bjvm_utf8 *descriptor;
@@ -540,16 +542,16 @@ typedef struct {
 } bjvm_cp_field;
 
 typedef enum {
-  BJVM_CLASSDESC_KIND_ORDINARY_ARRAY = 0,
-  BJVM_CLASSDESC_KIND_BYTE_ARRAY = 1,
-  BJVM_CLASSDESC_KIND_CHAR_ARRAY = 2,
-  BJVM_CLASSDESC_KIND_DOUBLE_ARRAY = 3,
-  BJVM_CLASSDESC_KIND_FLOAT_ARRAY = 4,
-  BJVM_CLASSDESC_KIND_INT_ARRAY = 5,
-  BJVM_CLASSDESC_KIND_LONG_ARRAY = 6,
-  BJVM_CLASSDESC_KIND_SHORT_ARRAY = 7,
-  BJVM_CLASSDESC_KIND_BOOLEAN_ARRAY = 8,
-  BJVM_CLASSDESC_KIND_ORDINARY = 10,
+  BJVM_CD_KIND_ORDINARY_ARRAY = 0,
+  BJVM_CD_KIND_BYTE_ARRAY = 1,
+  BJVM_CD_KIND_CHAR_ARRAY = 2,
+  BJVM_CD_KIND_DOUBLE_ARRAY = 3,
+  BJVM_CD_KIND_FLOAT_ARRAY = 4,
+  BJVM_CD_KIND_INT_ARRAY = 5,
+  BJVM_CD_KIND_LONG_ARRAY = 6,
+  BJVM_CD_KIND_SHORT_ARRAY = 7,
+  BJVM_CD_KIND_BOOLEAN_ARRAY = 8,
+  BJVM_CD_KIND_ORDINARY = 10,
 } bjvm_classdesc_kind;
 
 typedef struct bjvm_array_classdesc bjvm_array_classdesc;
@@ -592,6 +594,8 @@ typedef struct bjvm_classdesc {
 
   uint8_t *static_fields;
   int data_bytes;
+
+  bjvm_obj_header* mirror;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -620,6 +624,8 @@ typedef struct bjvm_ordinary_class {
 typedef struct bjvm_obj_header {
   volatile bjvm_mark_word_t mark_word;
   bjvm_classdesc *descriptor;
+
+  uint8_t fields[];
 } bjvm_obj_header;
 
 struct bjvm_class_loader;
@@ -865,7 +871,7 @@ char *lossy_utf8_entry_to_chars(const bjvm_utf8 *utf8);
 bjvm_utf8 bjvm_make_utf8(const wchar_t *c_literal);
 void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
-bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, bjvm_utf8 name);
+bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, const wchar_t* name);
 int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
 bjvm_cp_method *bjvm_get_method(bjvm_classdesc *classdesc, const char *name,
                                 const char *descriptor, bool superclasses,
