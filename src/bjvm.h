@@ -594,6 +594,8 @@ typedef struct bjvm_classdesc {
 
   uint8_t *static_fields;
   int data_bytes;
+  // Padding bytes before nonstatic fields for implementation details (e.g. pointers to VM constructs)
+  int imp_padding;
 
   bjvm_obj_header* mirror;
 } bjvm_classdesc;
@@ -717,6 +719,12 @@ typedef struct bjvm_vm {
   int (*load_classfile)(const char *filename, void *param, uint8_t **bytes,
                         size_t *len);
   void *load_classfile_param;
+
+  // Main thread group
+  bjvm_obj_header *main_thread_group;
+
+  // Interned strings (string -> instance of java/lang/String)
+  bjvm_string_hash_table interned_strings;
 } bjvm_vm;
 
 typedef struct {
@@ -761,6 +769,9 @@ typedef struct bjvm_thread {
   bjvm_obj_header *current_exception;
 
   bool js_jit_enabled;
+
+  // Instance of java.lang.Thread
+  bjvm_obj_header *thread_obj;
 } bjvm_thread;
 
 bjvm_array_classdesc *
@@ -786,6 +797,8 @@ typedef struct {
   uint32_t stack_space;
   // Whether to enable JavaScript JIT compilation
   bool js_jit_enabled;
+  // What thread group to construct the thread in (NULL = default thread group)
+  bjvm_obj_header *thread_group;
 } bjvm_thread_options;
 
 void bjvm_fill_default_thread_options(bjvm_thread_options *options);
@@ -877,13 +890,15 @@ bjvm_cp_method *bjvm_get_method(bjvm_classdesc *classdesc, const char *name,
                                 const char *descriptor, bool superclasses,
                                 bool superinterfaces);
 bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
-void bjvm_thread_start(bjvm_thread *thread, bjvm_cp_method *method,
+void bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method,
                        bjvm_stack_value *args, bjvm_stack_value *result);
 int bjvm_initialize_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
 void bjvm_register_native(bjvm_vm *vm, const char *class_name,
                           const char *method_name,
                           const char *method_descriptor,
                           bjvm_native_callback callback);
+
+bjvm_obj_header *create_uninitialized_object(bjvm_thread *thread, bjvm_classdesc *classdesc);
 
 #ifdef __cplusplus
 }

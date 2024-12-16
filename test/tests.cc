@@ -408,7 +408,7 @@ TEST_CASE("Playground") {
       bjvm_get_method(desc, "main", "([Ljava/lang/String;)V", false, false);
   bjvm_stack_value args[1] = {{.obj = nullptr}};
 
-  bjvm_thread_start(thr, method, args, NULL);
+  bjvm_thread_run(thr, method, args, NULL);
 
   bjvm_free_thread(thr);
   bjvm_free_vm(vm);
