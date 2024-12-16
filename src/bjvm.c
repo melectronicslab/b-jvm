@@ -3949,7 +3949,8 @@ void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference) {
 
 void free_array_classdesc(bjvm_array_classdesc *classdesc) {
   if (classdesc->base.array_type) {
-    free_array_classdesc(classdesc->base.array_type);
+    classdesc->base.array_type = NULL;
+    free_array_classdesc((bjvm_array_classdesc*) classdesc->base.array_type);
   }
   free(classdesc);
 }
@@ -4021,16 +4022,11 @@ bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor,
                                    bool search_superclasses,
                                    bool search_superinterfaces);
 
-int unimplemented_native(bjvm_thread *thread, bjvm_obj_header *obj,
-                         bjvm_stack_value *args, int argc,
+int unimplemented_native(bjvm_thread *, bjvm_obj_header *,
+                         bjvm_stack_value *, int,
                          bjvm_stack_value *ret) {
-  (void)thread;
-  (void)obj;
-  (void)args;
-  // assert(argc == 1);
   if (ret)
     ret->obj = NULL;
-  (void)ret;
 }
 
 bjvm_obj_header *bjvm_intern_string(bjvm_thread *thread, const wchar_t *chars,
@@ -4044,20 +4040,22 @@ int bjvm_System_initProperties(bjvm_thread *thread, bjvm_obj_header *,
                                      {L"stdout.encoding", L"UTF-8"},
                                      {L"native.encoding", L"UTF-8"},
                                      {L"stderr.encoding", L"UTF-8"},
-                                     {L"line.separator", L"\n"}};
-
+                                     {L"line.separator", L"\n"},
+                                     {L"path.separator", L":"},
+                                        {L"file.separator", L"/"}};
   bjvm_cp_method *put = bjvm_easy_method_lookup(
       props_obj->descriptor, "put",
       "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true, false);
   for (int i = 0; i < sizeof(props) / sizeof(props[0]); ++i) {
-    bjvm_stack_value args[3] = {
+    bjvm_stack_value put_args[3] = {
         {.obj = props_obj},
         {.obj = bjvm_intern_string(thread, props[i][0], wcslen(props[i][0]))},
         {.obj = bjvm_intern_string(thread, props[i][1], wcslen(props[i][1]))}};
     bjvm_stack_value result;
     // call put() with String key and value
-    bjvm_thread_run(thread, put, args, &result);
+    bjvm_thread_run(thread, put, put_args, &result);
   }
+  return 0;
 }
 
 int bjvm_System_registerNatives(bjvm_thread *thread, bjvm_obj_header *obj,
@@ -4065,6 +4063,13 @@ int bjvm_System_registerNatives(bjvm_thread *thread, bjvm_obj_header *obj,
                                 bjvm_stack_value *ret) {
   assert(obj == NULL);
   assert(argc == 0);
+  return 0;
+}
+
+int bjvm_System_mapLibraryName(bjvm_thread *thread, bjvm_obj_header *obj,
+                                bjvm_stack_value *args, int argc,
+                                bjvm_stack_value *ret) {
+  *ret = args[0];
   return 0;
 }
 
@@ -4672,6 +4677,7 @@ int bjvm_raise_exception(bjvm_thread *thread, const wchar_t *exception_name,
     bjvm_thread_run(thread, method, (bjvm_stack_value[]){{.obj = obj}}, NULL);
   }
 
+  printf("RAISING CANES %S %S\n", exception_name, exception_string);
   thread->current_exception = obj;
   return 0;
 }
@@ -4695,19 +4701,21 @@ int bjvm_String_intern(bjvm_thread *thread, bjvm_obj_header *obj,
   return 0;
 }
 
-int bjvm_FileOutputStream_writeBytes(bjvm_thread *vm, bjvm_obj_header *obj,
+int bjvm_FileOutputStream_writeBytes(bjvm_thread *thread, bjvm_obj_header *obj,
                                      bjvm_stack_value *args, int argc,
                                      bjvm_stack_value *ret) {
   bjvm_obj_header *bytes = args[0].obj;
   int offset = args[1].i;
   int length = args[2].i;
-  bool append = args[3].i;
 
   assert(bytes->descriptor->kind == BJVM_CD_KIND_BYTE_ARRAY);
 
   char *data = (char *)array_data(bytes);
   for (int i = 0; i < length; ++i) {
-    fprintf(stderr, "%c", data[offset + i]);
+    if (thread->write_stdout)
+      thread->write_stdout(data[offset + i]);
+    else
+      fprintf(stderr, "%c", data[offset + i]);
   }
 
   return 0;
@@ -4727,7 +4735,9 @@ bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   vm->main_thread_group = NULL;
 
   bjvm_register_native(vm, "java/lang/System", "registerNatives", "()V",
-                       bjvm_System_registerNatives);
+  bjvm_System_registerNatives);
+  bjvm_register_native(vm, "java/lang/System", "mapLibraryName", "(Ljava/lang/String;)Ljava/lang/String;",
+                       bjvm_System_mapLibraryName);
   bjvm_register_native(vm, "java/lang/System", "initProperties",
                        "(Ljava/util/Properties;)Ljava/util/Properties;",
                        bjvm_System_initProperties);
@@ -5010,6 +5020,8 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   bjvm_stack_value ret;
   bjvm_thread_run(thr, method, NULL, &ret);
 
+  thr->current_exception = NULL;  // clear it for now -- since it doesn't make it all the way yet
+
   return thr;
 }
 
@@ -5291,8 +5303,7 @@ bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread,
     // direct superclass is resolved using the algorithm of §5.4.3.1.
     bjvm_cp_class_info *super = base_class->super_class;
     if (super) {
-      // Check whether the superclass is currently being loaded -> circularity
-      // error
+      // If the superclass is currently being loaded -> circularity  error
       if (bjvm_hash_table_lookup(&vm->inchoate_classes, super->name->chars,
                                  super->name->len)) {
         // TODO raise ClassCircularityError
@@ -5880,6 +5891,14 @@ bool bjvm_instanceof(const bjvm_classdesc *o, bjvm_classdesc *classdesc) {
     desc = desc->super_class ? desc->super_class->classdesc : NULL;
   }
   return false;
+}
+
+void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *method) {
+  wchar_t err[1000] = {0};
+  swprintf(err, 1000, L"Method %S on class %S with descriptor %S",
+    method->name->chars, method->my_class->this_class->name->chars,
+         method->descriptor->chars);
+  bjvm_raise_exception(thread, L"java/lang/UnsatisfiedLinkError", err);
 }
 
 int bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
@@ -6551,13 +6570,8 @@ start:
       bjvm_stack_value invoked_result;
       if (method->access_flags & BJVM_ACCESS_NATIVE) {
         if (!method->native_handle) {
-          // Print method name and class and descriptor
-          printf("Method %S on class %S with descriptor %S is native but has "
-                 "no native handle\n",
-                 method->name->chars, method->my_class->this_class->name->chars,
-                 method->descriptor->chars);
-          // TODO UnsatisfiedLinkError
-          UNREACHABLE();
+          bjvm_unsatisfied_link_error(thread, method);
+          goto done;
         }
 
         method->native_handle(thread, obj,
@@ -6611,13 +6625,8 @@ start:
       bjvm_stack_value invoked_result;
       if (method->access_flags & BJVM_ACCESS_NATIVE) {
         if (!method->native_handle) {
-          // Print method name and class and descriptor
-          printf("Method %S on class %S with descriptor %S is native but has "
-                 "no native handle\n",
-                 method->name->chars, method->my_class->this_class->name->chars,
-                 method->descriptor->chars);
-          // TODO UnsatisfiedLinkError
-          UNREACHABLE();
+          bjvm_unsatisfied_link_error(thread, method);
+          goto done;
         }
 
         method->native_handle(thread, NULL,
@@ -6811,7 +6820,7 @@ start:
       if (count < 0) {
         wchar_t size_str[16] = {0};
         swprintf(size_str, 16, L"%d", count);
-        bjvm_raise_exception(thread, L"NegativeArraySizeException", size_str);
+        bjvm_raise_exception(thread, L"java.lang.NegativeArraySizeException", size_str);
         goto done;
       }
 

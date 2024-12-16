@@ -754,6 +754,8 @@ typedef struct {
   bjvm_stack_value values[];
 } bjvm_stack_frame;
 
+typedef void (*bjvm_write_byte)(int ch);
+
 typedef struct bjvm_thread {
   // Global VM corresponding to this thread
   bjvm_vm *vm;
@@ -777,6 +779,10 @@ typedef struct bjvm_thread {
 
   // Instance of java.lang.Thread
   bjvm_obj_header *thread_obj;
+
+  // Write byte of stdout/stderr (if NULL, uses the default implementation)
+  bjvm_write_byte write_stdout;
+  bjvm_write_byte write_stderr;
 } bjvm_thread;
 
 bjvm_array_classdesc *
@@ -804,6 +810,9 @@ typedef struct {
   bool js_jit_enabled;
   // What thread group to construct the thread in (NULL = default thread group)
   bjvm_obj_header *thread_group;
+  // Write byte of stdout/stderr (if NULL, prints directly to stdout/stderr)
+  bjvm_write_byte write_stdout;
+  bjvm_write_byte write_stderr;
 } bjvm_thread_options;
 
 void bjvm_fill_default_thread_options(bjvm_thread_options *options);
