@@ -404,8 +404,8 @@ TEST_CASE("Playground") {
   int status = bjvm_initialize_class(thr, desc);
   REQUIRE(status == 0);
 
-  bjvm_cp_method *method =
-      bjvm_easy_method_lookup(desc, "main", "([Ljava/lang/String;)V", false, false);
+  bjvm_cp_method *method = bjvm_easy_method_lookup(
+      desc, "main", "([Ljava/lang/String;)V", false, false);
   bjvm_stack_value args[1] = {{.obj = nullptr}};
 
   bjvm_thread_run(thr, method, args, NULL);

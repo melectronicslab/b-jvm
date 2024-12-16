@@ -263,7 +263,7 @@ typedef struct {
   bjvm_cp_name_and_type *nat;
 
   bjvm_field_descriptor *parsed_descriptor;
-  bjvm_cp_field* field;
+  bjvm_cp_field *field;
 } bjvm_cp_field_info;
 
 typedef struct bjvm_method_descriptor bjvm_method_descriptor;
@@ -598,10 +598,11 @@ typedef struct bjvm_classdesc {
 
   uint8_t *static_fields;
   int data_bytes;
-  // Padding bytes before nonstatic fields for implementation details (e.g. pointers to VM constructs)
+  // Padding bytes before nonstatic fields for implementation details (e.g.
+  // pointers to VM constructs)
   int imp_padding;
 
-  bjvm_obj_header* mirror;
+  bjvm_obj_header *mirror;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -888,14 +889,17 @@ char *lossy_utf8_entry_to_chars(const bjvm_utf8 *utf8);
 bjvm_utf8 bjvm_make_utf8(const wchar_t *c_literal);
 void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
-bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, const wchar_t* name);
+bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread,
+                                       const wchar_t *name);
 int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
-bjvm_cp_method *bjvm_easy_method_lookup(bjvm_classdesc *classdesc, const char *name,
-                                const char *descriptor, bool superclasses,
-                                bool superinterfaces);
+bjvm_cp_method *bjvm_easy_method_lookup(bjvm_classdesc *classdesc,
+                                        const char *name,
+                                        const char *descriptor,
+                                        bool superclasses,
+                                        bool superinterfaces);
 bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
 void bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method,
-                       bjvm_stack_value *args, bjvm_stack_value *result);
+                     bjvm_stack_value *args, bjvm_stack_value *result);
 int bjvm_initialize_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
 void bjvm_register_native(bjvm_vm *vm, const char *class_name,
                           const char *method_name,
@@ -904,24 +908,25 @@ void bjvm_register_native(bjvm_vm *vm, const char *class_name,
 
 bjvm_obj_header *new_object(bjvm_thread *thread, bjvm_classdesc *classdesc);
 
-
 int *array_length(bjvm_obj_header *array);
 
 void *array_data(bjvm_obj_header *array);
 
-
-
-  bjvm_classdesc *bjvm_unmirror(bjvm_obj_header *mirror);
+bjvm_classdesc *bjvm_unmirror(bjvm_obj_header *mirror);
 
 bjvm_cp_field **bjvm_unmirror_field(bjvm_obj_header *mirror);
 
 bjvm_cp_method **bjvm_unmirror_ctor(bjvm_obj_header *mirror);
 
-bjvm_obj_header *create_object_array(bjvm_thread *thread, bjvm_classdesc *classdesc, int count);
+bjvm_obj_header *create_object_array(bjvm_thread *thread,
+                                     bjvm_classdesc *classdesc, int count);
 
-void bjvm_set_field(bjvm_obj_header *obj, bjvm_cp_field *field, bjvm_stack_value bjvm_stack_value);
+void bjvm_set_field(bjvm_obj_header *obj, bjvm_cp_field *field,
+                    bjvm_stack_value bjvm_stack_value);
 bjvm_stack_value bjvm_get_field(bjvm_obj_header *obj, bjvm_cp_field *field);
-bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const wchar_t* name, const wchar_t* descriptor);
+bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc,
+                                      const wchar_t *name,
+                                      const wchar_t *descriptor);
 
 #ifdef __cplusplus
 }
