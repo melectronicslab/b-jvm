@@ -526,6 +526,7 @@ typedef struct bjvm_cp_method {
   bjvm_classdesc *my_class;
 
   bjvm_native_callback native_handle;
+  bjvm_obj_header *reflection_ctor;
 } bjvm_cp_method;
 
 typedef struct bjvm_cp_field {
@@ -539,6 +540,9 @@ typedef struct bjvm_cp_field {
   int byte_offset;
 
   bjvm_field_descriptor parsed_descriptor;
+  bjvm_obj_header *reflection_field;
+
+  bjvm_classdesc *my_class;
 } bjvm_cp_field;
 
 typedef enum {
@@ -898,7 +902,26 @@ void bjvm_register_native(bjvm_vm *vm, const char *class_name,
                           const char *method_descriptor,
                           bjvm_native_callback callback);
 
-bjvm_obj_header *create_uninitialized_object(bjvm_thread *thread, bjvm_classdesc *classdesc);
+bjvm_obj_header *new_object(bjvm_thread *thread, bjvm_classdesc *classdesc);
+
+
+int *array_length(bjvm_obj_header *array);
+
+void *array_data(bjvm_obj_header *array);
+
+
+
+  bjvm_classdesc *bjvm_unmirror(bjvm_obj_header *mirror);
+
+bjvm_cp_field **bjvm_unmirror_field(bjvm_obj_header *mirror);
+
+bjvm_cp_method **bjvm_unmirror_ctor(bjvm_obj_header *mirror);
+
+bjvm_obj_header *create_object_array(bjvm_thread *thread, bjvm_classdesc *classdesc, int count);
+
+void bjvm_set_field(bjvm_obj_header *obj, bjvm_cp_field *field, bjvm_stack_value bjvm_stack_value);
+bjvm_stack_value bjvm_get_field(bjvm_obj_header *obj, bjvm_cp_field *field);
+bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const wchar_t* name, const wchar_t* descriptor);
 
 #ifdef __cplusplus
 }
