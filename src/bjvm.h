@@ -711,6 +711,8 @@ void *bjvm_hash_table_lookup(bjvm_string_hash_table *tbl, const wchar_t *key,
 
 void bjvm_free_hash_table(bjvm_string_hash_table tbl);
 
+typedef void (*bjvm_write_byte)(int ch, void* param);
+
 typedef struct bjvm_vm {
   void *classpath_manager;
 
@@ -730,6 +732,13 @@ typedef struct bjvm_vm {
 
   // Interned strings (string -> instance of java/lang/String)
   bjvm_string_hash_table interned_strings;
+
+  // Write byte of stdout/stderr (if NULL, uses the default implementation)
+  bjvm_write_byte write_stdout;
+  bjvm_write_byte write_stderr;
+
+  // Passed to write_stdout/write_stderr
+  void* write_byte_param;
 } bjvm_vm;
 
 typedef struct {
@@ -740,6 +749,12 @@ typedef struct {
   int (*load_classfile)(const char *filename, void *param, uint8_t **bytes,
                         size_t *len);
   void *load_classfile_param;
+
+  // Write byte of stdout/stderr (if NULL, uses the default implementation)
+  bjvm_write_byte write_stdout;
+  bjvm_write_byte write_stderr;
+  // Passed to write_stdout/write_stderr
+  void* write_byte_param;
 } bjvm_vm_options;
 
 typedef struct {
@@ -753,8 +768,6 @@ typedef struct {
   // First max_locals bjvm_stack_values, then max_stack more
   bjvm_stack_value values[];
 } bjvm_stack_frame;
-
-typedef void (*bjvm_write_byte)(int ch);
 
 typedef struct bjvm_thread {
   // Global VM corresponding to this thread
@@ -779,10 +792,6 @@ typedef struct bjvm_thread {
 
   // Instance of java.lang.Thread
   bjvm_obj_header *thread_obj;
-
-  // Write byte of stdout/stderr (if NULL, uses the default implementation)
-  bjvm_write_byte write_stdout;
-  bjvm_write_byte write_stderr;
 } bjvm_thread;
 
 bjvm_array_classdesc *

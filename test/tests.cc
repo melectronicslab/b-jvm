@@ -162,7 +162,7 @@ TEST_CASE("Test classfile parsing") {
     double start = get_time();
 
     // std::cout << "Reading " << file << "\n";
-    bjvm_classdesc cf;
+    bjvm_classdesc cf = {};
     char *error = bjvm_parse_classfile(read.data(), read.size(), &cf);
     if (error != nullptr) {
       std::cerr << "Error parsing classfile: " << error << '\n';
