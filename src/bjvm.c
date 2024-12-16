@@ -95,15 +95,6 @@ bjvm_utf8 init_utf8_entry(int len) {
   return (bjvm_utf8){.chars = calloc(len + 1, sizeof(wchar_t)), .len = len};
 }
 
-// Create an entry from a C string
-bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal) {
-  int len = strlen(c_literal);
-  bjvm_utf8 entry = init_utf8_entry(len);
-  for (int i = 0; i < len; ++i)
-    entry.chars[i] = c_literal[i];
-  return entry;
-}
-
 void free_utf8(bjvm_utf8 entry) { free(entry.chars); }
 
 void free_method_descriptor(void *descriptor_);
@@ -313,6 +304,7 @@ cf_byteslice reader_get_slice(cf_byteslice *reader, size_t len,
       if (new_cap < 2)                                                         \
         new_cap = 2;                                                           \
       void *next = realloc(vector, new_cap * sizeof(*vector));                 \
+      assert(next);                                                            \
       (vector_cap) = new_cap;                                                  \
       vector = next;                                                           \
     }                                                                          \
@@ -441,6 +433,10 @@ bjvm_utf8 parse_modified_utf8(const uint8_t *bytes, int len) {
 inval:
   free_utf8(result);
   format_error_static("Invalid UTF-8 sequence");
+}
+
+bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal) {
+  return parse_modified_utf8((const uint8_t*) c_literal, strlen(c_literal));
 }
 
 bjvm_cp_entry *check_cp_entry(bjvm_cp_entry *entry, int expected_kinds,
@@ -5013,8 +5009,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   bjvm_stack_value ret;
   bjvm_thread_run(thr, method, NULL, &ret);
 
-  thr->current_exception =
-      NULL; // clear it for now -- since it doesn't make it all the way yet
+  thr->current_exception = NULL;
 
   return thr;
 }
@@ -5589,6 +5584,7 @@ bjvm_cp_method *bjvm_easy_method_lookup(bjvm_classdesc *classdesc,
                                         const char *descriptor,
                                         bool superclasses,
                                         bool superinterfaces) {
+  if (!classdesc) return NULL;
   bjvm_utf8 name_wide = bjvm_make_utf8_cstr(name),
             descriptor_wide;
   if (descriptor)
@@ -5613,8 +5609,6 @@ void bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method,
   }
   bjvm_bytecode_interpret(thread, frame, result);
   bjvm_pop_frame(thread, frame);
-
-  thread->current_exception = NULL;
 }
 
 int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info *info) {

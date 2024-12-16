@@ -401,23 +401,52 @@ TEST_CASE("VM initialization") {
   bjvm_free_vm(vm);
 }
 
-TEST_CASE("Playground") {
-  const char *cp[2] = {"test_files/interning/", nullptr};
-  bjvm_vm *vm = create_vm(false, cp);
+struct TestCaseResult {
+  std::string stdout_;
+  std::string stderr_;
+};
+
+TestCaseResult run_test_case(std::string folder) {
+  const char *classpath[2] = {folder.c_str(), nullptr};
+  bjvm_vm_options options = {};
+
+  TestCaseResult result{};
+
+  options.load_classfile = load_classfile;
+  options.load_classfile_param = classpath;
+  options.write_stdout = [](int ch, void *param) {
+    printf("WRITING %c\n", ch);
+    auto *result = (TestCaseResult *)param;
+    result->stdout_ += (char)ch;
+  };
+  options.write_stderr = [](int ch, void *param) {
+    auto *result = (TestCaseResult *)param;
+    result->stderr_ += (char)ch;
+  };
+  options.write_byte_param = &result;
+
+  bjvm_vm *vm = bjvm_create_vm(options);
   bjvm_thread *thr = bjvm_create_thread(vm, bjvm_default_thread_options());
 
   bjvm_classdesc *desc = bootstrap_class_create(thr, L"Main");
-  int status = bjvm_initialize_class(thr, desc);
-  REQUIRE(status == 0);
-
-  bjvm_cp_method *method = bjvm_easy_method_lookup(
-      desc, "main", "([Ljava/lang/String;)V", false, false);
   bjvm_stack_value args[1] = {{.obj = nullptr}};
+
+  bjvm_cp_method *method;
+  bjvm_initialize_class(thr, desc);
+
+  method = bjvm_easy_method_lookup(
+      desc, "main", "([Ljava/lang/String;)V", false, false);
 
   bjvm_thread_run(thr, method, args, NULL);
 
   bjvm_free_thread(thr);
   bjvm_free_vm(vm);
+
+  return result;
+}
+
+TEST_CASE("Playground") {
+  auto result = run_test_case("test_files/interning/");
 }
 
 TEST_CASE("String hash table") {
@@ -462,6 +491,11 @@ TEST_CASE("SignaturePolymorphic methods found") {
 
 TEST_CASE("Malformed classfiles") {
   // TODO
+}
+
+TEST_CASE("Interning") {
+  auto result = run_test_case("test_files/interning/");
+  REQUIRE(result.stdout_ == "false\nfalse\ntrue\ntrue\ntrue\nfalse\ntrue\nfalse\n");
 }
 
 #if 0
