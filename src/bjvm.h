@@ -886,7 +886,7 @@ void free_utf8(bjvm_utf8 entry);
 void free_field_descriptor(bjvm_field_descriptor descriptor);
 bjvm_classdesc *bootstrap_class_create(bjvm_thread *thread, const wchar_t* name);
 int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
-bjvm_cp_method *bjvm_get_method(bjvm_classdesc *classdesc, const char *name,
+bjvm_cp_method *bjvm_easy_method_lookup(bjvm_classdesc *classdesc, const char *name,
                                 const char *descriptor, bool superclasses,
                                 bool superinterfaces);
 bjvm_utf8 bjvm_make_utf8_cstr(const char *c_literal);
