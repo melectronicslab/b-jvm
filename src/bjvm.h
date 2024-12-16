@@ -632,7 +632,7 @@ typedef struct bjvm_obj_header {
   volatile bjvm_mark_word_t mark_word;
   bjvm_classdesc *descriptor;
 
-  uint8_t fields[];
+  uint8_t _Alignas(8) fields[];
 } bjvm_obj_header;
 
 struct bjvm_class_loader;

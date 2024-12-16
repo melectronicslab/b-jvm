@@ -36,6 +36,15 @@ double get_time() {
 
 std::vector<uint8_t> ReadFile(const std::string &file) {
 #ifdef EMSCRIPTEN
+
+  bool exists = EM_ASM_INT(
+      {
+        const fs = require('fs');
+        return fs.existsSync(UTF8ToString($0));
+      },
+      file.c_str());
+  if (!exists) throw std::runtime_error("Classpath file not found: " + file);
+
   void *length_and_data = EM_ASM_PTR(
       {
         const fs = require('fs');

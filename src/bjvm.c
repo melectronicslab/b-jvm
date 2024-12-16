@@ -1,4 +1,4 @@
-#define AGGRESSIVE_DEBUG 0
+#define AGGRESSIVE_DEBUG 1
 
 #include <assert.h>
 #include <limits.h>
@@ -5761,7 +5761,6 @@ bjvm_obj_header *create_primitive_array(bjvm_thread *thread,
 }
 
 uint64_t hash_code_rng = 0;
-
 uint64_t next_hash_code() {
   hash_code_rng = hash_code_rng * 0x5DEECE66D + 0xB;
   return hash_code_rng >> 16;
@@ -5882,7 +5881,7 @@ int bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
 
 #if AGGRESSIVE_DEBUG
   printf("Calling method %S, descriptor %S, on class %S\n", method->name->chars,
-         method->descriptor->chars, method->my_class->name->chars);
+         method->descriptor->chars, method->my_class->name.chars);
 #endif
 
 start:
@@ -5894,7 +5893,7 @@ start:
          *insn_dump = insn_to_string(&insn, frame->program_counter);
     printf("Insn: %s\n", insn_to_string(&insn, frame->program_counter));
     printf("Method: %S in class %S\n", method->name->chars,
-           method->my_class->name->chars);
+           method->my_class->name.chars);
     printf("FRAME:\n%s\n", dump_frame(frame));
 
     free(dump);
@@ -5946,7 +5945,6 @@ start:
     }
     case bjvm_insn_athrow: {
       bjvm_raise_exception_object(thread, checked_pop(frame).obj);
-      printf("Throwing in method %S\n", method->name->chars);
       goto done;
     }
     case bjvm_insn_baload: {
@@ -6651,8 +6649,8 @@ start:
         break;
       }
       case BJVM_CP_KIND_STRING: {
-        // TODO intern strings
-        bjvm_obj_header *obj = make_string(thread, ent->string.chars->chars);
+        bjvm_utf8* s = ent->string.chars;
+        bjvm_obj_header *obj = bjvm_intern_string(thread, s->chars, s->len);
         checked_push(frame, (bjvm_stack_value){.obj = obj});
         break;
       }
