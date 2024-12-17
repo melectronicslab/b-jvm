@@ -608,7 +608,8 @@ typedef struct bjvm_classdesc {
   bjvm_compressed_bitset static_references;
   bjvm_compressed_bitset instance_references;
 
-  bjvm_classdesc* one_fewer;
+  bjvm_classdesc *one_fewer_dim;
+  bjvm_classdesc *base_component;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -618,7 +619,6 @@ typedef struct bjvm_ordinary_class bjvm_ordinary_class;
 typedef struct bjvm_array_classdesc {
   bjvm_classdesc base;
   int dimensions;
-  bjvm_classdesc *base_component;
 } bjvm_array_classdesc;
 
 typedef struct bjvm_primitive_array_classdesc {
@@ -747,6 +747,9 @@ typedef struct bjvm_vm {
 
   // Passed to write_stdout/write_stderr
   void *write_byte_param;
+
+  // Primitive classes (int.class, etc., boolean (4) through void (12) )
+  struct bjvm_native_Class *primitive_classes[9];
 } bjvm_vm;
 
 typedef struct {
@@ -955,6 +958,9 @@ bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc,
                                       const wchar_t *descriptor);
 bjvm_type_kind field_to_representable_kind(const bjvm_field_descriptor *field);
 int bjvm_raise_exception(bjvm_thread *thread, const wchar_t *exception_name, const wchar_t *exception_string);
+
+// e.g. int.class
+struct bjvm_native_Class *bjvm_primitive_class_mirror(bjvm_thread *thread, bjvm_type_kind prim_kind);
 
 #include "natives.h"
 
