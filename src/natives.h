@@ -135,7 +135,7 @@ struct bjvm_native_Thread {
   int32_t threadLocalRandomProbe;  // I
   int32_t threadLocalRandomSecondarySeed;  // I
 };
-static inline void bjvm_register_native_padding(bjvm_vm *vm) {
+static void bjvm_register_native_padding(bjvm_vm *vm) {
   (void)bjvm_hash_table_insert(&vm->class_padding, L"java/lang/Class", -1, (void*) (1 * sizeof(void*)));
   (void)bjvm_hash_table_insert(&vm->class_padding, L"java/lang/reflect/Field", -1, (void*) (1 * sizeof(void*)));
   (void)bjvm_hash_table_insert(&vm->class_padding, L"java/lang/reflect/Method", -1, (void*) (1 * sizeof(void*)));
