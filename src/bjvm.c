@@ -190,6 +190,8 @@ void bjvm_free_classfile(bjvm_classdesc cf) {
   free(cf.fields);
   free(cf.methods);
   free(cf.attributes);
+  bjvm_free_compressed_bitset(cf.static_references);
+  bjvm_free_compressed_bitset(cf.instance_references);
 }
 
 bjvm_cp_entry *get_constant_pool_entry(bjvm_constant_pool *pool, int index) {
@@ -3240,6 +3242,10 @@ void bjvm_free_analy_reference_bitset_state(
   bjvm_free_compressed_bitset(state.locals);
 }
 
+bjvm_compressed_bitset bjvm_empty_bitset() {
+  return (bjvm_compressed_bitset){.bits_inl = 1};
+}
+
 bool bjvm_is_bitset_compressed(bjvm_compressed_bitset bits) {
   return (bits.bits_inl & 1) != 0; // pointer is aligned
 }
@@ -3534,6 +3540,8 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result) {
     cf->fields[i].my_class = result;
   }
   cf->static_fields = NULL;
+  cf->static_references = bjvm_empty_bitset();
+  cf->instance_references = bjvm_empty_bitset();
 
   // Parse methods
   cf->methods_count = reader_next_u16(&reader, "methods count");
@@ -4380,16 +4388,7 @@ int bjvm_Unsafe_objectFieldOffset(bjvm_thread *, bjvm_obj_header *,
                                   bjvm_stack_value *args, int argc,
                                   bjvm_stack_value *ret) {
   assert(argc == 1);
-
-  // Look up "root" in args[0].obj
-  bjvm_classdesc *reflect_Field = args[0].obj->descriptor;
-  bjvm_obj_header *root =
-      bjvm_get_field(args[0].obj,
-                     bjvm_easy_field_lookup(reflect_Field, L"root",
-                                            L"Ljava/lang/reflect/Field;"))
-          .obj;
-  bjvm_cp_field *reflect_field =
-      *bjvm_unmirror_field(root ? root : args[0].obj);
+  bjvm_cp_field *reflect_field = *bjvm_unmirror_field(args[0].obj);
   ret->l = reflect_field->byte_offset;
   return 0;
 }
@@ -4522,16 +4521,7 @@ int bjvm_NativeConstructorAccessImpl_newInstance(bjvm_thread *thread,
                                                  bjvm_obj_header *,
                                                  bjvm_stack_value *args, int,
                                                  bjvm_stack_value *ret) {
-  bjvm_obj_header *ctor = args[0].obj;
-  // Read root
-  bjvm_classdesc *reflect_Ctor = ctor->descriptor;
-  bjvm_obj_header *root =
-      bjvm_get_field(ctor,
-                     bjvm_easy_field_lookup(reflect_Ctor, L"root",
-                                            L"Ljava/lang/reflect/Constructor;"))
-          .obj;
-  bjvm_cp_method *method = *bjvm_unmirror_ctor(root ? root : ctor);
-
+  bjvm_cp_method *method = *bjvm_unmirror_ctor(args[0].obj);
   bjvm_stack_value result;
   int error = bjvm_initialize_class(thread, method->my_class);
   if (error)
@@ -4920,13 +4910,13 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   // Initialize java.lang.Thread mirror
   desc = bootstrap_class_create(thr, L"java/lang/Thread");
   bjvm_initialize_class(thr, desc);
-  bjvm_obj_header *thread_obj = new_object(thr, desc);
+
+  struct bjvm_native_Thread *thread_obj = (void*)new_object(thr, desc);
   thr->thread_obj = thread_obj;
 
-  bjvm_cp_field *field = bjvm_easy_field_lookup(desc, L"priority", L"I");
-  assert(field);
-
-  bjvm_set_field(thread_obj, field, (bjvm_stack_value){.i = 5});
+  thread_obj->vm_thread = thr;
+  thread_obj->priority = 5;
+  thread_obj->name = bjvm_intern_string(thr, L"main", -1);
 
   bjvm_obj_header *main_thread_group = options.thread_group;
   if (!main_thread_group) {
@@ -5735,10 +5725,16 @@ bjvm_classdesc *bjvm_unmirror_class(bjvm_obj_header *mirror) {
 }
 
 bjvm_cp_field **bjvm_unmirror_field(bjvm_obj_header *mirror) {
+  bjvm_obj_header* root = ((struct bjvm_native_Field *)mirror)->root;
+  if (root)
+    mirror = root;
   return &((struct bjvm_native_Field *)mirror)->reflected_field;
 }
 
 bjvm_cp_method **bjvm_unmirror_ctor(bjvm_obj_header *mirror) {
+  bjvm_obj_header* root = ((struct bjvm_native_Constructor *)mirror)->root;
+  if (root)
+    mirror = root;
   return &((struct bjvm_native_Constructor *)mirror)->reflected_ctor;
 }
 

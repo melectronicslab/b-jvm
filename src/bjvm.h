@@ -603,6 +603,10 @@ typedef struct bjvm_classdesc {
   int imp_padding;
 
   struct bjvm_native_Class *mirror;
+
+  // Non-array classes: which 4- or 8-byte aligned offsets correspond to references that need to be followed
+  bjvm_compressed_bitset static_references;
+  bjvm_compressed_bitset instance_references;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -797,7 +801,7 @@ typedef struct bjvm_thread {
   bool js_jit_enabled;
 
   // Instance of java.lang.Thread
-  bjvm_obj_header *thread_obj;
+  struct bjvm_native_Thread *thread_obj;
 } bjvm_thread;
 
 bjvm_array_classdesc *
