@@ -1,5 +1,8 @@
 #define AGGRESSIVE_DEBUG 0
 
+#define CACHE_INVOKESTATIC 1
+#define CACHE_INVOKENONSTATIC 0
+
 #include <assert.h>
 #include <limits.h>
 #include <pthread.h>
@@ -6087,29 +6090,32 @@ int bjvm_invokenonstatic(bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_byte
 }
 
 int bjvm_invokestatic(bjvm_thread * thread, bjvm_stack_frame * frame, bjvm_bytecode_insn * insn) {
-  const bjvm_cp_method_info *info = &insn->cp->methodref;
-  bjvm_cp_class_info *class = info->class_info;
+  bjvm_cp_method *method = insn->ic;
+  if (!method && CACHE_INVOKESTATIC) {
+    const bjvm_cp_method_info *info = &insn->cp->methodref;
+    bjvm_cp_class_info *class = info->class_info;
 
-  int error = bjvm_resolve_class(thread, class);
-  if (error)
-    return -1;
-  error = bjvm_initialize_class(thread, class->classdesc);
-  if (error)
-    return -1;
+    int error = bjvm_resolve_class(thread, class);
+    if (error)
+      return -1;
+    error = bjvm_initialize_class(thread, class->classdesc);
+    if (error)
+      return -1;
 
-  bjvm_cp_method *method =
-      bjvm_method_lookup(class->classdesc, info->name_and_type->name,
-                         info->name_and_type->descriptor, false, false);
-  if (!method) {
-    wchar_t complaint[1000];
-    swprintf(complaint, 1000, L"Could not find method %S with descriptor %S on class %S",
-            info->name_and_type->name->chars, info->name_and_type->descriptor->chars,
-            class->name->chars);
-    bjvm_incompatible_class_change_error(thread, complaint);
-    return -1;
+    method = insn->ic =
+        bjvm_method_lookup(class->classdesc, info->name_and_type->name,
+                           info->name_and_type->descriptor, false, false);
+    if (!method) {
+      wchar_t complaint[1000];
+      swprintf(complaint, 1000, L"Could not find method %S with descriptor %S on class %S",
+              info->name_and_type->name->chars, info->name_and_type->descriptor->chars,
+              class->name->chars);
+      bjvm_incompatible_class_change_error(thread, complaint);
+      return -1;
+    }
   }
 
-  int args = info->method_descriptor->args_count;
+  int args = method->parsed_descriptor->args_count;
   assert(args <= frame->stack_depth);
 
   bjvm_stack_value invoked_result;
@@ -6191,12 +6197,12 @@ int bjvm_bytecode_interpret(bjvm_thread *thread, bjvm_stack_frame *frame,
 
 start:
   while (true) {
-    bjvm_bytecode_insn insn = method->code->code[frame->program_counter];
+    bjvm_bytecode_insn* insn = &method->code->code[frame->program_counter];
 
 #if AGGRESSIVE_DEBUG
     char *dump = dump_frame(frame),
-         *insn_dump = insn_to_string(&insn, frame->program_counter);
-    printf("Insn: %s\n", insn_to_string(&insn, frame->program_counter));
+         *insn_dump = insn_to_string(insn, frame->program_counter);
+    printf("Insn: %s\n", insn_to_string(insn, frame->program_counter));
     printf("Method: %S in class %S\n", method->name->chars,
            method->my_class->name.chars);
     printf("FRAME:\n%s\n", dump_frame(frame));
@@ -6205,7 +6211,7 @@ start:
     free(insn_dump);
 #endif
 
-    switch (insn.kind) {
+    switch (insn->kind) {
     case bjvm_insn_nop:
       break;
     case bjvm_insn_aaload: {
@@ -6729,7 +6735,7 @@ start:
       break;
     case bjvm_insn_anewarray: {
       int count = checked_pop(frame).i;
-      bjvm_cp_class_info *info = &insn.cp->class_info;
+      bjvm_cp_class_info *info = &insn->cp->class_info;
 
       int error = bjvm_resolve_class(thread, info);
       if (error)
@@ -6746,7 +6752,7 @@ start:
       break;
     }
     case bjvm_insn_checkcast: {
-      bjvm_cp_class_info *info = &insn.cp->class_info;
+      bjvm_cp_class_info *info = &insn->cp->class_info;
       int error = bjvm_resolve_class(thread, info);
       if (error)
         goto done;
@@ -6765,7 +6771,7 @@ start:
       break;
     }
     case bjvm_insn_instanceof: {
-      bjvm_cp_class_info *info = &insn.cp->class_info;
+      bjvm_cp_class_info *info = &insn->cp->class_info;
       int error = bjvm_resolve_class(thread, info);
       if (error)
         goto done;
@@ -6781,7 +6787,7 @@ start:
       UNREACHABLE("bjvm_insn_invokedynamic");
       break;
     case bjvm_insn_new: {
-      bjvm_cp_class_info *info = &insn.cp->class_info;
+      bjvm_cp_class_info *info = &insn->cp->class_info;
       int error = bjvm_resolve_class(thread, info);
       if (error)
         goto done;
@@ -6797,7 +6803,7 @@ start:
     }
     case bjvm_insn_getfield:
     case bjvm_insn_putfield: {
-      bjvm_cp_field_info *field_info = &insn.cp->fieldref_info;
+      bjvm_cp_field_info *field_info = &insn->cp->fieldref_info;
       int error = bjvm_resolve_field(thread, field_info);
       if (error) {
         UNREACHABLE();
@@ -6806,7 +6812,7 @@ start:
       }
       assert(!(field_info->field->access_flags & BJVM_ACCESS_STATIC));
       bjvm_stack_value val;
-      if (insn.kind == bjvm_insn_putfield)
+      if (insn->kind == bjvm_insn_putfield)
         val = checked_pop(frame);
       bjvm_obj_header *obj = checked_pop(frame).obj;
 
@@ -6814,7 +6820,7 @@ start:
 
       bjvm_type_kind kind =
           field_to_representable_kind(field_info->parsed_descriptor);
-      if (insn.kind == bjvm_insn_getfield) {
+      if (insn->kind == bjvm_insn_getfield) {
         checked_push(frame, load_stack_value(addr, kind));
       } else {
         store_stack_value(addr, val, kind);
@@ -6824,7 +6830,7 @@ start:
     }
     case bjvm_insn_getstatic:
     case bjvm_insn_putstatic: {
-      bjvm_cp_field_info *field_info = &insn.cp->fieldref_info;
+      bjvm_cp_field_info *field_info = &insn->cp->fieldref_info;
       bjvm_cp_class_info *class = field_info->class_info;
 
       int error = bjvm_resolve_class(thread, class);
@@ -6843,7 +6849,7 @@ start:
           &field->my_class->static_fields[field->byte_offset];
       bjvm_type_kind kind =
           field_to_representable_kind(field_info->parsed_descriptor);
-      if (insn.kind == bjvm_insn_putstatic) {
+      if (insn->kind == bjvm_insn_putstatic) {
         store_stack_value(field_location, checked_pop(frame), kind);
       } else {
         checked_push(frame, load_stack_value(field_location, kind));
@@ -6854,17 +6860,17 @@ start:
     case bjvm_insn_invokespecial:
     case bjvm_insn_invokeinterface:
     case bjvm_insn_invokevirtual: {
-      if (bjvm_invokenonstatic(thread, frame, &insn))
+      if (bjvm_invokenonstatic(thread, frame, insn))
         goto done;
       break;
     }
     case bjvm_insn_invokestatic: {
-      if (bjvm_invokestatic(thread, frame, &insn))
+      if (bjvm_invokestatic(thread, frame, insn))
         goto done;
       break;
     }
     case bjvm_insn_ldc: {
-      bjvm_cp_entry *ent = insn.cp;
+      bjvm_cp_entry *ent = insn->cp;
       switch (ent->kind) {
       case BJVM_CP_KIND_INTEGER:
         checked_push(frame, (bjvm_stack_value){.i = ent->integral.value});
@@ -6897,7 +6903,7 @@ start:
       break;
     }
     case bjvm_insn_ldc2_w: {
-      const bjvm_cp_entry *ent = insn.cp;
+      const bjvm_cp_entry *ent = insn->cp;
       switch (ent->kind) {
       case BJVM_CP_KIND_LONG:
         checked_push(frame, (bjvm_stack_value){.l = ent->integral.value});
@@ -6915,7 +6921,7 @@ start:
     case bjvm_insn_iload:
     case bjvm_insn_fload:
     case bjvm_insn_dload: {
-      checked_push(frame, frame->values[frame->max_stack + insn.index]);
+      checked_push(frame, frame->values[frame->max_stack + insn->index]);
       break;
     }
     case bjvm_insn_dstore:
@@ -6923,11 +6929,11 @@ start:
     case bjvm_insn_astore:
     case bjvm_insn_lstore:
     case bjvm_insn_istore: {
-      frame->values[frame->max_stack + insn.index] = checked_pop(frame);
+      frame->values[frame->max_stack + insn->index] = checked_pop(frame);
       break;
     }
     case bjvm_insn_goto: {
-      frame->program_counter = insn.index;
+      frame->program_counter = insn->index;
       continue;
     }
     case bjvm_insn_jsr:
@@ -6936,7 +6942,7 @@ start:
     case bjvm_insn_if_acmpeq: {
       bjvm_obj_header *a = checked_pop(frame).obj, *b = checked_pop(frame).obj;
       if (a == b) {
-        frame->program_counter = insn.index;
+        frame->program_counter = insn->index;
         continue;
       }
       break;
@@ -6944,7 +6950,7 @@ start:
     case bjvm_insn_if_acmpne: {
       bjvm_obj_header *a = checked_pop(frame).obj, *b = checked_pop(frame).obj;
       if (a != b) {
-        frame->program_counter = insn.index;
+        frame->program_counter = insn->index;
         continue;
       }
       break;
@@ -6954,7 +6960,7 @@ start:
   {                                                                            \
     int b = checked_pop(frame).i, a = checked_pop(frame).i;                    \
     if (a op b) {                                                              \
-      frame->program_counter = insn.index;                                     \
+      frame->program_counter = insn->index;                                     \
       continue;                                                                \
     }                                                                          \
     break;                                                                     \
@@ -6977,7 +6983,7 @@ start:
   {                                                                            \
     int a = checked_pop(frame).i;                                              \
     if (a op 0) {                                                              \
-      frame->program_counter = insn.index;                                     \
+      frame->program_counter = insn->index;                                     \
       continue;                                                                \
     }                                                                          \
     break;                                                                     \
@@ -7002,34 +7008,34 @@ start:
 
 #undef MAKE_INT_COMPARE
     case bjvm_insn_iconst: {
-      checked_push(frame, (bjvm_stack_value){.i = (int)insn.integer_imm});
+      checked_push(frame, (bjvm_stack_value){.i = (int)insn->integer_imm});
       break;
     }
     case bjvm_insn_dconst: {
-      checked_push(frame, (bjvm_stack_value){.d = (int)insn.d_imm});
+      checked_push(frame, (bjvm_stack_value){.d = (int)insn->d_imm});
       break;
     }
     case bjvm_insn_fconst: {
-      checked_push(frame, (bjvm_stack_value){.f = (int)insn.f_imm});
+      checked_push(frame, (bjvm_stack_value){.f = (int)insn->f_imm});
       break;
     }
     case bjvm_insn_lconst: {
-      checked_push(frame, (bjvm_stack_value){.l = insn.integer_imm});
+      checked_push(frame, (bjvm_stack_value){.l = insn->integer_imm});
       break;
     }
     case bjvm_insn_iinc: {
-      frame->values[frame->max_stack + insn.iinc.index].i += insn.iinc.const_;
+      frame->values[frame->max_stack + insn->iinc.index].i += insn->iinc.const_;
       break;
     }
     case bjvm_insn_multianewarray: {
-      if (bjvm_multianewarray(thread, frame, &insn.multianewarray))
+      if (bjvm_multianewarray(thread, frame, &insn->multianewarray))
         goto done;
       break;
     }
     case bjvm_insn_newarray: {
       int count = checked_pop(frame).i;
       bjvm_obj_header *array =
-          create_primitive_array(thread, insn.array_type, count);
+          create_primitive_array(thread, insn->array_type, count);
       if (array) {
         checked_push(frame, (bjvm_stack_value){.obj = array});
       } else {  // failed to create array
@@ -7039,7 +7045,7 @@ start:
     }
     case bjvm_insn_tableswitch: {
       int value = checked_pop(frame).i;
-      struct bjvm_bc_tableswitch_data data = insn.tableswitch;
+      struct bjvm_bc_tableswitch_data data = insn->tableswitch;
       if (value < data.low || value > data.high) {
         frame->program_counter = data.default_target;
         continue;
@@ -7049,7 +7055,7 @@ start:
     }
     case bjvm_insn_lookupswitch: {
       int value = checked_pop(frame).i;
-      struct bjvm_bc_lookupswitch_data data = insn.lookupswitch;
+      struct bjvm_bc_lookupswitch_data data = insn->lookupswitch;
       bool found = false;
       for (int i = 0; i < data.keys_count; ++i) {
         if (data.keys[i] == value) {

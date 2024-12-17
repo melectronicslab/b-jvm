@@ -391,6 +391,9 @@ typedef struct {
     // non-owned pointer into the constant pool
     bjvm_cp_entry *cp;
   };
+  // Per-instruction resolved data
+  void *ic;
+  void *ic2;
 } bjvm_bytecode_insn;
 
 typedef struct bjvm_constant_pool {
