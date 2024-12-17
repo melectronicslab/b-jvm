@@ -3569,101 +3569,37 @@ char *bjvm_parse_classfile(uint8_t *bytes, size_t len, bjvm_classdesc *result) {
   return NULL;
 }
 
-struct bjvm_wchar_trie_node;
-
-struct bjvm_wchar_trie_node_entry {
-  wchar_t ch;
-  struct bjvm_wchar_trie_node *node;
-};
-
-typedef struct bjvm_wchar_trie_node {
-  struct bjvm_wchar_trie_node_entry *slow_next;
-  int slow_next_count;
-  int slow_next_cap;
-
-  // Fast lookups for printable ASCII characters
-  struct bjvm_wchar_trie_node *fast_next[128 - 32];
-
-  uint8_t *cf_bytes;
-  size_t len;
-} bjvm_wchar_trie_node;
-
-typedef struct {
-  pthread_mutex_t lock;
-  bjvm_wchar_trie_node *root;
-} bjvm_classpath_manager;
-
-bjvm_wchar_trie_node *walk_trie(bjvm_wchar_trie_node **node,
-                                const wchar_t *filename, size_t filename_length,
-                                bool create) {
-  if (*node == NULL) {
-    if (!create)
-      return NULL;
-    *node = calloc(1, sizeof(bjvm_wchar_trie_node));
-  }
-  bjvm_wchar_trie_node *cur = *node;
-  for (size_t i = 0; i < filename_length; ++i) {
-    wchar_t ch = filename[i];
-    bjvm_wchar_trie_node **next;
-    if (ch >= 32 && ch <= 127) {
-      next = &cur->fast_next[ch - 32];
-    } else {
-      // Search slow_next for one matching ch
-      for (int j = 0; j < cur->slow_next_count; ++j) {
-        if (cur->slow_next[j].ch == ch) {
-          next = &cur->slow_next[j].node;
-          goto found;
-        }
-      }
-
-      if (!create)
-        return NULL;
-      struct bjvm_wchar_trie_node_entry *entry =
-          VECTOR_PUSH(cur->slow_next, cur->slow_next_count, cur->slow_next_cap);
-      *entry = (struct bjvm_wchar_trie_node_entry){.ch = ch, .node = NULL};
-      next = &entry->node;
-
-    found:;
-    }
-
-    if (!*next) {
-      if (!create)
-        return NULL;
-      // Allocate the next node
-      *next = calloc(1, sizeof(bjvm_wchar_trie_node));
-    }
-    cur = *next;
-  }
-  return cur;
-}
-
 #define MAX_CF_NAME_LENGTH 1000
 
-int add_classfile_bytes(bjvm_classpath_manager *manager,
+struct classfile_entry {
+  size_t len;
+  uint8_t* data;
+};
+
+struct classfile_entry* make_cf_entry(const uint8_t* bytes, size_t len) {
+  struct classfile_entry *result = malloc(sizeof(struct classfile_entry));
+  result->data = malloc(result->len = len);
+  memcpy(result->data, bytes, len);
+  return result;
+}
+
+void free_cf_entry(void* entry_) {
+  if (!entry_)
+    return;
+  struct classfile_entry *entry = entry_;
+  free(entry->data);
+  free(entry);
+}
+
+int add_classfile_bytes(bjvm_vm *vm,
                         const wchar_t *filename, size_t filename_length,
                         const uint8_t *bytes, size_t len) {
   if (filename_length > MAX_CF_NAME_LENGTH)
-    return -1; // Too long
+    return -1;
 
-  pthread_mutex_lock(&manager->lock);
-  bjvm_wchar_trie_node *node =
-      walk_trie(&manager->root, filename, filename_length, true);
-
-  if (node->cf_bytes != NULL) {
-    pthread_mutex_unlock(&manager->lock);
-    return -1; // already exists
-  }
-
-  node->cf_bytes = malloc(len);
-  pthread_mutex_unlock(&manager->lock);
-
-  memcpy(node->cf_bytes, bytes, len);
-  node->len = len;
+  struct classfile_entry *entry = make_cf_entry(bytes, len);
+  free_cf_entry(bjvm_hash_table_insert(&vm->classfiles, filename, filename_length, entry));
   return 0;
-}
-
-bjvm_classpath_manager *get_classpath_manager(bjvm_vm *vm) {
-  return vm->classpath_manager;
 }
 
 bjvm_string_hash_table bjvm_make_hash_table(void (*free_fn)(void *),
@@ -4740,7 +4676,7 @@ bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   vm->load_classfile = options.load_classfile;
   vm->load_classfile_param = options.load_classfile_param;
 
-  vm->classpath_manager = calloc(1, sizeof(bjvm_classpath_manager));
+  vm->classfiles = bjvm_make_hash_table(free_cf_entry, 0.75, 16);
   vm->classes = bjvm_make_hash_table(free_classdesc, 0.75, 16);
   vm->inchoate_classes = bjvm_make_hash_table(NULL, 0.75, 16);
   vm->natives = bjvm_make_hash_table(free_native_entries, 0.75, 16);
@@ -4901,28 +4837,8 @@ bjvm_vm *bjvm_create_vm(bjvm_vm_options options) {
   return vm;
 }
 
-void free_wchar_trie(bjvm_wchar_trie_node *root) {
-  if (!root)
-    return;
-  for (size_t i = 0; i < sizeof(root->fast_next) / sizeof(root->fast_next[0]);
-       ++i) {
-    free_wchar_trie(root->fast_next[i]);
-  }
-  for (int i = 0; i < root->slow_next_count; ++i) {
-    free_wchar_trie(root->slow_next[i].node);
-  }
-  free(root->cf_bytes);
-  free(root->slow_next);
-  free(root);
-}
-
-void free_classpath_manager(bjvm_classpath_manager *manager) {
-  free_wchar_trie(manager->root);
-  free(manager);
-}
-
 void bjvm_free_vm(bjvm_vm *vm) {
-  free_classpath_manager(vm->classpath_manager);
+  bjvm_free_hash_table(vm->classfiles);
   bjvm_free_hash_table(vm->classes);
   bjvm_free_hash_table(vm->inchoate_classes);
   bjvm_free_hash_table(vm->interned_strings);
@@ -5050,19 +4966,18 @@ void bjvm_free_thread(bjvm_thread *thread) {
 
 int bjvm_vm_preregister_classfile(bjvm_vm *vm, const wchar_t *filename,
                                   const uint8_t *bytes, size_t len) {
-  return add_classfile_bytes(get_classpath_manager(vm), filename,
+  return add_classfile_bytes(vm, filename,
                              wcslen(filename), bytes, len);
 }
 
 int bjvm_vm_read_classfile(bjvm_vm *vm, const wchar_t *filename,
                            const uint8_t **bytes, size_t *len) {
-  bjvm_wchar_trie_node *node = walk_trie(&get_classpath_manager(vm)->root,
-                                         filename, wcslen(filename), false);
-  if (node && node->cf_bytes) {
+  struct classfile_entry* entry = bjvm_hash_table_lookup(&vm->classfiles, filename, wcslen(filename));
+  if (entry) {
     if (bytes)
-      *bytes = node->cf_bytes;
+      *bytes = entry->data;
     if (len)
-      *len = node->len;
+      *len = entry->len;
     return 0;
   }
 
@@ -5091,37 +5006,21 @@ int bjvm_vm_read_classfile(bjvm_vm *vm, const wchar_t *filename,
   return -1;
 }
 
-void recursively_list_classfiles(bjvm_wchar_trie_node *node, wchar_t **strings,
-                                 size_t *count,
-                                 wchar_t chars[MAX_CF_NAME_LENGTH], int depth) {
-  if (!node)
-    return;
-  if (node->cf_bytes) {
-    // file exists
-    if (strings)
-      strings[*count] = wcsdup(chars);
-    (*count)++;
-  }
-  for (size_t i = 0; i < sizeof(node->fast_next) / sizeof(node->fast_next[0]);
-       ++i) {
-    chars[depth] = i + 32;
-    recursively_list_classfiles(node->fast_next[i], strings, count, chars,
-                                depth + 1);
-    chars[depth] = 0;
-  }
-  for (int i = 0; i < node->slow_next_count; ++i) {
-    struct bjvm_wchar_trie_node_entry ent = node->slow_next[i];
-    chars[depth] = ent.ch;
-    recursively_list_classfiles(ent.node, strings, count, chars, depth + 1);
-    chars[depth] = 0;
-  }
-}
-
 void bjvm_vm_list_classfiles(bjvm_vm *vm, wchar_t **strings, size_t *count) {
-  *count = 0;
-  wchar_t chars[MAX_CF_NAME_LENGTH] = {0};
-  recursively_list_classfiles(get_classpath_manager(vm)->root, strings, count,
-                              chars, 0);
+  *count = vm->classfiles.entries_count;
+  if (strings) {
+    bjvm_hash_table_iterator iter = bjvm_hash_table_get_iterator(&vm->classfiles);
+    int i = 0;
+    size_t key_len;
+    void* value;
+    while (i < *count && bjvm_hash_table_iterator_has_next(iter, &strings[i], &key_len, &value)) {
+      wchar_t* key = calloc(key_len + 1, sizeof(wchar_t));
+      wmemcpy(key, strings[i], key_len);
+      strings[i] = key;
+      ++i;
+      bjvm_hash_table_iterator_next(&iter);
+    }
+  }
 }
 
 // Called for both primitive and object arrays

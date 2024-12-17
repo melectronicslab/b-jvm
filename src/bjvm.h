@@ -716,8 +716,9 @@ void bjvm_free_hash_table(bjvm_string_hash_table tbl);
 typedef void (*bjvm_write_byte)(int ch, void *param);
 
 typedef struct bjvm_vm {
-  void *classpath_manager;
-
+  // Map class file name -> cf bytes
+  bjvm_string_hash_table classfiles;
+  // Map class name (e.g. "java/lang/String") to classdesc*
   bjvm_string_hash_table classes;
   // Classes currently under creation -- used to detect circularity
   bjvm_string_hash_table inchoate_classes;
