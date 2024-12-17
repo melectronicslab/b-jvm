@@ -36,14 +36,13 @@ double get_time() {
 
 std::vector<uint8_t> ReadFile(const std::string &file) {
 #ifdef EMSCRIPTEN
-
   bool exists = EM_ASM_INT(
       {
         const fs = require('fs');
         return fs.existsSync(UTF8ToString($0));
       },
       file.c_str());
-  if (!exists) throw std::runtime_error("Classpath file not found: " + file);
+  if (!exists) return {};
 
   void *length_and_data = EM_ASM_PTR(
       {
@@ -447,9 +446,6 @@ TestCaseResult run_test_case(std::string folder, bool capture_stdio = true) {
   return result;
 }
 
-TEST_CASE("Playground") {
-  auto result = run_test_case("test_files/playground/", false);
-}
 
 TEST_CASE("String hash table") {
   bjvm_string_hash_table tbl = bjvm_make_hash_table(free, 0.75, 48);
@@ -519,16 +515,31 @@ TEST_CASE("Passing long to method calls") {
 }
 
 TEST_CASE("Big decimal #1") {
-  auto result = run_test_case("test_files/big_decimal/");
   std::string expected = R"(10.5 + 2.3 = 12.8
 10.5 - 2.3 = 8.2
 10.5 * 2.3 = 24.15
 10 / 3 (rounded to 2 decimals) = 3.33
 10.5 equals 10.500: false
 10.5 compareTo 10.500: 0
+pi * pi is 9.869604401089358618834490999876151135199537704046847772071781337378379488504041
 )";
+
+  for (int i = 0; i < 10; ++i) expected += expected;  // repeat 1024 times
+
+  auto result = run_test_case("test_files/big_decimal/");
   REQUIRE(result.stdout_ == expected);
+
+#ifndef EMSCRIPTEN
+  BENCHMARK("Big decimal #2") {
+    auto result = run_test_case("test_files/big_decimal/");
+  };
+#endif
 }
+
+TEST_CASE("Playground") {
+  auto result = run_test_case("test_files/playground/", false);
+}
+
 
 #if 0
 TEST_CASE("Class circularity error") {

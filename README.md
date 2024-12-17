@@ -5,6 +5,8 @@ A JVM for the web.
 
 Prefix all non-`static` functions with `bjvm_`.
 
+Always use `int64_t` instead of `long` because Emscripten has `sizeof(long) == 4`. `int` can be assumed to be 32 bits.
+
 Common abbreviations:
 
 - `cf` – classfile

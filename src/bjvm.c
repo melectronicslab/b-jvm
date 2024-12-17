@@ -835,7 +835,7 @@ bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc,
       original_pc, reader_next_i32(reader, "tableswitch default target"), ctx);
   int low = reader_next_i32(reader, "tableswitch low");
   int high = reader_next_i32(reader, "tableswitch high");
-  long targets_count = (long)high - low + 1;
+  int64_t targets_count = (int64_t)high - low + 1;
 
   if (targets_count > 1 << 15) {
     // preposterous, won't fit in the code segment
@@ -4102,7 +4102,7 @@ int bjvm_System_arraycopy(bjvm_thread* thread, bjvm_obj_header*,
   int dest_length = *array_length(dest);
   // Verify that everything is in bounds
   // TODO add more descriptive error messages
-  if (src_pos < 0 || dest_pos < 0 || length < 0 || (long)src_pos + length > src_length || (long)dest_pos + length > dest_length) {
+  if (src_pos < 0 || dest_pos < 0 || length < 0 || (int64_t)src_pos + length > src_length || (int64_t)dest_pos + length > dest_length) {
     bjvm_raise_exception(thread, L"java/lang/ArrayIndexOutOfBoundsException", NULL);
     return 0;
   }
@@ -4714,7 +4714,9 @@ int bjvm_raise_exception(bjvm_thread *thread, const wchar_t *exception_name,
     bjvm_thread_run(thread, method, (bjvm_stack_value[]){{.obj = obj}}, NULL);
   }
 
+#ifndef EMSCRIPTEN
   wprintf(L"Exception: %S: %S\n", exception_name, exception_string);
+#endif
   bjvm_raise_exception_object(thread, obj);
   return 0;
 }
@@ -5802,7 +5804,7 @@ void store_stack_value(void *field_location, bjvm_stack_value value,
     *(int *)field_location = value.i;
     break;
   case BJVM_TYPE_KIND_LONG:
-    *(long *)field_location = value.l;
+    *(int64_t *)field_location = value.l;
     break;
   case BJVM_TYPE_KIND_REFERENCE:
     *(void **)field_location = value.obj;
@@ -5837,7 +5839,7 @@ bjvm_stack_value load_stack_value(void *field_location, bjvm_type_kind kind) {
     result.i = *(int *)field_location;
     break;
   case BJVM_TYPE_KIND_LONG:
-    result.l = *(long *)field_location;
+    result.l = *(int64_t *)field_location;
     break;
   case BJVM_TYPE_KIND_REFERENCE:
     result.obj = *(void **)field_location;
@@ -6311,7 +6313,7 @@ start:
       break;
     }
     case bjvm_insn_d2l: {
-      checked_push(frame, (bjvm_stack_value){.l = (long)checked_pop(frame).d});
+      checked_push(frame, (bjvm_stack_value){.l = (int64_t)checked_pop(frame).d});
       break;
     }
     case bjvm_insn_dadd: {
@@ -6357,9 +6359,14 @@ start:
     case bjvm_insn_dup_x2:
       UNREACHABLE("bjvm_insn_dup_x2");
       break;
-    case bjvm_insn_dup2:
-      UNREACHABLE("bjvm_insn_dup2");
+    case bjvm_insn_dup2: {
+      bjvm_stack_value val1 = checked_pop(frame), val2 = checked_pop(frame);
+      checked_push(frame, val2);
+      checked_push(frame, val1);
+      checked_push(frame, val2);
+      checked_push(frame, val1);
       break;
+    }
     case bjvm_insn_dup2_x1:
       UNREACHABLE("bjvm_insn_dup2_x1");
       break;
@@ -6376,7 +6383,7 @@ start:
       break;
     }
     case bjvm_insn_f2l:
-      checked_push(frame, (bjvm_stack_value){.l = (long)checked_pop(frame).f});
+      checked_push(frame, (bjvm_stack_value){.l = (int64_t)checked_pop(frame).f});
       break;
     case bjvm_insn_fadd: {
       float b = checked_pop(frame).f, a = checked_pop(frame).f;
@@ -6454,7 +6461,7 @@ start:
     }
     case bjvm_insn_i2l: {
       int a = checked_pop(frame).i;
-      checked_push(frame, (bjvm_stack_value){.l = (long)a});
+      checked_push(frame, (bjvm_stack_value){.l = (int64_t)a});
       break;
     }
     case bjvm_insn_i2s: {
@@ -6584,7 +6591,7 @@ start:
       break;
     }
     case bjvm_insn_ladd: {
-      long a = checked_pop(frame).l, b = checked_pop(frame).l, c;
+      int64_t a = checked_pop(frame).l, b = checked_pop(frame).l, c;
       __builtin_add_overflow(a, b, &c);
       checked_push(frame, (bjvm_stack_value){.l = c});
       break;
