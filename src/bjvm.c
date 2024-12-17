@@ -4302,35 +4302,15 @@ void bjvm_reflect_initialize_field(bjvm_thread *thread,
   bjvm_classdesc *reflect_Field =
       bootstrap_class_create(thread, L"java/lang/reflect/Field");
   bjvm_initialize_class(thread, reflect_Field);
-  bjvm_obj_header *result = field->reflection_field =
-      new_object(thread, reflect_Field);
+  struct bjvm_native_Field* result = field->reflection_field =
+      (void*)new_object(thread, reflect_Field);
 
-  *bjvm_unmirror_field(result) = field;
-
-  bjvm_obj_header *name =
-      bjvm_intern_string(thread, field->name->chars, field->name->len);
-  bjvm_cp_field *name_field =
-      bjvm_easy_field_lookup(reflect_Field, L"name", L"Ljava/lang/String;");
-  bjvm_set_field(result, name_field, (bjvm_stack_value){.obj = name});
-
-  bjvm_cp_field *class_field =
-      bjvm_easy_field_lookup(reflect_Field, L"clazz", L"Ljava/lang/Class;");
-  bjvm_set_field(
-      result, class_field,
-      (bjvm_stack_value){.obj = (void*)bjvm_get_class_mirror(thread, classdesc)});
-
-  bjvm_cp_field *type_field =
-      bjvm_easy_field_lookup(reflect_Field, L"type", L"Ljava/lang/Class;");
-  bjvm_set_field(
-      result, type_field,
-      (bjvm_stack_value){.obj = (void*)bjvm_get_class_mirror(
-                             thread, load_class_of_field_descriptor(
-                                         thread, field->descriptor->chars))});
-
-  bjvm_cp_field *modifiers_field =
-      bjvm_easy_field_lookup(reflect_Field, L"modifiers", L"I");
-  bjvm_set_field(result, modifiers_field,
-                 (bjvm_stack_value){.i = field->access_flags});
+  result->reflected_field = field;
+  result->name = bjvm_intern_string(thread, field->name->chars, field->name->len);
+  result->clazz = (void*)bjvm_get_class_mirror(thread, classdesc);
+  result->type = (void*)bjvm_get_class_mirror(
+      thread, load_class_of_field_descriptor(thread, field->descriptor->chars));
+  result->modifiers = field->access_flags;
 }
 
 void bjvm_reflect_initialize_constructor(bjvm_thread *thread,
@@ -4377,7 +4357,7 @@ int bjvm_Class_getDeclaredFields(bjvm_thread *thread, bjvm_obj_header *obj,
 
   for (int i = 0; i < classdesc->fields_count; ++i) {
     bjvm_reflect_initialize_field(thread, classdesc, classdesc->fields + i);
-    *((bjvm_obj_header **)array_data(ret->obj) + i) =
+    *((struct bjvm_native_Field**)array_data(ret->obj) + i) =
         classdesc->fields[i].reflection_field;
   }
 

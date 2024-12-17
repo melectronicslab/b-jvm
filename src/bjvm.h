@@ -540,7 +540,7 @@ typedef struct bjvm_cp_field {
   int byte_offset;
 
   bjvm_field_descriptor parsed_descriptor;
-  bjvm_obj_header *reflection_field;
+  struct bjvm_native_Field *reflection_field;
 
   bjvm_classdesc *my_class;
 } bjvm_cp_field;
