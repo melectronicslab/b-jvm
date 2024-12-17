@@ -1,7 +1,7 @@
 #define AGGRESSIVE_DEBUG 0
 
 #define CACHE_INVOKESTATIC 1
-#define CACHE_INVOKENONSTATIC 0
+#define CACHE_INVOKENONSTATIC 1
 
 #include <assert.h>
 #include <limits.h>
@@ -6010,50 +6010,58 @@ bool bjvm_instanceof(const bjvm_classdesc *o, const bjvm_classdesc *classdesc) {
 // Implementation of invokespecial/invokeinterface/invokevirtual
 int bjvm_invokenonstatic(bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insn) {
   assert(insn->cp->kind == BJVM_CP_KIND_METHOD_REF || insn->cp->kind == BJVM_CP_KIND_INTERFACE_METHOD_REF);
-  const bjvm_cp_method_info *info = &insn->cp->methodref;
-  int args = info->method_descriptor->args_count + 1;
+  bjvm_cp_method *method = insn->ic;
 
-  assert(args <= frame->stack_depth);
+  int args = insn->args;
   bjvm_obj_header *target = frame->values[frame->stack_depth - args].obj;
 
-  if (target == NULL) {
-    bjvm_null_pointer_exception(thread);
-    return -1;
-  }
-  if (insn->kind == bjvm_insn_invokespecial) {
-    int error = bjvm_resolve_class(thread, info->class_info);
-    if (error)
-      return -1;
-  }
-  bjvm_classdesc *lookup_on = insn->kind == bjvm_insn_invokespecial
-                                  ? info->class_info->classdesc
-                                  : target->descriptor;
-  if (lookup_on->state != BJVM_CD_STATE_INITIALIZED) {
-    int error = bjvm_initialize_class(thread, lookup_on);
-    if (error)
-      return -1;
-  }
-  bjvm_cp_method *method = bjvm_method_lookup(
-      lookup_on, info->name_and_type->name, info->name_and_type->descriptor,
-      true, insn->kind == bjvm_insn_invokeinterface);
-  if (!method) {
-    wchar_t complaint[1000];
-    swprintf(complaint, 1000, L"Could not find method %S with descriptor %S on %s %S",
-             info->name_and_type->name->chars, info->name_and_type->descriptor->chars,
-             lookup_on->access_flags & BJVM_ACCESS_INTERFACE ? "interface" : "class",
-             lookup_on->name.chars);
-    bjvm_incompatible_class_change_error(thread, complaint);
-    return -1;
-  }
-  if (method->access_flags & BJVM_ACCESS_STATIC) {
-    wchar_t complaint[1000];
-    swprintf(complaint, 1000, L"Method %S is static", method->name->chars);
-    bjvm_incompatible_class_change_error(thread, complaint);
-    return -1;
-  }
+  if (!method || (insn->kind != bjvm_insn_invokespecial && target->descriptor != insn->ic2) || !CACHE_INVOKENONSTATIC) {
+    const bjvm_cp_method_info *info = &insn->cp->methodref;
+    args = insn->args = info->method_descriptor->args_count + 1;
 
-  if (method->access_flags & BJVM_ACCESS_ABSTRACT)
-    bjvm_abstract_method_error(thread, method);
+    assert(args <= frame->stack_depth);
+    target = frame->values[frame->stack_depth - args].obj;
+
+    if (target == NULL) {
+      bjvm_null_pointer_exception(thread);
+      return -1;
+    }
+    if (insn->kind == bjvm_insn_invokespecial) {
+      int error = bjvm_resolve_class(thread, info->class_info);
+      if (error)
+        return -1;
+    }
+    bjvm_classdesc *lookup_on = insn->ic2 = insn->kind == bjvm_insn_invokespecial
+                                    ? info->class_info->classdesc
+                                    : target->descriptor;
+    if (lookup_on->state != BJVM_CD_STATE_INITIALIZED) {
+      int error = bjvm_initialize_class(thread, lookup_on);
+      if (error)
+        return -1;
+    }
+    method = insn->ic = bjvm_method_lookup(
+        lookup_on, info->name_and_type->name, info->name_and_type->descriptor,
+        true, insn->kind == bjvm_insn_invokeinterface);
+    insn->ic2 = lookup_on;
+    if (!method) {
+      wchar_t complaint[1000];
+      swprintf(complaint, 1000, L"Could not find method %S with descriptor %S on %s %S",
+               info->name_and_type->name->chars, info->name_and_type->descriptor->chars,
+               lookup_on->access_flags & BJVM_ACCESS_INTERFACE ? "interface" : "class",
+               lookup_on->name.chars);
+      bjvm_incompatible_class_change_error(thread, complaint);
+      return -1;
+    }
+    if (method->access_flags & BJVM_ACCESS_STATIC) {
+      wchar_t complaint[1000];
+      swprintf(complaint, 1000, L"Method %S is static", method->name->chars);
+      bjvm_incompatible_class_change_error(thread, complaint);
+      return -1;
+    }
+
+    if (method->access_flags & BJVM_ACCESS_ABSTRACT)
+      bjvm_abstract_method_error(thread, method);
+  }
 
   bjvm_stack_value invoked_result;
   if (method->access_flags & BJVM_ACCESS_NATIVE) {
@@ -6091,7 +6099,7 @@ int bjvm_invokenonstatic(bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_byte
 
 int bjvm_invokestatic(bjvm_thread * thread, bjvm_stack_frame * frame, bjvm_bytecode_insn * insn) {
   bjvm_cp_method *method = insn->ic;
-  if (!method && CACHE_INVOKESTATIC) {
+  if (!method || !CACHE_INVOKESTATIC) {
     const bjvm_cp_method_info *info = &insn->cp->methodref;
     bjvm_cp_class_info *class = info->class_info;
 

@@ -394,6 +394,7 @@ typedef struct {
   // Per-instruction resolved data
   void *ic;
   void *ic2;
+  int args;
 } bjvm_bytecode_insn;
 
 typedef struct bjvm_constant_pool {
