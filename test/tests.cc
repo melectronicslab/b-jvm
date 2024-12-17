@@ -406,7 +406,7 @@ struct TestCaseResult {
   std::string stderr_;
 };
 
-TestCaseResult run_test_case(std::string folder) {
+TestCaseResult run_test_case(std::string folder, bool capture_stdio = true) {
   const char *classpath[2] = {folder.c_str(), nullptr};
   bjvm_vm_options options = {};
 
@@ -414,14 +414,14 @@ TestCaseResult run_test_case(std::string folder) {
 
   options.load_classfile = load_classfile;
   options.load_classfile_param = classpath;
-  options.write_stdout = [](int ch, void *param) {
+  options.write_stdout = capture_stdio ? [](int ch, void *param) {
     auto *result = (TestCaseResult *)param;
     result->stdout_ += (char)ch;
-  };
-  options.write_stderr = [](int ch, void *param) {
+  } : NULL;
+  options.write_stderr = capture_stdio ? [](int ch, void *param) {
     auto *result = (TestCaseResult *)param;
     result->stderr_ += (char)ch;
-  };
+  } : NULL;
   options.write_byte_param = &result;
 
   bjvm_vm *vm = bjvm_create_vm(options);
@@ -445,7 +445,7 @@ TestCaseResult run_test_case(std::string folder) {
 }
 
 TEST_CASE("Playground") {
-  auto result = run_test_case("test_files/interning/");
+  auto result = run_test_case("test_files/playground/", false);
 }
 
 TEST_CASE("String hash table") {
@@ -500,6 +500,12 @@ TEST_CASE("Interning") {
 TEST_CASE("NegativeArraySizeException") {
   auto result = run_test_case("test_files/negative_array_size/");
   std::string expected = std::string(12, 'k');
+  REQUIRE(result.stdout_ == expected);
+}
+
+TEST_CASE("System.arraycopy") {
+  auto result = run_test_case("test_files/arraycopy/");
+  std::string expected = "abcdefgh";
   REQUIRE(result.stdout_ == expected);
 }
 

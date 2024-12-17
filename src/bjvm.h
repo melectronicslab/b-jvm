@@ -607,6 +607,8 @@ typedef struct bjvm_classdesc {
   // Non-array classes: which 4- or 8-byte aligned offsets correspond to references that need to be followed
   bjvm_compressed_bitset static_references;
   bjvm_compressed_bitset instance_references;
+
+  bjvm_classdesc* one_fewer;
 } bjvm_classdesc;
 
 typedef uint64_t bjvm_mark_word_t;
@@ -617,16 +619,12 @@ typedef struct bjvm_array_classdesc {
   bjvm_classdesc base;
   int dimensions;
   bjvm_classdesc *base_component;
-
-  bjvm_array_classdesc* one_fewer;
 } bjvm_array_classdesc;
 
 typedef struct bjvm_primitive_array_classdesc {
   bjvm_classdesc base;
   int dimensions;
   bjvm_type_kind element_type;
-
-  struct bjvm_primitive_array_classdesc* one_fewer;
 } bjvm_primitive_array_classdesc;
 
 // Equivalent to HotSpot's InstanceKlass

@@ -3960,6 +3960,7 @@ int unimplemented_native(bjvm_thread *, bjvm_obj_header *, bjvm_stack_value *,
                          int, bjvm_stack_value *ret) {
   if (ret)
     ret->obj = NULL;
+  return 0;
 }
 
 // Raise an UnsatisfiedLinkError relating to the given method.
@@ -3984,6 +3985,11 @@ void bjvm_null_pointer_exception(bjvm_thread *thread) {
   bjvm_raise_exception(thread, L"java/lang/NullPointerException", NULL);
 }
 
+// Raise an ArrayStoreException.
+void bjvm_array_store_exception(bjvm_thread *thread) {
+  bjvm_raise_exception(thread, L"java/lang/ArrayStoreException", NULL);
+}
+
 // Raise an IncompatibleClassChangeError.
 void bjvm_incompatible_class_change_error(bjvm_thread *thread, const wchar_t *complaint) {
   bjvm_raise_exception(thread, L"java/lang/IncompatibleClassChangeError", complaint);
@@ -4000,8 +4006,8 @@ bjvm_obj_header *bjvm_intern_string(bjvm_thread *thread, const wchar_t *chars,
                                     size_t len);
 
 int bjvm_System_initProperties(bjvm_thread *thread, bjvm_obj_header *,
-                               bjvm_stack_value *args, int argc,
-                               bjvm_stack_value *ret) {
+                               bjvm_stack_value *args, int,
+                               bjvm_stack_value *) {
   bjvm_obj_header *props_obj = args[0].obj;
   const wchar_t *const props[][2] = {
       {L"file.encoding", L"UTF-8"},   {L"stdout.encoding", L"UTF-8"},
@@ -4011,7 +4017,7 @@ int bjvm_System_initProperties(bjvm_thread *thread, bjvm_obj_header *,
   bjvm_cp_method *put = bjvm_easy_method_lookup(
       props_obj->descriptor, "put",
       "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true, false);
-  for (int i = 0; i < sizeof(props) / sizeof(props[0]); ++i) {
+  for (size_t i = 0; i < sizeof(props) / sizeof(props[0]); ++i) {
     bjvm_stack_value put_args[3] = {
         {.obj = props_obj},
         {.obj = bjvm_intern_string(thread, props[i][0], wcslen(props[i][0]))},
@@ -4023,36 +4029,64 @@ int bjvm_System_initProperties(bjvm_thread *thread, bjvm_obj_header *,
   return 0;
 }
 
-int bjvm_System_registerNatives(bjvm_thread *thread, bjvm_obj_header *obj,
-                                bjvm_stack_value *args, int argc,
-                                bjvm_stack_value *ret) {
+int bjvm_System_registerNatives(bjvm_thread *, bjvm_obj_header *obj,
+                                bjvm_stack_value *, int argc,
+                                bjvm_stack_value *) {
   assert(obj == NULL);
   assert(argc == 0);
   return 0;
 }
 
-int bjvm_System_mapLibraryName(bjvm_thread *thread, bjvm_obj_header *obj,
-                               bjvm_stack_value *args, int argc,
+int bjvm_System_mapLibraryName(bjvm_thread *, bjvm_obj_header *,
+                               bjvm_stack_value *args, int,
                                bjvm_stack_value *ret) {
   *ret = args[0];
   return 0;
 }
 
 void *array_data(bjvm_obj_header *array);
+bool bjvm_instanceof(const bjvm_classdesc *o, const bjvm_classdesc *classdesc);
 
-int bjvm_System_arraycopy(bjvm_thread *thread, bjvm_obj_header *obj,
+bool is_1d_primitive_array(bjvm_obj_header * src) {
+  return src->descriptor->kind != BJVM_CD_KIND_ORDINARY_ARRAY &&
+    ((bjvm_primitive_array_classdesc*) src->descriptor)->dimensions == 1;
+}
+
+int bjvm_System_arraycopy(bjvm_thread* thread, bjvm_obj_header*,
                           bjvm_stack_value *args, int argc,
-                          bjvm_stack_value *ret) {
+                          bjvm_stack_value *) {
   assert(argc == 5);
   bjvm_obj_header *src = args[0].obj;
   bjvm_obj_header *dest = args[2].obj;
+  if (src == NULL || dest == NULL) {
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  if (src->descriptor->kind == BJVM_CD_KIND_ORDINARY || dest->descriptor->kind == BJVM_CD_KIND_ORDINARY) {
+    // Can't copy non-array objects to each other
+    bjvm_array_store_exception(thread);
+    return 0;
+  }
+  bool src_is_1d_primitive = is_1d_primitive_array(src), dst_is_1d_primitive = is_1d_primitive_array(dest);
+  if (src_is_1d_primitive != dst_is_1d_primitive) {
+    bjvm_array_store_exception(thread);
+    return 0;
+  }
+
   int src_pos = args[1].i;
   int dest_pos = args[3].i;
   int length = args[4].i;
+  int src_length = *array_length(src);
+  int dest_length = *array_length(dest);
+  // Verify that everything is in bounds
+  // TODO add more descriptive error messages
+  if (src_pos < 0 || dest_pos < 0 || length < 0 || (long)src_pos + length > src_length || (long)dest_pos + length > dest_length) {
+    bjvm_raise_exception(thread, L"java/lang/ArrayIndexOutOfBoundsException", NULL);
+    return 0;
+  }
 
-#define GEN_IMPL(array_type, underlying)                                       \
-  if (src->descriptor->kind == BJVM_CD_KIND_##array_type &&                    \
-      dest->descriptor->kind == BJVM_CD_KIND_##array_type) {                   \
+#define GEN_PRIMITIVE_IMPL(array_type, underlying)                                       \
+  if (src->descriptor->kind == BJVM_CD_KIND_##array_type) {                    \
     underlying *src_data = array_data(src);                                    \
     underlying *dest_data = array_data(dest);                                  \
     for (int i = 0; i < length; ++i)                                           \
@@ -4060,11 +4094,36 @@ int bjvm_System_arraycopy(bjvm_thread *thread, bjvm_obj_header *obj,
     return 0;                                                                  \
   }
 
-  GEN_IMPL(BYTE_ARRAY, int8_t)
-  GEN_IMPL(CHAR_ARRAY, uint16_t)
-  GEN_IMPL(DOUBLE_ARRAY, double)
+  if (src_is_1d_primitive) {
+    GEN_PRIMITIVE_IMPL(BYTE_ARRAY, int8_t)
+    GEN_PRIMITIVE_IMPL(CHAR_ARRAY, uint16_t)
+    GEN_PRIMITIVE_IMPL(DOUBLE_ARRAY, double)
+    GEN_PRIMITIVE_IMPL(FLOAT_ARRAY, float)
+    GEN_PRIMITIVE_IMPL(INT_ARRAY, int32_t)
+    GEN_PRIMITIVE_IMPL(LONG_ARRAY, int64_t)
+    GEN_PRIMITIVE_IMPL(SHORT_ARRAY, int16_t)
+    GEN_PRIMITIVE_IMPL(BOOLEAN_ARRAY, uint8_t)
+  }
 
+  // If the component type of the src class is an instanceof the destination class, then we don't
+  // need to perform any checks. Otherwise, we need to perform an instanceof check on each element
+  // and raise an ArrayStoreException as appropriate.
+  if (bjvm_instanceof(src->descriptor->one_fewer, dest->descriptor->one_fewer)) {
+    memcpy(array_data(dest) + dest_pos, array_data(src) + src_pos, length * sizeof(void *));
+    return 0;
+  }
+
+  for (int i = 0; i < length; ++i) {
+    bjvm_obj_header *src_elem = ((bjvm_obj_header **)array_data(src))[src_pos + i];
+    if (src_elem && !bjvm_instanceof(src_elem->descriptor, dest->descriptor->one_fewer)) {
+      bjvm_array_store_exception(thread);
+      return 0;
+    }
+    ((bjvm_obj_header **)array_data(dest))[dest_pos + i] = src_elem;
+  }
   return 0;
+
+  UNREACHABLE();
 }
 
 int bjvm_Object_registerNatives(bjvm_thread *thread, bjvm_obj_header *obj,
@@ -5062,7 +5121,9 @@ bjvm_classdesc *primitive_arr_classdesc(bjvm_thread *thread, int dimensions,
     int size;
     primitive_type_kind_to_array_info(prim_kind, &name, &size);
     one_fewer_name[i] = name[1];
-    result->one_fewer = (bjvm_primitive_array_classdesc*) bootstrap_class_create(thread, one_fewer_name);
+    result->base.one_fewer = bootstrap_class_create(thread, one_fewer_name);
+  } else {
+    result->base.one_fewer = NULL;
   }
 
   return (bjvm_classdesc *)result;
@@ -5091,12 +5152,11 @@ bjvm_classdesc *ordinary_arr_classdesc(bjvm_thread *thread,
 
   result->dimensions = dimensions;
   if (base->kind == BJVM_CD_KIND_ORDINARY) {
-    result->base_component = base;
-    result->one_fewer = NULL;
+    result->base_component = result->base.one_fewer = base;
   } else {
     bjvm_array_classdesc *array_base = (bjvm_array_classdesc *)base;
     result->base_component = array_base->base_component;
-    result->one_fewer = array_base;
+    result->base.one_fewer = (bjvm_classdesc*) array_base;
     assert(result->dimensions == array_base->dimensions + 1);
   }
 
@@ -5766,7 +5826,7 @@ struct bjvm_native_Class *bjvm_get_class_mirror(bjvm_thread *thread,
 }
 
 bool bjvm_instanceof_interface(const bjvm_classdesc *o,
-                               bjvm_classdesc *classdesc) {
+                               const bjvm_classdesc *classdesc) {
   if (o == classdesc)
     return true;
   for (int i = 0; i < o->interfaces_count; ++i) {
@@ -5777,22 +5837,22 @@ bool bjvm_instanceof_interface(const bjvm_classdesc *o,
   return false;
 }
 
-bool bjvm_instanceof(const bjvm_classdesc *o, bjvm_classdesc *classdesc) {
+bool bjvm_instanceof(const bjvm_classdesc *o, const bjvm_classdesc *classdesc) {
   // Walk the superclasses/superinterfaces of bjvm_obj_header and see if any are
   // equal to classdesc
   // TODO compare class loaders too, superinterfaces
   // TODO arrays
+  if (o == NULL) return true;
 
   if (classdesc->kind != BJVM_CD_KIND_ORDINARY) {
     if (classdesc->kind == BJVM_CD_KIND_ORDINARY_ARRAY) {
-      bjvm_array_classdesc *arr = (bjvm_array_classdesc *)classdesc;
+      const bjvm_array_classdesc *arr = (const bjvm_array_classdesc *)classdesc;
       if (o->kind != BJVM_CD_KIND_ORDINARY_ARRAY)
         return false;
-      bjvm_array_classdesc *o_arr = (bjvm_array_classdesc *)o;
+      const bjvm_array_classdesc *o_arr = (const bjvm_array_classdesc *)o;
       return arr->dimensions == o_arr->dimensions &&
              bjvm_instanceof(o_arr->base_component, arr->base_component);
     }
-
     return classdesc->kind == o->kind;
   }
 
@@ -6625,8 +6685,7 @@ start:
         if (error)
           goto done;
 
-        bjvm_obj_header *obj =
-            bjvm_get_class_mirror(thread, ent->class_info.classdesc);
+        bjvm_obj_header *obj = (void*) bjvm_get_class_mirror(thread, ent->class_info.classdesc);
         checked_push(frame, (bjvm_stack_value){.obj = obj});
         break;
       }
