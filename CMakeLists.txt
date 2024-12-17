@@ -28,6 +28,12 @@ else()
     set(EmscriptenFlags "")
 endif()
 
+# true in CMake
+if (FALSE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNDEBUG")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNDEBUG")
+endif()
+
 add_library(bjvm OBJECT src/bjvm.h src/bjvm.c src/natives.h)
 
 add_executable(bjvm_main src/main.c)
