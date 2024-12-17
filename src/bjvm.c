@@ -4261,7 +4261,7 @@ int bjvm_Class_getComponentType(bjvm_thread *, bjvm_obj_header * obj,
                                  bjvm_stack_value*, int,
                                  bjvm_stack_value *ret) {
   bjvm_classdesc *desc = bjvm_unmirror_class(obj);
-  if (desc->kind != BJVM_CD_KIND_ORDINARY_ARRAY) {
+  if (desc->kind == BJVM_CD_KIND_ORDINARY) {
     ret->obj = NULL;
     return 0;
   }
@@ -5624,11 +5624,25 @@ int32_t java_idiv(int32_t a, int32_t b) {
   return a / b;
 }
 
+int64_t java_irem(int32_t a, int32_t b) {
+  assert(b != 0);
+  if (a == INT_MIN && b == -1)
+    return 0;
+  return a % b;
+}
+
 int64_t java_ldiv(int64_t a, int64_t b) {
   assert(b != 0);
   if (a == LONG_MIN && b == -1)
     return LONG_MIN;
   return a / b;
+}
+
+int64_t java_lrem(int64_t a, int64_t b) {
+  assert(b != 0);
+  if (a == LONG_MIN && b == -1)
+    return 0;
+  return a % b;
 }
 
 bool method_candidate_matches(const bjvm_cp_method *candidate,
@@ -6209,7 +6223,6 @@ start:
       bjvm_obj_header *value = checked_pop(frame).obj;
       int index = checked_pop(frame).i;
       bjvm_obj_header *array = checked_pop(frame).obj;
-      assert(array->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY);
       int len = *array_length(array);
       if (index < 0 || index >= len) {
         // ArrayIndexOutOfBoundsException
@@ -6513,11 +6526,12 @@ start:
       break;
     }
     case bjvm_insn_irem: {
-      int b = checked_pop(frame).i, a = checked_pop(frame).i;
-      if (b == 0) {    // TODO INT_MIN % -1
-        UNREACHABLE(); // TODO ArithmeticException
+      int32_t b = checked_pop(frame).i, a = checked_pop(frame).i;
+      if (b == 0) {
+        bjvm_arithmetic_exception(thread, L"/ by zero");
+        goto done;
       }
-      checked_push(frame, (bjvm_stack_value){.i = a % b});
+      checked_push(frame, (bjvm_stack_value){.i = java_irem(a, b)});
       break;
     }
     case bjvm_insn_dreturn:
@@ -6638,9 +6652,15 @@ start:
       checked_push(frame, (bjvm_stack_value){.l = a | b});
       break;
     }
-    case bjvm_insn_lrem:
-      UNREACHABLE("bjvm_insn_lrem");
+    case bjvm_insn_lrem: {
+      int64_t b = checked_pop(frame).l, a = checked_pop(frame).l;
+      if (b == 0) {
+        bjvm_arithmetic_exception(thread, L"/ by zero");
+        goto done;
+      }
+      checked_push(frame, (bjvm_stack_value){.l = java_lrem(a, b)});
       break;
+    }
     case bjvm_insn_lshl: {
       int64_t b = checked_pop(frame).l, a = checked_pop(frame).l;
       uint64_t c = ((uint64_t)a) << (b & 0x3f); // fuck u UB
