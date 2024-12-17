@@ -509,6 +509,12 @@ TEST_CASE("System.arraycopy") {
   REQUIRE(result.stdout_ == expected);
 }
 
+TEST_CASE("Passing long to method calls") {
+  auto result = run_test_case("test_files/long_calls/");
+  std::string expected = "abcdabcd";
+  REQUIRE(result.stdout_ == expected);
+}
+
 #if 0
 TEST_CASE("Class circularity error") {
   const char* cp[2] = { "test_files/circularity/", nullptr };
