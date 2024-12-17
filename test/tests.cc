@@ -518,6 +518,18 @@ TEST_CASE("Passing long to method calls") {
   REQUIRE(result.stdout_ == expected);
 }
 
+TEST_CASE("Big decimal #1") {
+  auto result = run_test_case("test_files/big_decimal/");
+  std::string expected = R"(10.5 + 2.3 = 12.8
+10.5 - 2.3 = 8.2
+10.5 * 2.3 = 24.15
+10 / 3 (rounded to 2 decimals) = 3.33
+10.5 equals 10.500: false
+10.5 compareTo 10.500: 0
+)";
+  REQUIRE(result.stdout_ == expected);
+}
+
 #if 0
 TEST_CASE("Class circularity error") {
   const char* cp[2] = { "test_files/circularity/", nullptr };

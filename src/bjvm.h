@@ -526,7 +526,7 @@ typedef struct bjvm_cp_method {
   bjvm_classdesc *my_class;
 
   bjvm_native_callback native_handle;
-  bjvm_obj_header *reflection_ctor;
+  struct bjvm_native_Constructor *reflection_ctor;
 } bjvm_cp_method;
 
 typedef struct bjvm_cp_field {
