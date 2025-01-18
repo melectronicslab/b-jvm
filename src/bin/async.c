@@ -1,15 +1,24 @@
 #include <async.h>
 #include <stdio.h>
-#include <stdint.h>
 
 struct async_wakeup_info {
   int delay;
 };
 
-DECLARE_ASYNC(int, my_inner_future, int _current_value; async_wakeup_info my_wakeup;, int a);
+DECLARE_ASYNC(
+  int, my_inner_future,
+  locals(
+    int _current_value;
+    async_wakeup_info my_wakeup;
+    ),
+  arguments(
+    int a;
+   ),
+   invoked_methods()
+);
 
-DEFINE_ASYNC(int, my_inner_future, int a) {
-  for (self->_current_value = 0; self->_current_value < 3; ) {
+DEFINE_ASYNC(my_inner_future, int(int a)) {
+  for (self->_current_value = 0; self->_current_value < 3;) {
     self->my_wakeup.delay = self->_current_value++;
     ASYNC_YIELD(&self->my_wakeup);
   }
@@ -17,22 +26,31 @@ DEFINE_ASYNC(int, my_inner_future, int a) {
   ASYNC_END(5);
 };
 
-DECLARE_ASYNC_VOID(fetch_data, int _res; my_inner_future_t _inner_future);
+DECLARE_ASYNC_VOID(fetch_data,
+  locals(
+    int _res;
+  ),
+  arguments(
+    int a;
+  ),
+  invoked_methods(
+      method(my_inner_future)
+  )
+);
 
-DEFINE_ASYNC_VOID(fetch_data)
-{
-    self->_res = 0;
+DEFINE_ASYNC(fetch_data, void(void)) {
+  self->_res = 0;
 
-  AWAIT(my_inner_future(&self->_inner_future, 0));
-  self->_res += self->_inner_future._result;
-  printf("self->_inner_future._result: %d\n", self->_inner_future._result);
+  AWAIT(my_inner_future, 0);
+  self->_res += get_async_result(my_inner_future);
+  printf("self->_inner_future._result: %d\n",
+         get_async_result(my_inner_future));
 
-  AWAIT(my_inner_future(&self->_inner_future, 1));
-  self->_res += self->_inner_future._current_value;
+  AWAIT(my_inner_future, 1);
+  self->_res += get_async_result(my_inner_future);
 
-  AWAIT(my_inner_future(&self->_inner_future, 2));
-  self->_res += self->_inner_future._current_value;
-
+  AWAIT(my_inner_future, 2);
+  self->_res += get_async_result(my_inner_future);
 
   printf("state: %d\n", self->_res);
 
@@ -49,7 +67,8 @@ int main(void) {
       printf("FUTURE is READY! Value = %d\n", my_fetch._res);
       break;
     } else {
-      printf("FUTURE is NOT READY. (poll %d), delay %d\n", i, fut.wakeup->delay);
+      printf("FUTURE is NOT READY. (poll %d), delay %d\n", i,
+             fut.wakeup->delay);
     }
   }
 

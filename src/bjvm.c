@@ -36,12 +36,6 @@
 DECLARE_ASYNC(int, init_cached_classdescs, bjvm_initialize_class_t ic; bjvm_classdesc * *cached_classdescs;
               , bjvm_thread *thread);
 
-#define assert(x)                                                                                                      \
-  do {                                                                                                                 \
-    if (!(x))                                                                                                          \
-      *(char *)1 = 0;                                                                                                  \
-  } while (0)
-
 DEFINE_ASYNC(int, init_cached_classdescs, bjvm_thread *thread) {
   assert(!thread->vm->cached_classdescs);
 
@@ -989,14 +983,15 @@ struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjv
   return (void *)result.obj;
 }
 
-DEFINE_ASYNC_SL(struct bjvm_native_MethodType *, resolve_mh_mt, BJVM_MH_KIND_LAST + 1, bjvm_thread *thread,
-                bjvm_cp_method_handle_info *info) {
+DEFINE_ASYNC_SL(resolve_mh_mt, BJVM_MH_KIND_LAST + 1,
+                struct bjvm_native_MethodType *(
+                    bjvm_thread *thread, bjvm_cp_method_handle_info *info)) {
   bjvm_classdesc *rtype = nullptr;
   bjvm_classdesc **ptypes = nullptr;
   int ptypes_count = 0;
   int ptypes_capacity = 0;
 
-  switch (info->handle_kind) {
+  switch (args->info->handle_kind) {
   case BJVM_MH_KIND_GET_FIELD:
     UNREACHABLE();
     break;
@@ -1016,9 +1011,9 @@ DEFINE_ASYNC_SL(struct bjvm_native_MethodType *, resolve_mh_mt, BJVM_MH_KIND_LAS
   case BJVM_MH_KIND_INVOKE_INTERFACE: {
     // MT should be of the form (C,A*)T, where C is the class the method is
     // found on, A* is the list of argument types, and T is the return type
-    bjvm_cp_method_info *method = &info->reference->methodref;
-    bjvm_resolve_class(thread, method->class_info);
-    AWAIT(bjvm_initialize_class(&self->ic, thread, method->class_info->classdesc));
+    bjvm_cp_method_info *method = &args->info->reference->methodref;
+    bjvm_resolve_class(args->thread, method->class_info);
+    AWAIT(bjvm_initialize_class, args->thread, method->class_info->classdesc);
 
     // reload these because we awaited
     rtype = nullptr;
@@ -1026,16 +1021,17 @@ DEFINE_ASYNC_SL(struct bjvm_native_MethodType *, resolve_mh_mt, BJVM_MH_KIND_LAS
     ptypes_count = 0;
     ptypes_capacity = 0;
 
-    if (info->handle_kind != BJVM_MH_KIND_INVOKE_STATIC) {
-      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = method->class_info->classdesc;
+    if (args->info->handle_kind != BJVM_MH_KIND_INVOKE_STATIC) {
+      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) =
+          method->class_info->classdesc;
     }
 
     for (int i = 0; i < method->descriptor->args_count; ++i) {
       bjvm_field_descriptor *arg = method->descriptor->args + i;
-      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = load_class_of_field(thread, arg);
+      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = load_class_of_field(args->thread, arg);
     }
 
-    rtype = load_class_of_field(thread, &method->descriptor->return_type);
+    rtype = load_class_of_field(args->thread, &method->descriptor->return_type);
     break;
   }
   case BJVM_MH_KIND_NEW_INVOKE_SPECIAL: {
@@ -1061,23 +1057,23 @@ DEFINE_ASYNC_SL(struct bjvm_native_MethodType *, resolve_mh_mt, BJVM_MH_KIND_LAS
   }
 
   // Call MethodType.makeImpl(rtype, ptypes, true)
-  bjvm_cp_method *make = bjvm_method_lookup(thread->vm->cached_classdescs->method_type, STR("makeImpl"),
+  bjvm_cp_method *make = bjvm_method_lookup(args->thread->vm->cached_classdescs->method_type, STR("makeImpl"),
                                             STR("(Ljava/lang/Class;[Ljava/lang/Class;Z)Ljava/"
                                                 "lang/invoke/MethodType;"),
                                             false, false);
   bjvm_stack_value result;
 
   bjvm_handle *ptypes_array =
-      bjvm_make_handle(thread, CreateObjectArray1D(thread, thread->vm->cached_classdescs->klass, ptypes_count));
+      bjvm_make_handle(args->thread, CreateObjectArray1D(args->thread, args->thread->vm->cached_classdescs->klass, ptypes_count));
   for (int i = 0; i < ptypes_count; ++i) {
-    *((bjvm_obj_header **)ArrayData(ptypes_array->obj) + i) = (void *)bjvm_get_class_mirror(thread, ptypes[i]);
+    *((bjvm_obj_header **)ArrayData(ptypes_array->obj) + i) = (void *)bjvm_get_class_mirror(args->thread, ptypes[i]);
   }
   free(ptypes);
   bjvm_thread_run_leaf(
-      thread, make,
+      args->thread, make,
       (bjvm_stack_value[]){{.obj = (void *)bjvm_get_class_mirror(thread, rtype)}, {.obj = ptypes_array->obj}, {.i = 0}},
       &result);
-  bjvm_drop_handle(thread, ptypes_array);
+  bjvm_drop_handle(args->thread, ptypes_array);
 
   ASYNC_END((void *)result.obj);
 }
