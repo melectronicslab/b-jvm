@@ -34,7 +34,7 @@ DECLARE_ASYNC_VOID(fetch_data,
     int a;
   ),
   invoked_methods(
-      method(my_inner_future)
+      invoked_method(my_inner_future)
   )
 );
 

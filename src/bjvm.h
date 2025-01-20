@@ -112,7 +112,11 @@ typedef struct bjvm_plain_frame bjvm_plain_frame;
 typedef struct bjvm_stack_frame bjvm_stack_frame;
 typedef struct bjvm_native_frame bjvm_native_frame;
 
-DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native, void *native_struct;, bjvm_thread *thread, bjvm_native_frame *frame);
+DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native,
+  locals(void *native_struct),
+  arguments(bjvm_thread *thread; bjvm_native_frame *frame),
+  invoked_methods()
+);
 
 DECLARE_ASYNC(
     int, bjvm_initialize_class,
@@ -123,45 +127,72 @@ DECLARE_ASYNC(
 
 DECLARE_ASYNC(struct bjvm_native_MethodType *, resolve_mh_mt, locals(),
               arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
-              invoked_methods(method(bjvm_initialize_class)));
+              invoked_methods(invoked_method(bjvm_initialize_class)));
 
 DECLARE_ASYNC(
     struct bjvm_native_MethodHandle *, bjvm_resolve_method_handle,
     locals(bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m),
     arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
     invoked_methods(
-      method(bjvm_initialize_class)
-      method(resolve_mh_mt)
+      invoked_method(bjvm_initialize_class)
+      invoked_method(resolve_mh_mt)
     )
 );
 
 typedef struct bjvm_interpret_s bjvm_interpret_t;
 
-DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic, bjvm_interpret_t *interpreter_ctx; bjvm_cp_method * method;
-                   int argc; bjvm_stack_frame * frame;
-                   , bjvm_thread *thread, bjvm_plain_frame *frame, int *sd, bjvm_cp_method *method,
-                   struct bjvm_native_MethodType *provider_mt, bjvm_obj_header *target);
+DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
+                  locals(
+                    bjvm_interpret_t *interpreter_ctx;
+                    bjvm_cp_method * method;
+                    int argc;
+                    bjvm_stack_frame * frame;
+                  ),
+                  arguments(
+                    bjvm_thread *thread;
+                    bjvm_plain_frame *frame;
+                    int *sd;
+                    bjvm_cp_method *method;
+                    struct bjvm_native_MethodType *provider_mt;
+                    bjvm_obj_header *target;
+                  ),
+);
 
-DECLARE_ASYNC(bjvm_value, bjvm_resolve_indy_static_argument, locals(),
-              arguments(bjvm_thread *thread; bjvm_cp_entry *ent; bool *is_object),
-              invoked_methods(method(bjvm_resolve_method_handle))
+DECLARE_ASYNC(bjvm_value, bjvm_resolve_indy_static_argument,
+              locals(),
+              arguments(
+                bjvm_thread *thread;
+                bjvm_cp_entry *ent;
+                bool *is_object;
+              ),
+              invoked_methods(invoked_method(bjvm_resolve_method_handle))
 );
 
 DECLARE_ASYNC(
     int, indy_resolve,
-    locals(int static_i),
+    locals(
+      bjvm_handle *bootstrap_handle;
+      bjvm_plain_frame *fake_frame;
+      int static_i;
+    ),
     arguments(bjvm_thread *thread; bjvm_bytecode_insn *insn; bjvm_cp_indy_info *indy),
     invoked_methods(
-      method(bjvm_resolve_method_handle)
-      method(bjvm_resolve_indy_static_argument)
-      method(bjvm_invokevirtual_signature_polymorphic)
+      invoked_method(bjvm_resolve_method_handle)
+      invoked_method(bjvm_resolve_indy_static_argument)
+      invoked_method(bjvm_invokevirtual_signature_polymorphic)
     )
 );
 
-DECLARE_ASYNC(int, resolve_methodref, bjvm_cp_class_info *klass; bjvm_initialize_class_t initializer_ctx;
-              , bjvm_thread *thread, bjvm_cp_method_info *info);
+DECLARE_ASYNC(int, resolve_methodref,
+              locals(
+                bjvm_cp_class_info *klass;
+                bjvm_initialize_class_t initializer_ctx;
+              ),
+              arguments(bjvm_thread *thread; bjvm_cp_method_info *info),
+              invoked_method(bjvm_initialize_class)
+);
 
-  // Continue execution of a thread.
+// Continue execution of a thread.
 //
 // When popping frames off the stack, if the passed frame "final_frame" is
 // popped off, the result of that frame (if any) is placed in "result", and
@@ -173,18 +204,17 @@ DECLARE_ASYNC(
     locals(
       bjvm_stack_frame *invoked_frame;
       int sd;
+      indy_resolve_t *indy_resolve;
     ),
     arguments(
       bjvm_thread *thread;
-      bjvm_stack_frame *final_frame;
-      bjvm_stack_value *result
+      bjvm_stack_frame *raw_frame;
     ),
     invoked_methods(
-      method(bjvm_initialize_class)
-      method(indy_resolve)
-      method(bjvm_run_native)
-      method(resolve_methodref)
-      method(bjvm_invokevirtual_signature_polymorphic)
+      invoked_method(bjvm_initialize_class)
+      invoked_method(bjvm_run_native)
+      invoked_method(resolve_methodref)
+      invoked_method(bjvm_invokevirtual_signature_polymorphic)
     )
 );
 
