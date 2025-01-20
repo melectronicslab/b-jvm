@@ -21,7 +21,7 @@ jobs:
 
     steps:
     - name: Alec's server
-      run: git config --global lfs.url xz.ax:/git/b-jvm.git/info/lfs
+      run: git config --global lfs.url https://xz.ax/git/b-jvm.git/info/lfs
       
     - uses: actions/checkout@v4
       with:
