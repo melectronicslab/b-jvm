@@ -17,7 +17,7 @@ DECLARE_ASYNC(
    invoked_methods()
 );
 
-DEFINE_ASYNC(my_inner_future, int(int a)) {
+DEFINE_ASYNC(my_inner_future) {
   for (self->_current_value = 0; self->_current_value < 3;) {
     self->my_wakeup.delay = self->_current_value++;
     ASYNC_YIELD(&self->my_wakeup);
@@ -38,7 +38,7 @@ DECLARE_ASYNC_VOID(fetch_data,
   )
 );
 
-DEFINE_ASYNC(fetch_data, void(void)) {
+DEFINE_ASYNC(fetch_data) {
   self->_res = 0;
 
   AWAIT(my_inner_future, 0);

@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <assert.h>
 
 typedef enum { FUTURE_NOT_READY, FUTURE_READY } future_status;
 
