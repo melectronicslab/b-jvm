@@ -550,6 +550,7 @@ void bjvm_negative_array_size_exception(bjvm_thread *thread, int count);
 void bjvm_incompatible_class_change_error(bjvm_thread *thread, bjvm_utf8 complaint);
 void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *method);
 void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *method);
+void bjvm_arithmetic_exception(bjvm_thread *thread, const bjvm_utf8 complaint);
 int bjvm_invokestatic(bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insn, uint16_t *sd);
 void dump_frame(FILE *stream, const bjvm_plain_frame *frame);
 

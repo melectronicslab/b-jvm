@@ -34,7 +34,7 @@ bjvm_cp_entry *bjvm_check_cp_entry(bjvm_cp_entry *entry, int expected_kinds,
  */
 typedef enum {
   /** No operands */
-  bjvm_insn_nop,
+  bjvm_insn_nop, // stack polymorphic
 
   bjvm_insn_aaload,
   bjvm_insn_aastore,
@@ -255,6 +255,13 @@ typedef enum {
   bjvm_insn_putstatic_Z,
   bjvm_insn_putstatic_L,
 } bjvm_insn_code_kind;
+
+typedef enum {
+  TOS_VOID,
+  TOS_INT,
+  TOS_FLOAT,
+  TOS_DOUBLE
+} bjvm_reduced_tos_kind;
 
 typedef enum : char {
   BJVM_TYPE_KIND_BOOLEAN = 'Z',
@@ -546,6 +553,7 @@ struct bjvm_bc_invokeinterface_data {
 
 typedef struct bjvm_bytecode_insn {
   bjvm_insn_code_kind kind;
+  bjvm_reduced_tos_kind tos_after;  // the (reduced) top-of-stack type after this instruction executes
   int original_pc;
 
   union {
