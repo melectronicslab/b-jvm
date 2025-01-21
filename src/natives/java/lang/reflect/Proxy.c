@@ -28,8 +28,8 @@ DECLARE_NATIVE(
 
   free_heap_str(name_str);
 
-  bjvm_initialize_class_t pox = {0};
-  future_t f = bjvm_initialize_class(&pox, thread, result); // TODO convert
+  bjvm_initialize_class_t pox = {.args = {thread, result}};
+  future_t f = bjvm_initialize_class(&pox); // TODO convert
   assert(f.status == FUTURE_READY);
 
   return (bjvm_stack_value){.obj =

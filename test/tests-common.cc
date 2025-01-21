@@ -227,8 +227,8 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 
   bjvm_cp_method *method;
 
-  bjvm_initialize_class_t pox = { 0 };
-  future_t f = bjvm_initialize_class(&pox, thread, desc);
+  bjvm_initialize_class_t pox = { .args = {thread, desc}};
+  future_t f = bjvm_initialize_class(&pox);
   assert(f.status == FUTURE_READY);
 
   method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),

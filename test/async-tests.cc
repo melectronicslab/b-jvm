@@ -18,19 +18,19 @@ struct async_wakeup_info {
   int index;
 };
 
-DECLARE_ASYNC_VOID(test_yield, async_wakeup_info info;, int index);
-DEFINE_ASYNC_VOID(test_yield, int index) {
-  self->info.index = index;
+DECLARE_ASYNC_VOID(test_yield, locals(async_wakeup_info info;), arguments(int index),);
+DEFINE_ASYNC(test_yield) {
+  self->info.index = args->index;
   ASYNC_YIELD(&self->info);
   ASYNC_END_VOID();
 }
 
 namespace a {
-DECLARE_ASYNC_VOID(test_method, test_yield_t ctx);
-DEFINE_ASYNC_VOID(test_method) {
-  AWAIT(test_yield(&self->ctx, 1));
-  AWAIT(test_yield(&self->ctx, 2));
-  AWAIT(test_yield(&self->ctx, 3));
+DECLARE_ASYNC_VOID(test_method, locals(), arguments(), invoked_methods(invoked_method(test_yield)));
+DEFINE_ASYNC(test_method) {
+  AWAIT(test_yield, 1);
+  AWAIT(test_yield, 2);
+  AWAIT(test_yield, 3);
 
   ASYNC_END_VOID();
 }
@@ -58,10 +58,10 @@ TEST_CASE("Top-level await") {
 }
 
 namespace b {
-DECLARE_ASYNC_VOID(test_method, int i; test_yield_t ctx);
-DEFINE_ASYNC_VOID(test_method) {
+DECLARE_ASYNC_VOID(test_method, locals(int i), arguments(), invoked_methods(invoked_method(test_yield)));
+DEFINE_ASYNC(test_method) {
   for (self->i = 1; self->i <= 3; self->i++) {
-    AWAIT(test_yield(&self->ctx, self->i));
+    AWAIT(test_yield, self->i);
   }
 
   ASYNC_END_VOID();
@@ -90,38 +90,38 @@ TEST_CASE("For loop") {
 }
 
 namespace c {
-DECLARE_ASYNC_VOID(test_method, test_yield_t ctx; test_method_t *callee;, int i)
-DEFINE_ASYNC_VOID(test_method, int i) {
-  if (i == 0)
+DECLARE_ASYNC_VOID(test_method, locals(test_method_t *callee), arguments(int i), invoked_methods(invoked_method(test_yield)));
+DEFINE_ASYNC(test_method) {
+  if (args->i == 0)
     ASYNC_RETURN_VOID();
 
   self->callee = new test_method_t{};
-  AWAIT(test_method(self->callee, i - 1));
+  AWAIT_INNER(self->callee, test_method, args->i - 1);
   delete self->callee;
   self->callee = nullptr;
 
-  AWAIT(test_yield(&self->ctx, i));
+  AWAIT(test_yield, args->i);
 
   ASYNC_END_VOID();
 }
 
 TEST_CASE("Recursion") {
-  test_method_t tm = {};
+  test_method_t tm = {.args = {3}};
   future_t fut;
 
-  fut = test_method(&tm, 3);
+  fut = test_method(&tm);
   REQUIRE(fut.status == FUTURE_NOT_READY);
   REQUIRE(fut.wakeup->index == 1);
 
-  fut = test_method(&tm, 3);
+  fut = test_method(&tm);
   REQUIRE(fut.status == FUTURE_NOT_READY);
   REQUIRE(fut.wakeup->index == 2);
 
-  fut = test_method(&tm, 3);
+  fut = test_method(&tm);
   REQUIRE(fut.status == FUTURE_NOT_READY);
   REQUIRE(fut.wakeup->index == 3);
 
-  fut = test_method(&tm, 3);
+  fut = test_method(&tm);
   REQUIRE(fut.status == FUTURE_READY);
   REQUIRE(fut.wakeup == nullptr);
 }
@@ -133,12 +133,12 @@ struct skibidi {
   std::string def;
 };
 
-DECLARE_ASYNC(skibidi, test_method, test_yield_t ctx; test_method_t *callee;);
-DEFINE_ASYNC(skibidi, test_method) {
+DECLARE_ASYNC(skibidi, test_method, locals(test_method_t *callee), arguments(), invoked_methods(invoked_method(test_yield)));
+DEFINE_ASYNC(test_method) {
 
-  AWAIT(test_yield(&self->ctx, 6));
+  AWAIT(test_yield, 6);
 
-  ASYNC_END((skibidi{"abc", "def"}));
+  ASYNC_END(((struct skibidi){"abc", "def"}));
 }
 
 TEST_CASE("Fat return type") {
