@@ -4,10 +4,10 @@
 // instruction. This messes up the debug dumps but can lead to slightly better
 // performance because the branch predictor has more information about pairs
 // of instructions which tend to follow another.
-#define ONE_GOTO_PER_INSN 0
+#define ONE_GOTO_PER_INSN 1
 // Skip the memset(...) call to clear each frame's locals/stack. This messes
 // up the debug dumps, but makes setting up frames faster.
-#define SKIP_CLEARING_FRAME 0
+#define SKIP_CLEARING_FRAME 1
 
 #include <assert.h>
 #include <limits.h>
