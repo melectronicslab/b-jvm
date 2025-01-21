@@ -1004,7 +1004,17 @@ DEFINE_ASYNC_SL(resolve_mh_mt, BJVM_MH_KIND_LAST + 1) {
 
   switch (args->info->handle_kind) {
   case BJVM_MH_KIND_GET_FIELD:
-    UNREACHABLE();
+    // MT should be of the form (C)T, where C is the class the field is found on
+    bjvm_cp_field_info *field = &args->info->reference->field;
+    bjvm_resolve_class(args->thread, field->class_info);
+    AWAIT(bjvm_initialize_class, args->thread, field->class_info->classdesc);
+    // reload these because we awaited
+    rtype = nullptr;
+    ptypes = nullptr;
+    ptypes_count = 0;
+    ptypes_capacity = 0;
+    *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = field->class_info->classdesc;
+    rtype = load_class_of_field(args->thread, field->parsed_descriptor);
     break;
   case BJVM_MH_KIND_GET_STATIC:
     UNREACHABLE();
@@ -1096,13 +1106,42 @@ DEFINE_ASYNC_SL(bjvm_resolve_method_handle, BJVM_MH_KIND_LAST + 1) {
   AWAIT(resolve_mh_mt, thread, info);
   info->resolved_mt = get_async_result(resolve_mh_mt);
 
+  self->DirectMethodHandle = bootstrap_lookup_class(thread, STR("java/lang/invoke/DirectMethodHandle"));
+  self->MemberName = bootstrap_lookup_class(thread, STR("java/lang/invoke/MemberName"));
+  AWAIT(bjvm_initialize_class, thread, self->DirectMethodHandle);
+  AWAIT(bjvm_initialize_class, thread, self->MemberName);
+
   switch (info->handle_kind) {
   case BJVM_MH_KIND_GET_FIELD:
   case BJVM_MH_KIND_GET_STATIC:
   case BJVM_MH_KIND_PUT_FIELD:
-  case BJVM_MH_KIND_PUT_STATIC:
-    UNREACHABLE();
+  case BJVM_MH_KIND_PUT_STATIC: {
+    bjvm_cp_field_info *field = &info->reference->field;
+    bjvm_resolve_class(thread, field->class_info);
+    AWAIT(bjvm_initialize_class, thread, field->class_info->classdesc);
+    field = &info->reference->field; // reload because of the await
+    self->f = bjvm_field_lookup(field->class_info->classdesc, field->nat->name, field->nat->descriptor);
+    bjvm_reflect_initialize_field(thread, field->class_info->classdesc, self->f);
+    bjvm_handle *member = bjvm_make_handle(thread, new_object(thread, self->MemberName));
+    bjvm_cp_method *make_member =
+            bjvm_method_lookup(self->MemberName, STR("<init>"),
+              STR("(Ljava/lang/reflect/Field;)V"), false, false);
+    bjvm_stack_value result;
+    bjvm_thread_run_leaf(
+            thread, make_member,
+            (bjvm_stack_value[]){
+              {.obj = (void *)member->obj},
+              {.obj = (void *)self->f->reflection_field}
+            }, nullptr);
+    bjvm_cp_method *make = bjvm_method_lookup(self->DirectMethodHandle, STR("make"),
+                                              STR("(Ljava/lang/invoke/MemberName;)Ljava/lang/"
+                                                  "invoke/DirectMethodHandle;"),
+                                              false, false);
+    bjvm_thread_run_leaf(thread, make, (bjvm_stack_value[]){{.obj = member->obj}}, &result);
+    bjvm_drop_handle(thread, member);
+    ASYNC_RETURN((void *)result.obj);
     break;
+  }
   case BJVM_MH_KIND_INVOKE_VIRTUAL:
   case BJVM_MH_KIND_INVOKE_STATIC:
   case BJVM_MH_KIND_INVOKE_SPECIAL:
@@ -1123,12 +1162,6 @@ DEFINE_ASYNC_SL(bjvm_resolve_method_handle, BJVM_MH_KIND_LAST + 1) {
     }
 
     // Call DirectMethodHandle.make(method, true)
-    self->DirectMethodHandle = bootstrap_lookup_class(thread, STR("java/lang/invoke/DirectMethodHandle"));
-    self->MemberName = bootstrap_lookup_class(thread, STR("java/lang/invoke/MemberName"));
-
-    AWAIT(bjvm_initialize_class, thread, self->DirectMethodHandle);
-    AWAIT(bjvm_initialize_class, thread, self->MemberName);
-
     bjvm_handle *member = bjvm_make_handle(thread, new_object(thread, self->MemberName));
     bool is_ctor = BJVM_MH_KIND_NEW_INVOKE_SPECIAL == info->handle_kind;
     bjvm_cp_method *make_member = bjvm_method_lookup(
@@ -2114,6 +2147,18 @@ bool method_types_compatible(struct bjvm_native_MethodType *provider_mt, struct 
   return true;
 }
 
+// Dump the contents of the method type to the specified stream.
+static void dump_method_type(FILE* stream, struct bjvm_native_MethodType *type) {
+  fprintf(stream, "(");
+  for (int i = 0; i < *ArrayLength(type->ptypes); ++i) {
+    bjvm_classdesc *desc = bjvm_unmirror_class(((bjvm_obj_header **)ArrayData(type->ptypes))[i]);
+    fprintf(stream, "%.*s", fmt_slice(desc->name));
+    if (i + 1 < *ArrayLength(type->ptypes))
+      fprintf(stream, ", ");
+  }
+  fprintf(stream, ") -> %.*s\n", fmt_slice(bjvm_unmirror_class(type->rtype)->name));
+}
+
 heap_string debug_dump_string(bjvm_thread *thread, bjvm_obj_header *header) {
   bjvm_cp_method *toString =
       bjvm_method_lookup(header->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, true);
@@ -2153,12 +2198,15 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
   struct bjvm_native_MethodType *targ = (void *)mh->type;
 
   // varargs iff mh is of class AsVarargsCollector
-  bool is_varargs =
+  /*bool is_varargs =
       utf8_equals(hslc(mh->base.descriptor->name), "java/lang/invoke/MethodHandleImpl$AsVarargsCollector");
   if (is_varargs) {
+    printf("Varargs: %.*s\n", fmt_slice(args->method->name));
+    dump_method_type(stderr, targ);
+    dump_method_type(stderr, provider_mt);
     // To-implement
     UNREACHABLE();
-  }
+  }*/
 
   bool mts_are_same = method_types_compatible(provider_mt, targ);
   bool is_invoke_exact = utf8_equals_utf8(args->method->name, STR("invokeExact"));
@@ -2188,6 +2236,10 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
     if (status != 0) // asType failed
       ASYNC_RETURN_VOID();
     mh = (void *)result.obj;
+
+    printf("Varargs: %.*s\n", fmt_slice(args->method->name));
+    dump_method_type(stderr, (void*)mh->type);
+    dump_method_type(stderr, provider_mt);
   }
 
   struct bjvm_native_LambdaForm *form = (void *)mh->form;
@@ -2216,6 +2268,7 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
     assert(self->method);
     self->argc = self->method->descriptor->args_count;
     self->frame = bjvm_push_frame(thread, self->method, args->frame->values + *sd - self->argc, self->argc);
+    self->frame->plain.values[self->frame->plain.max_stack].obj = (void*) mh;
     // TODO arena allocate this in the VM so that it gets freed appropriately
     // if the VM is deleted
     self->interpreter_ctx = calloc(1, sizeof(bjvm_interpret_t));
@@ -3808,7 +3861,7 @@ interpret_frame:
         goto done;
       method_info = &insn->cp->methodref;
       if (method_info->resolved->is_signature_polymorphic) {
-        INTERPRETER_AWAIT_VOID(bjvm_invokevirtual_signature_polymorphic, thread, frame, &sd, method,
+        INTERPRETER_AWAIT_VOID(bjvm_invokevirtual_signature_polymorphic, thread, frame, &sd, method_info->resolved,
                                bjvm_resolve_method_type(thread, method_info->descriptor), target);
         if (thread->current_exception)
           goto done;

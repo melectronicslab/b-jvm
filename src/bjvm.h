@@ -131,7 +131,7 @@ DECLARE_ASYNC(struct bjvm_native_MethodType *, resolve_mh_mt, locals(),
 
 DECLARE_ASYNC(
     struct bjvm_native_MethodHandle *, bjvm_resolve_method_handle,
-    locals(bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m),
+    locals(bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m; bjvm_cp_field *f),
     arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
     invoked_methods(
       invoked_method(bjvm_initialize_class)

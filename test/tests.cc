@@ -302,11 +302,9 @@ TEST_CASE("Math natives") {
   REQUIRE(result.stdout_ == "abcdefghijklmnopqrstu");
 }
 
-/*
 TEST_CASE("Signature polymorphism") {
   auto result = run_test_case("test_files/signature_polymorphism/", false);
 }
-*/
 
 TEST_CASE("Basic lambda") {
   auto result = run_test_case("test_files/basic_lambda/", true);
@@ -505,7 +503,8 @@ TEST_CASE("Records") {
   auto result = run_test_case("test_files/records/", true,
                               "Records");
   REQUIRE_THAT(result.stdout_, Equals(R"(true
-true)"));
+true
+)"));
 }
 #endif
 

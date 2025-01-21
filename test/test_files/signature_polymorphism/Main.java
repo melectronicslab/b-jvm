@@ -1,4 +1,8 @@
 import java.lang.invoke.*;
+import static java.lang.invoke.MethodHandles.*;
+import static java.lang.invoke.MethodType.*;
+import java.util.*;
+
 public class Main {
     public static void assertEquals(Object a, Object b) {
         assert(a.equals(b));
@@ -42,5 +46,27 @@ public class Main {
         mh = lookup.findVirtual(java.io.PrintStream.class, "println", mt);
         mh.invokeExact(System.out, "Hello, world.");
         // invokeExact(Ljava/io/PrintStream;Ljava/lang/String;)V
+
+        MethodHandle deepToString = publicLookup()
+          .findStatic(Arrays.class, "deepToString", methodType(String.class, Object[].class));
+        MethodHandle ts1 = deepToString.asVarargsCollector(Object[].class);
+        assertEquals("[won]",   (String) ts1.invokeExact(    new Object[]{"won"}));
+        assertEquals("[won]",   (String) ts1.invoke(         new Object[]{"won"}));
+        assertEquals("[won]",   (String) ts1.invoke(                      "won" ));
+        assertEquals("[[won]]", (String) ts1.invoke((Object) new Object[]{"won"}));
+        // findStatic of Arrays.asList(...) produces a variable arity method handle:
+        MethodHandle asList = publicLookup()
+          .findStatic(Arrays.class, "asList", methodType(List.class, Object[].class));
+        assertEquals(methodType(List.class, Object[].class), asList.type());
+        assert(asList.isVarargsCollector());
+        assertEquals("[]", asList.invoke().toString());
+        assertEquals("[1]", asList.invoke(1).toString());
+        assertEquals("[two, too]", asList.invoke("two", "too").toString());
+        String[] argv = { "three", "thee", "tee" };
+        assertEquals("[three, thee, tee]", asList.invoke(argv).toString());
+        assertEquals("[three, thee, tee]", asList.invoke((Object[])argv).toString());
+        List ls = (List) asList.invoke((Object)argv);
+        assertEquals(1, ls.size());
+        assertEquals("[three, thee, tee]", Arrays.toString((Object[])ls.get(0)));
     }
 }
