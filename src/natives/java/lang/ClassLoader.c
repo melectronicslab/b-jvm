@@ -75,8 +75,8 @@ bjvm_stack_value define_class(bjvm_thread *thread, bjvm_handle *loader, bjvm_han
 
   free_heap_str(name_str);
   if (initialize) {
-    bjvm_initialize_class_t pox = {};
-    future_t fut = bjvm_initialize_class(&pox, thread, result);
+    bjvm_initialize_class_t pox = {.args = {thread, result}};
+    future_t fut = bjvm_initialize_class(&pox);
     assert(fut.status == FUTURE_READY);
   }
   if (result) {

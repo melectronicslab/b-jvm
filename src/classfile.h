@@ -398,7 +398,8 @@ typedef enum {
   BJVM_CP_KIND_INVOKE_DYNAMIC = 1 << 13,
   BJVM_CP_KIND_DYNAMIC_CONSTANT = 1 << 14,
   BJVM_CP_KIND_MODULE = 1 << 15,
-  BJVM_CP_KIND_PACKAGE = 1 << 16
+  BJVM_CP_KIND_PACKAGE = 1 << 16,
+  BJVM_CP_KIND_LAST = 1 << 16
 } bjvm_cp_kind;
 
 typedef struct bjvm_cp_entry {

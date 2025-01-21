@@ -7,8 +7,8 @@ DECLARE_NATIVE("java/lang/reflect", Array, newArray,
   if (!args[0].handle->obj)
     return value_null();
   bjvm_classdesc *class = bjvm_unmirror_class(args[0].handle->obj);
-  bjvm_initialize_class_t pox = {};
-  future_t f = bjvm_initialize_class(&pox, thread, class);
+  bjvm_initialize_class_t pox = {.args = {thread, class}};
+  future_t f = bjvm_initialize_class(&pox);
   assert(f.status == FUTURE_READY);
   int32_t count = args[1].i;
   bjvm_obj_header *result;

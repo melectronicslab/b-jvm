@@ -112,48 +112,85 @@ typedef struct bjvm_plain_frame bjvm_plain_frame;
 typedef struct bjvm_stack_frame bjvm_stack_frame;
 typedef struct bjvm_native_frame bjvm_native_frame;
 
-DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native, void *native_struct;, bjvm_thread *thread, bjvm_native_frame *frame);
+DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native,
+  locals(void *native_struct),
+  arguments(bjvm_thread *thread; bjvm_native_frame *frame),
+  invoked_methods()
+);
 
 DECLARE_ASYNC(
     int, bjvm_initialize_class,
-    union {
-      bjvm_initialize_class_t *recursive_call_space;
-      struct bjvm_interpret_s *interpret;
-    };
-    uint16_t i;, bjvm_thread *thread, bjvm_classdesc *classdesc);
+    locals(bjvm_initialize_class_t *recursive_call_space; uint16_t i),
+    arguments(bjvm_thread *thread; bjvm_classdesc *classdesc),
+    invoked_methods()
+);
 
-DECLARE_ASYNC(struct bjvm_native_MethodType *, resolve_mh_mt, bjvm_initialize_class_t ic;
-              , bjvm_thread *thread, bjvm_cp_method_handle_info *info);
+DECLARE_ASYNC(struct bjvm_native_MethodType *, resolve_mh_mt, locals(),
+              arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
+              invoked_methods(invoked_method(bjvm_initialize_class)));
 
 DECLARE_ASYNC(
     struct bjvm_native_MethodHandle *, bjvm_resolve_method_handle,
-    union {
-      bjvm_initialize_class_t init_class_state;
-      resolve_mh_mt_t resolve;
-    };
-    bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m;
-    , bjvm_thread *thread, bjvm_cp_method_handle_info *info);
+    locals(bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m),
+    arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
+    invoked_methods(
+      invoked_method(bjvm_initialize_class)
+      invoked_method(resolve_mh_mt)
+    )
+);
 
 typedef struct bjvm_interpret_s bjvm_interpret_t;
 
-DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic, bjvm_interpret_t *interpreter_ctx; bjvm_cp_method * method;
-                   int argc; bjvm_stack_frame * frame;
-                   , bjvm_thread *thread, bjvm_plain_frame *frame, int *sd, bjvm_cp_method *method,
-                   struct bjvm_native_MethodType *provider_mt, bjvm_obj_header *target);
+DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
+                  locals(
+                    bjvm_interpret_t *interpreter_ctx;
+                    bjvm_cp_method * method;
+                    int argc;
+                    bjvm_stack_frame * frame;
+                  ),
+                  arguments(
+                    bjvm_thread *thread;
+                    bjvm_plain_frame *frame;
+                    uint16_t *sd;
+                    bjvm_cp_method *method;
+                    struct bjvm_native_MethodType *provider_mt;
+                    bjvm_obj_header *target;
+                  ),
+);
 
-DECLARE_ASYNC(bjvm_value, bjvm_resolve_indy_static_argument, bjvm_resolve_method_handle_t resolve;
-              , bjvm_thread *thread, bjvm_cp_entry *ent, bool *is_object);
+DECLARE_ASYNC(bjvm_value, bjvm_resolve_indy_static_argument,
+              locals(),
+              arguments(
+                bjvm_thread *thread;
+                bjvm_cp_entry *ent;
+                bool *is_object;
+              ),
+              invoked_methods(invoked_method(bjvm_resolve_method_handle))
+);
 
 DECLARE_ASYNC(
-    int, indy_resolve, int static_i; bjvm_plain_frame *fake_frame; bjvm_handle *bootstrap_handle; union {
-      bjvm_resolve_method_handle_t mh;
-      bjvm_resolve_indy_static_argument_t static_arg;
-      bjvm_invokevirtual_signature_polymorphic_t invoke;
-    };
-    , bjvm_thread *thread, bjvm_bytecode_insn *insn, bjvm_cp_indy_info *indy);
+    int, indy_resolve,
+    locals(
+      bjvm_handle *bootstrap_handle;
+      bjvm_plain_frame *fake_frame;
+      int static_i;
+    ),
+    arguments(bjvm_thread *thread; bjvm_bytecode_insn *insn; bjvm_cp_indy_info *indy),
+    invoked_methods(
+      invoked_method(bjvm_resolve_method_handle)
+      invoked_method(bjvm_resolve_indy_static_argument)
+      invoked_method(bjvm_invokevirtual_signature_polymorphic)
+    )
+);
 
-DECLARE_ASYNC(int, resolve_methodref, bjvm_cp_class_info *klass; bjvm_initialize_class_t initializer_ctx;
-              , bjvm_thread *thread, bjvm_cp_method_info *info);
+DECLARE_ASYNC(int, resolve_methodref,
+              locals(
+                bjvm_cp_class_info *klass;
+                bjvm_initialize_class_t initializer_ctx;
+              ),
+              arguments(bjvm_thread *thread; bjvm_cp_method_info *info),
+              invoked_method(bjvm_initialize_class)
+);
 
 // Continue execution of a thread.
 //
@@ -163,14 +200,16 @@ DECLARE_ASYNC(int, resolve_methodref, bjvm_cp_class_info *klass; bjvm_initialize
 // whether the frame completed abruptly.
 EMSCRIPTEN_KEEPALIVE
 DECLARE_ASYNC(
-    bjvm_stack_value, bjvm_interpret, int sd; bjvm_stack_frame * invoked_frame; union {
-      bjvm_initialize_class_t init_class;
-      indy_resolve_t *indy_resolve;
-      bjvm_run_native_t native;
-      resolve_methodref_t methodref_resolve;
-      bjvm_invokevirtual_signature_polymorphic_t invoke_sigpoly;
-    };
-    , bjvm_thread *thread, bjvm_stack_frame *final_frame);
+    bjvm_stack_value, bjvm_interpret,
+    locals(
+      uint16_t sd;
+      uint16_t async_ctx; // offset within the secondary stack
+    ),
+    arguments(
+      bjvm_thread *thread;
+      bjvm_stack_frame *raw_frame;
+    ),
+);
 
 struct bjvm_cached_classdescs;
 typedef struct bjvm_vm {
@@ -388,6 +427,11 @@ typedef struct bjvm_thread {
   // a synchronous manner.
   bool must_unwind;
 
+  /// Secondary stack for async calls from the interpreter
+  uint8_t *async_stack;
+  uint16_t async_stack_used;
+  uint16_t async_stack_capacity;
+
   // Thread-local allocation buffer (objects are first created here)
 } bjvm_thread;
 
@@ -507,7 +551,7 @@ void bjvm_negative_array_size_exception(bjvm_thread *thread, int count);
 void bjvm_incompatible_class_change_error(bjvm_thread *thread, bjvm_utf8 complaint);
 void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *method);
 void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *method);
-int bjvm_invokestatic(bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insn, int *sd);
+int bjvm_invokestatic(bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insn, uint16_t *sd);
 void dump_frame(FILE *stream, const bjvm_plain_frame *frame);
 
 // e.g. int.class
