@@ -151,7 +151,7 @@ DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
                   arguments(
                     bjvm_thread *thread;
                     bjvm_plain_frame *frame;
-                    int *sd;
+                    uint16_t *sd;
                     bjvm_cp_method *method;
                     struct bjvm_native_MethodType *provider_mt;
                     bjvm_obj_header *target;
@@ -202,20 +202,13 @@ EMSCRIPTEN_KEEPALIVE
 DECLARE_ASYNC(
     bjvm_stack_value, bjvm_interpret,
     locals(
-      bjvm_stack_frame *invoked_frame;
-      int sd;
-      indy_resolve_t *indy_resolve;
+      uint16_t sd;
+      uint16_t async_ctx; // offset within the secondary stack
     ),
     arguments(
       bjvm_thread *thread;
       bjvm_stack_frame *raw_frame;
     ),
-    invoked_methods(
-      invoked_method(bjvm_initialize_class)
-      invoked_method(bjvm_run_native)
-      invoked_method(resolve_methodref)
-      invoked_method(bjvm_invokevirtual_signature_polymorphic)
-    )
 );
 
 struct bjvm_cached_classdescs;
@@ -434,6 +427,11 @@ typedef struct bjvm_thread {
   // a synchronous manner.
   bool must_unwind;
 
+  /// Secondary stack for async calls from the interpreter
+  uint8_t *async_stack;
+  uint16_t async_stack_used;
+  uint16_t async_stack_capacity;
+
   // Thread-local allocation buffer (objects are first created here)
 } bjvm_thread;
 
@@ -553,7 +551,7 @@ void bjvm_negative_array_size_exception(bjvm_thread *thread, int count);
 void bjvm_incompatible_class_change_error(bjvm_thread *thread, bjvm_utf8 complaint);
 void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *method);
 void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *method);
-int bjvm_invokestatic(bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insn, int *sd);
+int bjvm_invokestatic(bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insn, uint16_t *sd);
 void dump_frame(FILE *stream, const bjvm_plain_frame *frame);
 
 // e.g. int.class

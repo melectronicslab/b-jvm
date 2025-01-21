@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#include <stddef.h>
+#include <stdint.h>
 
 typedef enum { FUTURE_NOT_READY, FUTURE_READY } future_status;
 
@@ -38,6 +38,7 @@ typedef struct future {
 /// Declares an async function.  Should be followed by a block containing any
 /// locals that the async function needs (accessibly via self->).
 #define DECLARE_ASYNC(return_type, name, locals, arguments, invoked_async_methods)                                     \
+  typedef return_type name##_return_t;                                                                                 \
   DECLARE_ASYNC_VOID(name, return_type _result; locals ;                      \
                      , arguments, invoked_async_methods)
 
@@ -57,15 +58,15 @@ typedef struct future {
   struct name##_args {                                                                                                 \
     arguments;                                                                                                         \
   };                                                                                                                   \
-  union name##_invoked_async_methods {                                                                                 \
+  union name##_invoked_async_methods {                                                         \
     invoked_async_methods_;                                                                                            \
   };                                                                                                                   \
   future_t name(name##_t *self);                                                                                       \
   struct name##_s {                                                                                                    \
-    int _state;                                                                                                        \
     struct name##_args args;                                                                                           \
-    union name##_invoked_async_methods invoked_async_methods;                                                          \
+    int _state;                                                                                                        \
     locals;                                                                                                            \
+    union name##_invoked_async_methods invoked_async_methods;                                                          \
   };
 
 /// Defines a async function, with a custom starting label idx
@@ -74,9 +75,10 @@ typedef struct future {
 /// guaranteed to call ASYNC_RETURN() before it reaches the end statement.
 #define DEFINE_ASYNC_SL(name, start_idx)                                                                               \
   future_t name(name##_t *self) {                                                                                      \
+    assert(self);                                                                                                      \
     struct name##_args *args = &self->args;                                                                            \
     start_counter(label_counter, (start_idx) + 1);                                                                     \
-    self->_state = (self->_state == 0) ? (start_idx) : self->_state;                                                     \
+    self->_state = (self->_state == 0) ? (start_idx) : self->_state;                                                   \
     switch (self->_state) {                                                                                            \
     case (start_idx):                                                                                                  \
       *self = (typeof(*self)){._state = self->_state, .args = self->args};
@@ -86,7 +88,7 @@ typedef struct future {
 /// ASYNC_END_VOID if the function is guaranteed to call ASYNC_RETURN() before
 /// it reaches the end statement. Use DEFINE_ASYNC_SL if this is nested in
 /// another switch/case
-#define DEFINE_ASYNC(name) DEFINE_ASYNC_SL(name, 1)
+#define DEFINE_ASYNC(name) DEFINE_ASYNC_SL(name, 0)
 
 /// Begins a block of code that will be executed asynchronously from inside
 /// another block. DO NOT USE STACK VARIABLES FROM BEFORE AWAIT() AFTER AWAIT.

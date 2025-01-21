@@ -869,6 +869,10 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   thr->handles_capacity = HANDLES_CAPACITY;
   thr->lang_exception_frame = -1;
 
+  thr->async_stack = malloc(4096);
+  thr->async_stack_used = 0;
+  thr->async_stack_capacity = 4096;
+
   bjvm_vm_init_primitive_classes(thr);
   init_unsafe_constants(thr);
 
@@ -2125,12 +2129,12 @@ void bjvm_wrong_method_type_error(bjvm_thread *thread, struct bjvm_native_Method
   UNREACHABLE(); // TODO
 }
 
-static inline bjvm_stack_value __checked_pop(bjvm_plain_frame *frame, int *sd) {
+static inline bjvm_stack_value __checked_pop(bjvm_plain_frame *frame, uint16_t *sd) {
   assert(*sd > 0);
   return frame->values[--*sd];
 }
 
-static inline void __checked_push(bjvm_plain_frame *frame, int *sd, bjvm_stack_value value) {
+static inline void __checked_push(bjvm_plain_frame *frame, uint16_t *sd, bjvm_stack_value value) {
   assert(*sd < frame->max_stack);
   frame->values[(*sd)++] = value;
 }
@@ -2279,7 +2283,7 @@ DEFINE_ASYNC(resolve_methodref) {
 }
 
 int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjvm_multianewarray_data *multianewarray,
-                        int *sd) {
+                        uint16_t *sd) {
   int dims = multianewarray->dimensions;
   assert(*sd >= dims);
   assert(stack_depth(frame) >= dims);
@@ -2308,7 +2312,7 @@ int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjv
   return 0;
 }
 
-DEFINE_ASYNC_SL(bjvm_resolve_indy_static_argument, BJVM_CP_KIND_LAST+1) {
+DEFINE_ASYNC_SL(bjvm_resolve_indy_static_argument, BJVM_CP_KIND_LAST + 1) {
 #define is_object args->is_object
 #define thread args->thread
 #define ent args->ent
@@ -2341,7 +2345,8 @@ DEFINE_ASYNC_SL(bjvm_resolve_indy_static_argument, BJVM_CP_KIND_LAST+1) {
   case BJVM_CP_KIND_METHOD_HANDLE:
     *is_object = true;
     AWAIT(bjvm_resolve_method_handle, thread, &ent->method_handle);
-    ASYNC_RETURN((bjvm_value){.handle = bjvm_make_handle(thread, (void *)get_async_result(bjvm_resolve_method_handle))});
+    ASYNC_RETURN(
+        (bjvm_value){.handle = bjvm_make_handle(thread, (void *)get_async_result(bjvm_resolve_method_handle))});
   default: {
     UNREACHABLE();
   }
@@ -2412,7 +2417,7 @@ DEFINE_ASYNC(indy_resolve) {
                                                        "Object;"),
                                                    true, false);
 
-  int sd = self->static_i + 4;
+  uint16_t sd = self->static_i + 4;
   AWAIT(bjvm_invokevirtual_signature_polymorphic, thread, self->fake_frame, &sd, invokeExact, m->ref->resolved_mt,
         (void *)self->bootstrap_handle->obj);
 
@@ -2511,18 +2516,75 @@ void make_invokeitable_polymorphic(bjvm_bytecode_insn *insn) {
   insn->ic2 = (void *)insn->cp->methodref.resolved->itable_index;
 }
 
+static int32_t async_stack_push(bjvm_thread *thread, size_t size) {
+  if (unlikely(thread->async_stack_used + size > thread->async_stack_capacity)) {
+    size_t new_capacity = thread->async_stack_used + size;
+    uint8_t *new_stack = realloc(thread->async_stack, thread->async_stack_capacity);
+    if (unlikely(!new_stack)) {
+      thread->current_exception = thread->stack_overflow_error;
+      return -1;
+    }
+
+    thread->async_stack = new_stack;
+    thread->async_stack_capacity = new_capacity;
+  }
+
+  uint16_t result = thread->async_stack_used;
+  thread->async_stack_used += size;
+  return result;
+}
+
+static void async_stack_pop(bjvm_thread *thread, size_t size) {
+  assert(thread->async_stack_used >= size);
+  thread->async_stack_used -= size;
+}
+
 // Main interpreter
 DEFINE_ASYNC(bjvm_interpret) {
 #define thread args->thread
 #define raw_frame args->raw_frame
   assert(*(thread->frames + thread->frames_count - 1) == raw_frame && "Frame is not last frame on stack");
 
+  // these should be cleaned up at some point
+
+#define async_attempt_allocate(ty)                                                                                     \
+  ({                                                                                                                   \
+    int32_t offset = async_stack_push(thread, sizeof(ty));                                                             \
+    if (offset < 0)                                                                                                    \
+      goto done;                                                                                                       \
+    (uint16_t)offset;                                                                                                  \
+  })
+
+#define async_ctx_ptr(ty, offset) ((ty *)(thread->async_stack + (offset)))
+
+#define _INTERPRETER_AWAIT(result_bind, method_name, ...)                                                              \
+  self->async_ctx = async_attempt_allocate(method_name##_t);                                                           \
+                                                                                                                       \
+  INTERPRETER_AWAIT_INNER(async_ctx_ptr(method_name##_t, self->async_ctx), method_name, ##__VA_ARGS__);                \
+  result_bind;                                                                                                         \
+  async_stack_pop(thread, sizeof(method_name##_t));                                                                    \
+  RELOAD_STACK_LOCALS();
+
+#define bind_result(result_name, method_name)                                                                          \
+  method_name##_return_t result_name = async_ctx_ptr(method_name##_t, self->async_ctx)->_result;
+
+#define INTERPRETER_AWAIT(result_name, method_name, ...)                                                               \
+  _INTERPRETER_AWAIT(bind_result(result_name, method_name), method_name, ##__VA_ARGS__)
+
+#define INTERPRETER_AWAIT_VOID(method_name, ...) _INTERPRETER_AWAIT(;, method_name, ##__VA_ARGS__)
+
+#define INTERPRETER_AWAIT_INNER(context, method_name, ...)                                                             \
+  AWAIT_INNER(context, method_name, ##__VA_ARGS__);                                                                    \
+  RELOAD_STACK_LOCALS();
+
+#define RELOAD_STACK_LOCALS()
   // Handle native frames
   if (bjvm_is_frame_native(raw_frame)) {
-    AWAIT(bjvm_run_native, thread, bjvm_get_native_frame(raw_frame));
+    INTERPRETER_AWAIT(native_result, bjvm_run_native, thread, bjvm_get_native_frame(raw_frame));
     bjvm_pop_frame(thread, raw_frame);
-    ASYNC_RETURN(get_async_result(bjvm_run_native));
+    ASYNC_RETURN(native_result);
   }
+#undef RELOAD_STACK_LOCALS()
 
   // these are worth caching, so reload them after every await
   bjvm_bytecode_insn *insn;
@@ -2536,14 +2598,6 @@ DEFINE_ASYNC(bjvm_interpret) {
   frame = bjvm_get_plain_frame(raw_frame);                                                                             \
   code = frame->method->code->code;                                                                                    \
   insn = &code[frame->program_counter];
-
-#define INTERPRETER_AWAIT(method_name, ...)                                                                            \
-  AWAIT(method_name, ##__VA_ARGS__);                                                                                   \
-  RELOAD_STACK_LOCALS();
-
-#define INTERPRETER_AWAIT_INNER(context, method_name, ...)                                                             \
-  AWAIT_INNER(context, method_name, ##__VA_ARGS__);                                                                    \
-  RELOAD_STACK_LOCALS();
 
   RELOAD_STACK_LOCALS();
 
@@ -3469,13 +3523,12 @@ interpret_frame:
     }
     bjvm_insn_invokedynamic: {
       bjvm_cp_indy_info *indy = &insn->cp->indy_info;
-      self->indy_resolve = calloc(1, sizeof(indy_resolve_t));
-      INTERPRETER_AWAIT_INNER(self->indy_resolve, indy_resolve, thread, insn, indy);
-      if (self->indy_resolve->_result) {
-        free(self->indy_resolve);
+      INTERPRETER_AWAIT(resolve_result, indy_resolve, thread, insn, indy);
+
+      if (resolve_result) {
         goto done;
       }
-      free(self->indy_resolve);
+
       assert(insn->ic);
       insn->kind = bjvm_insn_invokecallsite;
       struct bjvm_native_CallSite *cs = insn->ic;
@@ -3527,7 +3580,9 @@ interpret_frame:
       if (error)
         goto done;
 
-      INTERPRETER_AWAIT(bjvm_initialize_class, thread, insn->cp->class_info.classdesc);
+      if (insn->cp->class_info.classdesc->state < BJVM_CD_STATE_INITIALIZED) {
+        INTERPRETER_AWAIT(init_success, bjvm_initialize_class, thread, insn->cp->class_info.classdesc);
+      }
       if (thread->current_exception)
         goto done;
       insn->kind = bjvm_insn_new_resolved;
@@ -3607,8 +3662,8 @@ interpret_frame:
       if (error)
         goto done;
 
-      INTERPRETER_AWAIT(bjvm_initialize_class, thread, class->classdesc);
-      if (get_async_result(bjvm_initialize_class))
+      INTERPRETER_AWAIT(init_result, bjvm_initialize_class, thread, class->classdesc);
+      if (init_result)
         goto done;
 
       bjvm_cp_field *field = bjvm_field_lookup(class->classdesc, field_info->nat->name, field_info->nat->descriptor);
@@ -3666,7 +3721,7 @@ interpret_frame:
         goto done;
       }
 
-      INTERPRETER_AWAIT(resolve_methodref, thread, &insn->cp->methodref);
+      INTERPRETER_AWAIT_VOID(resolve_methodref, thread, &insn->cp->methodref);
       if (thread->current_exception)
         goto done;
 
@@ -3718,7 +3773,7 @@ interpret_frame:
         goto done;
       }
 
-      INTERPRETER_AWAIT(resolve_methodref, thread, &insn->cp->methodref);
+      INTERPRETER_AWAIT_VOID(resolve_methodref, thread, &insn->cp->methodref);
       if (thread->current_exception)
         goto done;
       method_info = &insn->cp->methodref;
@@ -3747,15 +3802,13 @@ interpret_frame:
         goto done;
       }
 
-      INTERPRETER_AWAIT(resolve_methodref, thread, &insn->cp->methodref);
+      INTERPRETER_AWAIT_VOID(resolve_methodref, thread, &insn->cp->methodref);
       if (thread->current_exception)
         goto done;
       method_info = &insn->cp->methodref;
       if (method_info->resolved->is_signature_polymorphic) {
-
-        INTERPRETER_AWAIT(bjvm_invokevirtual_signature_polymorphic,
-           thread, frame, &sd, method,
-            bjvm_resolve_method_type(thread, method_info->descriptor), target);
+        INTERPRETER_AWAIT_VOID(bjvm_invokevirtual_signature_polymorphic, thread, frame, &sd, method,
+                               bjvm_resolve_method_type(thread, method_info->descriptor), target);
         if (thread->current_exception)
           goto done;
         NEXT_INSN;
@@ -3776,7 +3829,7 @@ interpret_frame:
     bjvm_insn_invokestatic: {
       bjvm_cp_method_info *info = &insn->cp->methodref;
 
-      INTERPRETER_AWAIT(resolve_methodref, thread, &insn->cp->methodref);
+      INTERPRETER_AWAIT(_, resolve_methodref, thread, &insn->cp->methodref);
       if (thread->current_exception)
         goto done;
       info = &insn->cp->methodref;
@@ -3799,8 +3852,7 @@ interpret_frame:
         goto done;
       }
 
-      self->invoked_frame = invoked_frame;
-      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, self->invoked_frame);
+      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, invoked_frame);
       if (thread->current_exception) {
         goto done;
       }
@@ -4034,12 +4086,11 @@ interpret_frame:
           make_invokeitable_polymorphic(insn);
         JMP_INSN;
       }
-      bjvm_stack_frame *invoked_frame = self->invoked_frame =
-          bjvm_push_frame(thread, insn->ic, frame->values + sd - insn->args, insn->args);
+      bjvm_stack_frame *invoked_frame = bjvm_push_frame(thread, insn->ic, frame->values + sd - insn->args, insn->args);
       if (!invoked_frame)
         goto done;
 
-      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, self->invoked_frame);
+      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, invoked_frame);
       if (thread->current_exception)
         goto done;
       if (returns) {
@@ -4068,12 +4119,12 @@ interpret_frame:
         }
       }
       assert(target_method);
-      bjvm_stack_frame *invoked_frame = self->invoked_frame =
+      bjvm_stack_frame *invoked_frame =
           bjvm_push_frame(thread, target_method, frame->values + sd - insn->args, insn->args);
       if (!invoked_frame)
         goto done;
 
-      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, self->invoked_frame);
+      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, invoked_frame);
       if (thread->current_exception)
         goto done;
       if (returns) {
@@ -4091,12 +4142,12 @@ interpret_frame:
         goto done;
       }
       bjvm_cp_method *target_method = insn->ic;
-      bjvm_stack_frame *invoked_frame = self->invoked_frame =
+      bjvm_stack_frame *invoked_frame =
           bjvm_push_frame(thread, target_method, frame->values + sd - insn->args, insn->args);
       if (!invoked_frame)
         goto done;
 
-      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, self->invoked_frame);
+      INTERPRETER_AWAIT_INNER(&raw_frame->async_frame, bjvm_interpret, thread, invoked_frame);
       if (thread->current_exception)
         goto done;
 
