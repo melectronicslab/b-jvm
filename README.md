@@ -18,9 +18,7 @@ Common abbreviations:
 
 ## Tasks
 
-- Go through existing native functions and handle-ify them so they are safe
-- Make bytecode_interpret interruptable
-- Variadic arguments collector for MethodHandle
+See GitHub issues
 
 ## JITing to WebAssembly
 
