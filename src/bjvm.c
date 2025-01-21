@@ -942,6 +942,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 void bjvm_free_thread(bjvm_thread *thread) {
   // TODO remove from the VM
 
+  free(thread->async_stack);
   free(thread->frames);
   free(thread->frame_buffer);
   free(thread->handles);
