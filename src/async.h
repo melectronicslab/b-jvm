@@ -82,7 +82,7 @@ typedef struct future {
     self->_state = (self->_state == 0) ? (start_idx) : self->_state;                                                   \
     switch (self->_state) {                                                                                            \
     case (start_idx):                                                                                                  \
-      *self = (typeof(*self)){._state = self->_state, .args = self->args};
+      *self = (typeof(*self)){.args = self->args, ._state = self->_state};
 
 /// Defines a value-returning async function. Should be followed by a block
 /// containing the code of the async function.  MUST end with ASYNC_END, or
