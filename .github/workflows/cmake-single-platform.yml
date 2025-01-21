@@ -21,8 +21,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-      with:
-        lfs: true
+
+    - name: Make directory
+      run: mkdir -p ${{github.workspace}}/test/jdk23
+
+    - name: Download JDK23
+      run: curl -o ${{github.workspace}}/jdk-23_linux-x64_bin.tar.gz https://download.oracle.com/java/23/latest/jdk-23_linux-x64_bin.tar.gz
+
+    - name: Unzip JDK23
+      run: tar -xzf ${{github.workspace}}/jdk-23_linux-x64_bin.tar.gz -C ${{github.workspace}}/test/jdk23
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
