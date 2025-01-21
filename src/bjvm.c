@@ -4,10 +4,10 @@
 // instruction. This messes up the debug dumps but can lead to slightly better
 // performance because the branch predictor has more information about pairs
 // of instructions which tend to follow another.
-#define ONE_GOTO_PER_INSN 1
+#define ONE_GOTO_PER_INSN 0
 // Skip the memset(...) call to clear each frame's locals/stack. This messes
 // up the debug dumps, but makes setting up frames faster.
-#define SKIP_CLEARING_FRAME 1
+#define SKIP_CLEARING_FRAME 0
 
 #include <assert.h>
 #include <limits.h>
@@ -1180,13 +1180,20 @@ DEFINE_ASYNC_SL(bjvm_resolve_method_handle, BJVM_MH_KIND_LAST + 1) {
                                               false, false);
     bjvm_thread_run_leaf(thread, make, (bjvm_stack_value[]){{.obj = member->obj}}, &result);
     bjvm_drop_handle(thread, member);
+
+    // Now if the member is a variable arity constructor/method, call withVarargs(true) and return the resulting
+    // MethodHandle.
+    if (self->m->access_flags & BJVM_ACCESS_VARARGS) {
+      bjvm_cp_method *with_varargs = bjvm_method_lookup(self->DirectMethodHandle, STR("withVarargs"),
+                                                            STR("(Z)Ljava/lang/invoke/MethodHandle;"), true, false);
+      bjvm_stack_value result2;
+      bjvm_thread_run_leaf(thread, with_varargs, (bjvm_stack_value[]){{.obj = (void *)result.obj}, {.i = 1}}, &result2);
+      ASYNC_RETURN((void *)result2.obj);
+    }
+
     ASYNC_RETURN((void *)result.obj);
   }
 
-  // "Third, a reference to an instance of java.lang.invoke.MethodType is
-  // obtained as if by resolution of an unresolved symbolic reference to a
-  // method type that contains the method descriptor specified in
-  // Table 5.4.3.5-B for the kind of MH."
   ASYNC_END(nullptr);
 
 #undef info
@@ -2133,7 +2140,6 @@ bool method_types_compatible(struct bjvm_native_MethodType *provider_mt, struct 
   if (provider_mt == targ)
     return true;
   if (*ArrayLength(provider_mt->ptypes) != *ArrayLength(targ->ptypes)) {
-    printf("Different lengths!\n");
     return false;
   }
   for (int i = 0; i < *ArrayLength(provider_mt->ptypes); ++i) {
@@ -2210,7 +2216,6 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
 
   bool mts_are_same = method_types_compatible(provider_mt, targ);
   bool is_invoke_exact = utf8_equals_utf8(args->method->name, STR("invokeExact"));
-  bool is_invoke_basic = utf8_equals_utf8(args->method->name, STR("invokeBasic"));
   // only raw calls to MethodHandle.invoke involve "asType" conversions
   bool is_invoke = utf8_equals_utf8(args->method->name, STR("invoke")) &&
                    utf8_equals(hslc(args->method->my_class->name), "java/lang/invoke/MethodHandle");
@@ -2236,10 +2241,6 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
     if (status != 0) // asType failed
       ASYNC_RETURN_VOID();
     mh = (void *)result.obj;
-
-    printf("Varargs: %.*s\n", fmt_slice(args->method->name));
-    dump_method_type(stderr, (void*)mh->type);
-    dump_method_type(stderr, provider_mt);
   }
 
   struct bjvm_native_LambdaForm *form = (void *)mh->form;
@@ -2367,40 +2368,37 @@ int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjv
 }
 
 DEFINE_ASYNC_SL(bjvm_resolve_indy_static_argument, BJVM_CP_KIND_LAST + 1) {
-#define is_object args->is_object
 #define thread args->thread
 #define ent args->ent
 
-  *is_object = false;
   switch (ent->kind) {
   case BJVM_CP_KIND_INTEGER:
-    ASYNC_RETURN((bjvm_value){.i = ent->integral.value});
+    UNREACHABLE("BOX THIS");
+    ASYNC_RETURN((bjvm_stack_value){.i = ent->integral.value});
   case BJVM_CP_KIND_FLOAT:
-    ASYNC_RETURN((bjvm_value){.f = ent->floating.value});
+    UNREACHABLE("BOX THIS");
+    ASYNC_RETURN((bjvm_stack_value){.f = ent->floating.value});
   case BJVM_CP_KIND_LONG:
-    ASYNC_RETURN((bjvm_value){.l = ent->integral.value});
+    UNREACHABLE("BOX THIS");
+    ASYNC_RETURN((bjvm_stack_value){.l = ent->integral.value});
   case BJVM_CP_KIND_DOUBLE:
-    ASYNC_RETURN((bjvm_value){.d = ent->floating.value});
+    UNREACHABLE("BOX THIS");
+    ASYNC_RETURN((bjvm_stack_value){.d = ent->floating.value});
   case BJVM_CP_KIND_STRING:
-    *is_object = true;
     bjvm_obj_header *string = bjvm_intern_string(thread, ent->string.chars);
-    ASYNC_RETURN((bjvm_value){.handle = bjvm_make_handle(thread, string)});
+    ASYNC_RETURN((bjvm_stack_value){.obj = string});
   case BJVM_CP_KIND_CLASS:
-    *is_object = true;
     bjvm_resolve_class(thread, &ent->class_info);
-    ASYNC_RETURN((bjvm_value){
-        .handle = bjvm_make_handle(thread, (void *)bjvm_get_class_mirror(thread, ent->class_info.classdesc))});
+    ASYNC_RETURN((bjvm_stack_value){ .obj = (void*)bjvm_get_class_mirror(thread, ent->class_info.classdesc)});
   case BJVM_CP_KIND_METHOD_TYPE:
-    *is_object = true;
     if (!ent->method_type.resolved_mt) {
       ent->method_type.resolved_mt = bjvm_resolve_method_type(thread, ent->method_type.parsed_descriptor);
     }
-    ASYNC_RETURN((bjvm_value){.handle = bjvm_make_handle(thread, (void *)ent->method_type.resolved_mt)});
+    ASYNC_RETURN((bjvm_stack_value){.obj = (void *)ent->method_type.resolved_mt});
   case BJVM_CP_KIND_METHOD_HANDLE:
-    *is_object = true;
     AWAIT(bjvm_resolve_method_handle, thread, &ent->method_handle);
     ASYNC_RETURN(
-        (bjvm_value){.handle = bjvm_make_handle(thread, (void *)get_async_result(bjvm_resolve_method_handle))});
+        (bjvm_stack_value){.obj = (void *)get_async_result(bjvm_resolve_method_handle)});
   default: {
     UNREACHABLE();
   }
@@ -2438,56 +2436,46 @@ DEFINE_ASYNC(indy_resolve) {
   bjvm_thread_run_root(thread, lookup_factory, (bjvm_stack_value[]){}, &lookup_obj);
   bjvm_handle *lookup_handle = bjvm_make_handle(thread, lookup_obj.obj);
 
-  self->fake_frame = calloc(1, sizeof(bjvm_stack_frame) + sizeof(bjvm_stack_value) * (m->args_count + 4));
-  self->fake_frame->max_stack = self->fake_frame->values_count = m->args_count + 4;
+  self->invoke_array = bjvm_make_handle(thread,
+    CreateObjectArray1D(thread, thread->vm->cached_classdescs->object, m->args_count + 3));
 
   self->static_i = 0;
   for (; self->static_i < m->args_count; ++self->static_i) {
     bjvm_cp_entry *arg = m->args[self->static_i];
-    AWAIT(bjvm_resolve_indy_static_argument, thread, arg, &is_handle[self->static_i]);
-    handles[self->static_i] = get_async_result(bjvm_resolve_indy_static_argument);
+    AWAIT(bjvm_resolve_indy_static_argument, thread, arg);
+    ReferenceArrayStore(self->invoke_array->obj, self->static_i + 3, get_async_result(bjvm_resolve_indy_static_argument).obj);
   }
 
   bjvm_handle *name = bjvm_make_handle(thread, bjvm_intern_string(thread, indy->name_and_type->name));
   indy->resolved_mt = bjvm_resolve_method_type(thread, indy->method_descriptor);
 
-  self->fake_frame->values[0] = (bjvm_stack_value){.obj = self->bootstrap_handle->obj};
-  self->fake_frame->values[1] = (bjvm_stack_value){.obj = lookup_handle->obj};
-  self->fake_frame->values[2] = (bjvm_stack_value){.obj = name->obj};
-  self->fake_frame->values[3] = (bjvm_stack_value){.obj = (void *)indy->resolved_mt};
+  ReferenceArrayStore(self->invoke_array->obj, 0, lookup_handle->obj);
+  bjvm_drop_handle(thread, lookup_handle);
+  ReferenceArrayStore(self->invoke_array->obj, 1, name->obj);
+  bjvm_drop_handle(thread, name);
+  ReferenceArrayStore(self->invoke_array->obj, 2, (void *)indy->resolved_mt);
 
-  for (int i = 0; i < self->static_i; ++i) {
-    if (is_handle[i]) {
-      self->fake_frame->values[i + 4] = (bjvm_stack_value){.obj = handles[i].handle->obj};
-      bjvm_drop_handle(thread, handles[i].handle);
-    } else {
-      memcpy(self->fake_frame->values + i + 4, handles + i, sizeof(bjvm_stack_value));
-    }
-  }
-
-  // Invoke the bootstrap method using invokeExact
-  bjvm_cp_method *invokeExact = bjvm_method_lookup(self->bootstrap_handle->obj->descriptor, STR("invokeExact"),
-                                                   STR("(Ljava/lang/invoke/MethodHandle;[Ljava/lang/Object;)Ljava/lang/"
-                                                       "Object;"),
+  // Invoke the bootstrap method using invokeWithArguments
+  bjvm_cp_method *invokeWithArguments = bjvm_method_lookup(self->bootstrap_handle->obj->descriptor, STR("invokeWithArguments"),
+                                                   STR("([Ljava/lang/Object;)Ljava/lang/Object;"),
                                                    true, false);
 
-  uint16_t sd = self->static_i + 4;
-  AWAIT(bjvm_invokevirtual_signature_polymorphic, thread, self->fake_frame, &sd, invokeExact, m->ref->resolved_mt,
-        (void *)self->bootstrap_handle->obj);
+  bjvm_stack_value res;
+  bjvm_thread_run_root(thread, invokeWithArguments, (bjvm_stack_value[]){
+    { .obj = self->bootstrap_handle->obj },
+    { .obj = self->invoke_array->obj }
+  }, &res);
 
   int result;
   if (thread->current_exception) {
     result = -1;
   } else {
-    args->insn->ic = self->fake_frame->values[0].obj;
+    assert(res.obj);
+    args->insn->ic = res.obj;
     result = 0;
   }
 
-  free(self->fake_frame);
-
-  bjvm_drop_handle(thread, bootstrap_handle);
-  bjvm_drop_handle(thread, lookup_handle);
-  bjvm_drop_handle(thread, name);
+  bjvm_drop_handle(thread, self->bootstrap_handle);
 
   ASYNC_END(result);
 #undef m
