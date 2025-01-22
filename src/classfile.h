@@ -258,9 +258,9 @@ typedef enum {
 
 typedef enum : uint8_t {
   TOS_VOID,
+  TOS_DOUBLE,
   TOS_INT,
   TOS_FLOAT,
-  TOS_DOUBLE
 } bjvm_reduced_tos_kind;
 
 typedef enum : char {

@@ -13,7 +13,7 @@
 // instructions like pop will consult the TOS stack type that the instruction is annotated with (during analysis),
 // before loading the value from the stack and using the appropriate jump table.
 //
-// The general signature is (frame, insns, pc, sd, tos). At appropriate points (whenever the frame might be
+// The general signature is (thread, frame, insns, pc, sd, tos). At appropriate points (whenever the frame might be
 // read back, e.g. for GC purposes, or when interrupting), the TOS value and
 
 #define DEBUG_CHECK
@@ -22,16 +22,16 @@
 #define DEBUG_CHECK \
   SPILL_VOID \
   bjvm_cp_method *m = frame->method; \
-  printf("Calling method %.*s, descriptor %.*s, on class %.*s\n", fmt_slice(m->name), fmt_slice(m->unparsed_descriptor), \
-         fmt_slice(m->my_class->name)); \
+  printf("Calling method %.*s, descriptor %.*s, on class %.*s; %d\n", fmt_slice(m->name), fmt_slice(m->unparsed_descriptor), \
+         fmt_slice(m->my_class->name), __LINE__); \
   heap_string s = insn_to_string(insn, pc); \
   printf("Insn kind: %.*s\n", fmt_slice(s)); free_heap_str(s); \
   dump_frame(stderr, frame); \
   assert(stack_depth(frame) == sd);
 #endif
 
-// If true, use a sequence of tail calls rather than computed goto. We try to make the code reasonably generic
-// to handle both cases efficiently.
+// If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
+// the code reasonably generic to handle both cases efficiently.
 #define DO_TAILS 1
 
 #if DO_TAILS
@@ -55,10 +55,11 @@
 #endif
 
 // The current instruction
-#define insn (&insns[pc])
+#define insn (&insns[0])
 
-// Indicates that the following return must be a tail call. Supported by modern clang and GCC.
-#define MUSTTAIL [[clang::musttail]] [[gnu::musttail]]
+// Indicates that the following return must be a tail call. Supported by modern clang and GCC (but GCC support seems
+// somewhat buggy...)
+#define MUSTTAIL [[clang::musttail]]
 #define MAX_INSN_KIND (bjvm_insn_putstatic_L + 1)
 
 // Forward declarations
@@ -74,6 +75,7 @@ static bjvm_stack_value (*jmp_table_float[MAX_INSN_KIND])(ARGS_FLOAT);
 // Used when the TOS is double (wasm signature: f64)
 static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 
+#if DO_TAILS
 // Given a TOS type, select (at compile time) the table that we ought to use for the next instruction
 #define SELECT_TABLE(tos) _Generic(tos, \
   bjvm_obj_header *: jmp_table_int, \
@@ -91,19 +93,23 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   default: tos \
 )
 
-#define CVTED(tos) SELECT_TABLE(tos) == jmp_table_int ? CONVERT(tos) : 0, SELECT_TABLE(tos) == jmp_table_float ? CONVERT(tos) : 0, SELECT_TABLE(tos) == jmp_table_double ? CONVERT(tos) : 0
+#define CVTED(tos) SELECT_TABLE(tos) == jmp_table_int ? CONVERT(tos) : a_undef, SELECT_TABLE(tos) == jmp_table_float ? CONVERT(tos) : b_undef, SELECT_TABLE(tos) == jmp_table_double ? CONVERT(tos) : c_undef
+
+#define WITH_UNDEF(expr) { int64_t a_undef; float b_undef; double c_undef; expr }
 
 // Jump to the instruction at pc, using the given top-of-stack value
-#define JMP(tos) MUSTTAIL \
-  return SELECT_TABLE(tos)[insns[pc].kind](thread, frame, insns, pc, sd, CVTED(tos));
+#define JMP(tos) WITH_UNDEF(MUSTTAIL \
+  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sd, CVTED(tos));)
 // Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos) MUSTTAIL return SELECT_TABLE(tos)[insns[pc + 1].kind](thread, frame, insns, pc + 1, sd, CVTED(tos));
+#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sd, CVTED(tos));)
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sd = 0, only that
 // all stack values are in memory (rather than in a register)
-#define JMP_VOID MUSTTAIL return jmp_table_void[insns[pc].kind](thread, frame, insns, pc, sd, 0, 0, 0);
+#define JMP_VOID WITH_UNDEF(MUSTTAIL return jmp_table_void[insns[0].kind](thread, frame, insns, pc, sd, a_undef, b_undef, c_undef);)
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
-#define NEXT_VOID MUSTTAIL return jmp_table_void[insns[pc + 1].kind](thread, frame, insns, pc + 1, sd, 0, 0, 0);
+#define NEXT_VOID WITH_UNDEF(MUSTTAIL return jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sd, a_undef, b_undef, c_undef);)
+#else
+#endif
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos) \
@@ -726,21 +732,21 @@ static bjvm_stack_value which##_impl_int(ARGS_INT) { \
   NEXT(result) \
 }
 
-INTEGER_BIN_OP(iadd, (int)((uint32_t)a + (uint32_t)b))
+INTEGER_BIN_OP(iadd, ((uint32_t)a + (uint32_t)b))
 INTEGER_BIN_OP(ladd, (uint64_t)a + (uint64_t)b)
-INTEGER_BIN_OP(isub, (int)((uint32_t)a - (uint32_t)b))
+INTEGER_BIN_OP(isub, ((uint32_t)a - (uint32_t)b))
 INTEGER_BIN_OP(lsub, (uint64_t)a - (uint64_t)b)
-INTEGER_BIN_OP(imul, (int)((uint32_t)a * (uint32_t)b))
+INTEGER_BIN_OP(imul, ((uint32_t)a * (uint32_t)b))
 INTEGER_BIN_OP(lmul, (uint64_t)a * (uint64_t)b)
-INTEGER_BIN_OP(iand, (int)(a & b))
+INTEGER_BIN_OP(iand, ((uint32_t)a & (uint32_t)b))
 INTEGER_BIN_OP(land, a & b)
-INTEGER_BIN_OP(ior, (int)(a | b))
+INTEGER_BIN_OP(ior, ((uint32_t)a | (uint32_t)b))
 INTEGER_BIN_OP(lor, a | b)
-INTEGER_BIN_OP(ixor, (int)(a ^ b))
+INTEGER_BIN_OP(ixor, ((uint32_t)a ^ (uint32_t)b))
 INTEGER_BIN_OP(lxor, a ^ b)
-INTEGER_BIN_OP(ishl, (int)((uint32_t)a << (b & 0x1f)))
+INTEGER_BIN_OP(ishl, ((uint32_t)a << (b & 0x1f)))
 INTEGER_BIN_OP(lshl, (uint64_t)a << (b & 0x3f))
-INTEGER_BIN_OP(ishr, (int)a >> (b & 0x1f))
+INTEGER_BIN_OP(ishr, (uint32_t)((int)a >> (b & 0x1f)))
 INTEGER_BIN_OP(lshr, a >> (b & 0x3f))
 INTEGER_BIN_OP(iushr, (uint32_t)a >> (b & 0x1f))
 INTEGER_BIN_OP(lushr, (uint64_t)a >> (b & 0x3f))
@@ -1010,25 +1016,33 @@ static bjvm_stack_value dreturn_impl_double(ARGS_DOUBLE) {
 
 static bjvm_stack_value goto_impl_void(ARGS_VOID) {
   DEBUG_CHECK
+  int delta = insn->index - pc;
   pc = insn->index;
+  insns += delta;
   JMP_VOID
 }
 
 static bjvm_stack_value goto_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK
+  int delta = insn->index - pc;
   pc = insn->index;
+  insns += delta;
   JMP(tos)
 }
 
 static bjvm_stack_value goto_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK
+  int delta = insn->index - pc;
   pc = insn->index;
+  insns += delta;
   JMP(tos)
 }
 
 static bjvm_stack_value goto_impl_int(ARGS_INT) {
   DEBUG_CHECK
+  int delta = insn->index - pc;
   pc = insn->index;
+  insns += delta;
   JMP(tos)
 }
 
@@ -1039,9 +1053,13 @@ static bjvm_stack_value tableswitch_impl_int(ARGS_INT) {
   int32_t high = insn->tableswitch.high;
   int32_t *offsets = insn->tableswitch.targets;
   if (index < low || index > high) {
+    int delta = (insn->tableswitch.default_target - 1) - pc;
     pc = insn->tableswitch.default_target - 1;
+    insns += delta;
   } else {
+    int delta = (offsets[index - low] - 1) - pc;
     pc = offsets[index - low] - 1;
+    insns += delta;
   }
   sd--;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
@@ -1060,12 +1078,16 @@ static bjvm_stack_value lookupswitch_impl_int(ARGS_INT) {
 
   for (int i = 0; i < n; i++) {
     if (keys[i] == key) {
+      int delta = (offsets[i] - 1) - pc;
       pc = offsets[i] - 1;
+      insns += delta;
       sd--;
       STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
     }
   }
+  int delta = (default_target - 1) - pc;
   pc = default_target - 1;
+  insns += delta;
   sd--;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
@@ -1073,7 +1095,9 @@ static bjvm_stack_value lookupswitch_impl_int(ARGS_INT) {
 #define MAKE_INT_BRANCH_AGAINST_0(which, op) \
   static bjvm_stack_value which##_impl_int(ARGS_INT) { \
     DEBUG_CHECK \
-    pc = tos op 0 ? (insn->index - 1) : pc; \
+    int old_pc = pc; \
+    pc = (int)tos op 0 ? (insn->index - 1) : pc; \
+    insns += pc - old_pc; \
     sd--; \
     STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]); \
   }
@@ -1091,7 +1115,9 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
   static bjvm_stack_value which##_impl_int(ARGS_INT) { \
     DEBUG_CHECK \
     int64_t a = frame->values[sd - 2].i, b = (int)tos; \
+    int old_pc = pc; \
     pc = a op b ? (insn->index - 1) : pc; \
+    insns += pc - old_pc; \
     sd -= 2; \
     STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]); \
   }
@@ -1106,7 +1132,9 @@ MAKE_INT_BRANCH(if_icmple, <=)
 static bjvm_stack_value if_acmpeq_impl_int(ARGS_INT) {
   DEBUG_CHECK
   int64_t a = frame->values[sd - 2].l, b = tos;
+  int old_pc = pc;
   pc = a == b ? (insn->index - 1) : pc;
+  insns += pc - old_pc;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1])
 }
@@ -1114,7 +1142,9 @@ static bjvm_stack_value if_acmpeq_impl_int(ARGS_INT) {
 static bjvm_stack_value if_acmpne_impl_int(ARGS_INT) {
   DEBUG_CHECK
   int64_t a = frame->values[sd - 2].l, b = tos;
+  int old_pc = pc;
   pc = a != b ? (insn->index - 1) : pc;
+  insns += pc - old_pc;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1])
 }
@@ -1601,7 +1631,7 @@ static bjvm_stack_value invokedynamic_impl_void(ARGS_VOID) {
   ctx.args.thread = thread;
 #undef insn
   ctx.args.insn =
-#define insn (&insns[pc])
+#define insn (&insns[0])
     insn;
   ctx.args.indy = indy;
   future_t fut = indy_resolve(&ctx);
@@ -2065,10 +2095,21 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
   bjvm_stack_value result;
   while (true) {
     bjvm_plain_frame *frame = plain;
-    int sd = stack_depth(plain);
-    int pc = plain->program_counter;
+    int sd_ = stack_depth(plain);
+    int pc_ = plain->program_counter;
     bjvm_bytecode_insn *insns = frame->method->code->code;
-    result = entry(thread, frame, insns, pc, sd, 0, 0, 0);
+
+#if DO_TAILS
+    result = entry(thread, frame, insns + pc_, pc_, sd_, 0, 0, 0);
+#else
+    int64_t int_tos = 0;
+    float float_tos = 0;
+    double double_tos = 0;
+
+
+
+#endif
+
 
     if (unlikely(thread->current_exception)) {
       bjvm_attribute_exception_table *table = frame->method->code->exception_table;
@@ -2298,10 +2339,10 @@ static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
   nullptr /* putstatic_F_impl_void */,
   nullptr /* putstatic_D_impl_void */,
   nullptr /* putstatic_Z_impl_void */,
-  nullptr /* putstatic_L_impl_void */
+  nullptr /* putstatic_L_impl_void */,
 };
 
-static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE) = {
+static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_double,
   nullptr /* aaload_impl_double */,
   nullptr /* aastore_impl_double */,
@@ -2494,10 +2535,10 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE) = {
   nullptr /* putstatic_F_impl_double */,
   putstatic_D_impl_double,
   nullptr /* putstatic_Z_impl_double */,
-  nullptr /* putstatic_L_impl_double */
+  nullptr, /* putstatic_L_impl_double */
 };
 
-static bjvm_stack_value (*jmp_table_int[MAX_INSN_KIND])(ARGS_INT) = {
+static bjvm_stack_value (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_int,
   aaload_impl_int,
   aastore_impl_int,
@@ -2690,11 +2731,10 @@ static bjvm_stack_value (*jmp_table_int[MAX_INSN_KIND])(ARGS_INT) = {
   nullptr /* putstatic_F_impl_int */,
   nullptr /* putstatic_D_impl_int */,
   putstatic_Z_impl_int,
-  putstatic_L_impl_int
+  putstatic_L_impl_int,
 };
 
-
-static bjvm_stack_value (*jmp_table_float[MAX_INSN_KIND])(ARGS_FLOAT) = {
+static bjvm_stack_value (*jmp_table_float[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_float,
   nullptr /* aaload_impl_float */,
   nullptr /* aastore_impl_float */,
