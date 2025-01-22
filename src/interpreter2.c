@@ -39,19 +39,19 @@
 #define pc pc_
 #define tos tos_
 
-#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t _1, float _2, double _3
-#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t tos_, float _2, double _3
-#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t _1, float _2, double tos_
-#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t _1, float tos_, double _3
+#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t arg_1, float arg_2, double arg_3
+#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t tos_, float arg_2, double arg_3
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t arg_1, float arg_2, double tos_
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sd_, int64_t arg_1, float tos_, double arg_3
 #else
 #define sd (*sd_)
 #define pc (*pc_)
 #define tos (*tos_)
 
-#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* _1, float* _2, double* _3
+#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* arg_1, float* _2, double* _3
 #define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* tos_, float* _2, double* _3
-#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* _1, float* _2, double* tos_
-#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* _1, float* tos_, double* _3
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* arg_1, float* _2, double* tos_
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* arg_1, float* tos_, double* _3
 #endif
 
 // The current instruction
@@ -88,16 +88,6 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   double: jmp_table_double \
 )
 
-#ifdef __aarch64__
-#define SELECT_TABLE_ALIGNED(tos) ({ \
-  void *addr; \
-  asm("adrp %0, %1@PAGE\n" : "=r"(addr) : "S"(&SELECT_TABLE(tos))); \
-  (bjvm_stack_value (**)(ARGS_VOID)) addr; \
-})
-#else
-#define SELECT_TABLE_ALIGNED(tos) SELECT_TABLE(tos)
-#endif
-
 #define CONVERT(tos) _Generic(tos, \
   bjvm_obj_header *: (int64_t)tos, \
   default: tos \
@@ -109,9 +99,9 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 
 // Jump to the instruction at pc, using the given top-of-stack value
 #define JMP(tos) WITH_UNDEF(MUSTTAIL \
-  return SELECT_TABLE_ALIGNED(tos)[insns[0].kind](thread, frame, insns, pc, sd, CVTED(tos));)
+  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sd, CVTED(tos));)
 // Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE_ALIGNED(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sd, CVTED(tos));)
+#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sd, CVTED(tos));)
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sd = 0, only that
 // all stack values are in memory (rather than in a register)
@@ -171,17 +161,17 @@ switch (insn->tos_before) { \
 #define FORWARD_TO_NULLARY(which) \
 static bjvm_stack_value which##_impl_int(ARGS_INT) { \
 *(sd - 1) = (bjvm_stack_value) { .l = tos }; \
-MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd, tos, _2, _3); \
+MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd, tos, arg_2, arg_3); \
 } \
 \
 static bjvm_stack_value which##_impl_float(ARGS_FLOAT) { \
 *(sd - 1) = (bjvm_stack_value) { .f = tos }; \
-MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd, _1, tos, _3); \
+MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd, arg_1, tos, arg_3); \
 } \
 \
 static bjvm_stack_value which##_impl_double(ARGS_DOUBLE) {\
 *(sd - 1) = (bjvm_stack_value) { .d = tos };\
-MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd, _1, _2, tos);\
+MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd, arg_1, arg_2, tos);\
 }
 
 /** Helper functions */
