@@ -606,7 +606,6 @@ typedef struct bjvm_bytecode_insn {
   void *ic;
   void *ic2;
   int args;
-  int table_index;
 } bjvm_bytecode_insn;
 
 typedef struct {
