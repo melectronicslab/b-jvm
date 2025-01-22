@@ -39,7 +39,7 @@
 #define insn (&insns[pc])
 
 // Indicates that the following return must be a tail call. Supported by modern clang and GCC.
-#define MUSTTAIL [[clang::musttail]]
+#define MUSTTAIL [[clang::musttail]] [[gnu::musttail]]
 #define MAX_INSN_KIND (bjvm_insn_putstatic_L + 1)
 
 // Forward declarations
