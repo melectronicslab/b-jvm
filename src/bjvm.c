@@ -2500,28 +2500,6 @@ int set_max_calls(int calls) {
   return 0;
 }
 
-// Java saturates the conversion
-static int double_to_int(double x) {
-  if (x > INT_MAX)
-    return INT_MAX;
-  if (x < INT_MIN)
-    return INT_MIN;
-  if (isnan(x))
-    return 0;
-  return (int)x;
-}
-
-// Java saturates the conversion
-static int64_t double_to_long(double x) {
-  if (x >= (double)(ULLONG_MAX / 2))
-    return LLONG_MAX;
-  if (x < (double)LLONG_MIN)
-    return LLONG_MIN;
-  if (isnan(x))
-    return 0;
-  return (int64_t)x;
-}
-
 DEFINE_ASYNC(bjvm_run_native) {
 #define frame args->frame
 #define thread args->thread
