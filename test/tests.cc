@@ -541,6 +541,7 @@ param3
 
 TEST_CASE("Extended NPE message") {
   auto result = run_test_case("test_files/extended_npe/", false, "ExtendedNPETests");
+  REQUIRE_THAT(result.stdout_, Equals(""));
 }
 
 #if 0
