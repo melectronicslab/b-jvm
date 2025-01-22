@@ -30,10 +30,29 @@
   assert(stack_depth(frame) == sd);
 #endif
 
-#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc, int sd, int64_t _1, float _2, double _3
-#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc, int sd, int64_t tos, float _2, double _3
-#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc, int sd, int64_t _1, float _2, double tos
-#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc, int sd, int64_t _1, float tos, double _3
+// If true, use a sequence of tail calls rather than computed goto. We try to make the code reasonably generic
+// to handle both cases efficiently.
+#define DO_TAILS 1
+
+#if DO_TAILS
+#define sd sd_
+#define pc pc_
+#define tos tos_
+
+#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, int sd_, int64_t _1, float _2, double _3
+#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, int sd_, int64_t tos_, float _2, double _3
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, int sd_, int64_t _1, float _2, double tos_
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, int sd_, int64_t _1, float tos_, double _3
+#else
+#define sd (*sd_)
+#define pc (*pc_)
+#define tos (*tos_)
+
+#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* _1, float* _2, double* _3
+#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* tos_, float* _2, double* _3
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* _1, float* _2, double* tos_
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sd_, int64_t* _1, float* tos_, double* _3
+#endif
 
 // The current instruction
 #define insn (&insns[pc])
@@ -494,7 +513,7 @@ bjvm_insn_code_kind getfield_putfield_resolved_kind(bool putfield, bjvm_type_kin
 // appropriate. The stack should be made consistent before this function is called, as it may interrupt.
 DECLARE_ASYNC(int, resolve_getfield_putfield,
   locals(bjvm_cp_field_info *field_info; bjvm_cp_class_info *class),
-  arguments(bjvm_thread *thread; bjvm_bytecode_insn *inst; bjvm_plain_frame *frame; int sd;),
+  arguments(bjvm_thread *thread; bjvm_bytecode_insn *inst; bjvm_plain_frame *frame; int sd_;),
   invoked_methods(invoked_method(bjvm_initialize_class)));
 
 DEFINE_ASYNC_SL(resolve_getfield_putfield, 100) {
@@ -502,11 +521,11 @@ DEFINE_ASYNC_SL(resolve_getfield_putfield, 100) {
 #define inst self->args.inst
 #define thread self->args.thread
 #define frame self->args.frame
-#define sd self->args.sd
+#define sd_ self->args.sd_
 
   bool putfield = inst->kind == bjvm_insn_putfield;
 
-  bjvm_obj_header *obj = frame->values[sd - 1 - putfield].obj;
+  bjvm_obj_header *obj = frame->values[sd_ - 1 - putfield].obj;
   if (!obj) {
     bjvm_null_pointer_exception(thread);
     ASYNC_RETURN(-1);
@@ -532,7 +551,7 @@ DEFINE_ASYNC_SL(resolve_getfield_putfield, 100) {
 #undef frame
 #undef thread
 #undef inst
-#undef sd
+#undef sd_
 }
 
 static bjvm_stack_value getfield_impl_int(ARGS_INT) {
@@ -1304,7 +1323,7 @@ static bjvm_stack_value invokevirtual_impl_void(ARGS_VOID) {
     ctx.args.thread = thread;
     ctx.args.frame = frame;
     uint16_t temp_sd = sd;
-    ctx.args.sd = &temp_sd;
+    ctx.args.sd_ = &temp_sd;
     ctx.args.method = method_info->resolved;
     ctx.args.provider_mt = bjvm_resolve_method_type(thread, method_info->descriptor);
     ctx.args.target = target;
