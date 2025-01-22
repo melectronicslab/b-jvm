@@ -539,6 +539,7 @@ bjvm_cp_method **bjvm_unmirror_method(bjvm_obj_header *mirror);
 bjvm_cp_method **bjvm_unmirror_ctor(bjvm_obj_header *mirror);
 
 void bjvm_set_field(bjvm_obj_header *obj, bjvm_cp_field *field, bjvm_stack_value bjvm_stack_value);
+int bjvm_resolve_field(bjvm_thread *thread, bjvm_cp_field_info *info);
 bjvm_stack_value bjvm_get_field(bjvm_obj_header *obj, bjvm_cp_field *field);
 bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 const name, bjvm_utf8 const descriptor);
 bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const bjvm_utf8 name, const bjvm_utf8 descriptor);
@@ -553,7 +554,8 @@ void bjvm_incompatible_class_change_error(bjvm_thread *thread, bjvm_utf8 complai
 void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *method);
 void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *method);
 void bjvm_arithmetic_exception(bjvm_thread *thread, const bjvm_utf8 complaint);
-int bjvm_invokestatic(bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insn, uint16_t *sd);
+int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjvm_multianewarray_data *multianewarray,
+                      uint16_t *sd);
 void dump_frame(FILE *stream, const bjvm_plain_frame *frame);
 
 // e.g. int.class
