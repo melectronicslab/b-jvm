@@ -119,6 +119,8 @@ extern bjvm_native_t *bjvm_natives;
     arguments(bjvm_thread *thread; bjvm_handle *obj; bjvm_value *args; uint8_t argc), \
     async_methods\
   ); \
+  /* the arguments struct for this needs to be compatible with the async_natives_args struct */\
+  /* todo: maybe just reuse the async_natives_args struct, rather than making a separate (but equivalent) struct for each native */ \
   check_field_offset(name, args.thread, thread); \
   check_field_offset(name, args.obj, obj); \
   check_field_offset(name, args.args, args); \
