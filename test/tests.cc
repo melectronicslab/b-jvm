@@ -302,11 +302,13 @@ TEST_CASE("Math natives") {
   REQUIRE(result.stdout_ == "abcdefghijklmnopqrstu");
 }
 
-/*
 TEST_CASE("Signature polymorphism") {
-  auto result = run_test_case("test_files/signature_polymorphism/", false);
+  auto result = run_test_case("test_files/signature_polymorphism/", true);
+  REQUIRE(result.stdout_ == R"(nanny
+savvy
+Hello, world.
+)");
 }
-*/
 
 TEST_CASE("Basic lambda") {
   auto result = run_test_case("test_files/basic_lambda/", true);
@@ -441,11 +443,6 @@ TEST_CASE("Deranged CFG") {
   REQUIRE(result.stdout_ == as_string);
 }
 
-TEST_CASE("Analysis") {
-  // TODO check that all code analysis functions succeed across all JDK
-  // functions
-}
-
 TEST_CASE("Immediate dominators computation on cursed CFG") {
   bjvm_classdesc desc;
   auto cursed_file = ReadFile("test_files/cfg_fuck/Main.class").value();
@@ -500,14 +497,13 @@ TEST_CASE("Conflicting defaults") {
   REQUIRE(result.stdout_.find("AbstractMethodError") != std::string::npos);
 }
 
-#if 0
 TEST_CASE("Records") {
   auto result = run_test_case("test_files/records/", true,
                               "Records");
   REQUIRE_THAT(result.stdout_, Equals(R"(true
-true)"));
+true
+)"));
 }
-#endif
 
 #if 0
 TEST_CASE("JSON tests") {
