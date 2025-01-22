@@ -16,11 +16,11 @@
 // The general signature is (frame, insns, pc, sd, tos). At appropriate points (whenever the frame might be
 // read back, e.g. for GC purposes, or when interrupting), the TOS value and
 
-#ifdef NDEBUG
 #define DEBUG_CHECK
-#else
+#if 0
+#undef DEBUG_CHECK
 #define DEBUG_CHECK \
-SPILL_VOID \
+  SPILL_VOID \
   bjvm_cp_method *m = frame->method; \
   printf("Calling method %.*s, descriptor %.*s, on class %.*s\n", fmt_slice(m->name), fmt_slice(m->unparsed_descriptor), \
          fmt_slice(m->my_class->name)); \
@@ -728,7 +728,7 @@ INTEGER_UN_OP(l2d, (double)a)
 } \
 static bjvm_stack_value d##which##_impl_double(ARGS_TOS(double)) { \
   DEBUG_CHECK \
-double a = frame->values[sd - 2].f, b = tos; \
+double a = frame->values[sd - 2].d, b = tos; \
 out_double result = eval; \
 sd--; \
 NEXT(result) \
@@ -1012,6 +1012,7 @@ static bjvm_stack_value lookupswitch_impl_int(ARGS_TOS(int64_t)) {
   int32_t n = data.keys_count;
   int32_t default_target = data.default_target;
   // TODO replace this with a binary search
+
   for (int i = 0; i < n; i++) {
     if (keys[i] == key) {
       pc = offsets[i] - 1;
@@ -1147,10 +1148,10 @@ static bjvm_stack_value newarray_impl_int(ARGS_TOS(int64_t)) {
     return value_null();
   }
   bjvm_obj_header *array = CreatePrimitiveArray1D(thread, insn->array_type, count);
-  if (likely(array)) {
-    NEXT(array)
+  if (unlikely(!array)) {
+    return value_null();  // oom
   }
-  return value_null();  // oom
+  NEXT(array)
 }
 
 static bjvm_stack_value anewarray_impl_int(ARGS_TOS(int64_t)) {
@@ -1197,6 +1198,7 @@ static bjvm_stack_value multianewarray_impl_int(ARGS_TOS(int64_t)) {
 
 /** Method invocations */
 
+__attribute__((noinline))
 static bjvm_stack_value invokestatic_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_cp_method_info *info = &insn->cp->methodref;
@@ -1216,6 +1218,7 @@ static bjvm_stack_value invokestatic_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokestatic)
 
+__attribute__((always_inline))
 static bjvm_stack_value invokestatic_resolved_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_cp_method *method = insn->ic;
@@ -1246,6 +1249,7 @@ static bjvm_stack_value invokestatic_resolved_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokestatic_resolved)
 
+__attribute__((noinline))
 static bjvm_stack_value invokevirtual_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
@@ -1297,6 +1301,7 @@ static bjvm_stack_value invokevirtual_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokevirtual)
 
+__attribute__((noinline))
 static bjvm_stack_value invokespecial_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
@@ -1359,6 +1364,7 @@ static bjvm_stack_value invokespecial_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokespecial)
 
+__attribute__((always_inline))
 static bjvm_stack_value invokespecial_resolved_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_obj_header *target = frame->values[sd - insn->args].obj;
@@ -1388,6 +1394,7 @@ static bjvm_stack_value invokespecial_resolved_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokespecial_resolved)
 
+__attribute__((noinline))
 static bjvm_stack_value invokeinterface_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
@@ -1439,6 +1446,7 @@ void make_invokeitable_polymorphic_(bjvm_bytecode_insn *inst) {
   inst->ic2 = (void *)inst->cp->methodref.resolved->itable_index;
 }
 
+__attribute__((always_inline))
 static bjvm_stack_value invokeitable_vtable_monomorphic_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_obj_header *target = frame->values[sd - insn->args].obj;
@@ -1471,6 +1479,7 @@ static bjvm_stack_value invokeitable_vtable_monomorphic_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokeitable_vtable_monomorphic)
 
+__attribute__((always_inline))
 static bjvm_stack_value invokeitable_polymorphic_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_obj_header *target = frame->values[sd - insn->args].obj;
@@ -1503,6 +1512,7 @@ static bjvm_stack_value invokeitable_polymorphic_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(invokeitable_polymorphic)
 
+__attribute__((always_inline))
 static bjvm_stack_value invokevtable_polymorphic_impl_void(ARGS) {
   DEBUG_CHECK
   bjvm_obj_header *target = frame->values[sd - insn->args].obj;
@@ -1574,10 +1584,15 @@ static bjvm_stack_value invokecallsite_impl_void(ARGS) {
 
     // Invoke name->vmtarget with arguments mh, args
     bjvm_cp_method *invoke = name->vmtarget;
-    bjvm_stack_value *arguments = alloca(insn->args * sizeof(bjvm_stack_value));
+    // TODO MEGA UB WHEN STACK IS EMPTY
+    bjvm_stack_value *arguments = frame->values + sd - insn->args;
+
+    bjvm_stack_value temp;
+    memcpy(&temp, arguments, sizeof(temp));
     arguments[0] = (bjvm_stack_value){.obj = (void *)mh}; // MethodHandle
-    memcpy(arguments + 1, frame->values + sd - insn->args + 1, (insn->args - 1) * sizeof(bjvm_stack_value));
+
     bjvm_stack_frame *invoked = bjvm_push_frame(thread, invoke, arguments, insn->args);
+    memcpy(arguments, &temp, sizeof(temp)); // restore clobbered shit
     if (!invoked) {
       return value_null();
     }
@@ -1599,6 +1614,7 @@ static bjvm_stack_value invokecallsite_impl_void(ARGS) {
 FORWARD_TO_NULLARY(invokecallsite)
 
 /** Local variable accessors */
+__attribute__((always_inline))
 static bjvm_stack_value iload_impl_void(ARGS) {
   DEBUG_CHECK
   sd++;
@@ -1606,6 +1622,7 @@ static bjvm_stack_value iload_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(iload)
 
+__attribute__((always_inline))
 static bjvm_stack_value fload_impl_void(ARGS) {
   DEBUG_CHECK
   sd++;
@@ -1613,6 +1630,7 @@ static bjvm_stack_value fload_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(fload)
 
+__attribute__((always_inline))
 static bjvm_stack_value dload_impl_void(ARGS) {
   DEBUG_CHECK
   sd++;
@@ -1620,6 +1638,7 @@ static bjvm_stack_value dload_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(dload)
 
+__attribute__((always_inline))
 static bjvm_stack_value lload_impl_void(ARGS) {
   DEBUG_CHECK
   sd++;
@@ -1627,6 +1646,7 @@ static bjvm_stack_value lload_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(lload)
 
+__attribute__((always_inline))
 static bjvm_stack_value aload_impl_void(ARGS) {
   DEBUG_CHECK
   sd++;
@@ -1634,6 +1654,7 @@ static bjvm_stack_value aload_impl_void(ARGS) {
 }
 FORWARD_TO_NULLARY(aload)
 
+__attribute__((always_inline))
 static bjvm_stack_value astore_impl_int(ARGS_TOS(int64_t)) {
   DEBUG_CHECK
   frame->values[frame->max_stack + insn->index].obj = (bjvm_obj_header *)tos;

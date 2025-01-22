@@ -7,7 +7,7 @@
 #define ONE_GOTO_PER_INSN 0
 // Skip the memset(...) call to clear each frame's locals/stack. This messes
 // up the debug dumps, but makes setting up frames faster.
-#define SKIP_CLEARING_FRAME 0
+#define SKIP_CLEARING_FRAME 1
 
 #include <assert.h>
 #include <limits.h>
