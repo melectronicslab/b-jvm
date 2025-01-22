@@ -38,8 +38,8 @@
 // The current instruction
 #define insn (&insns[pc])
 
-// Indicates that the following return must be a tail call
-#define MUSTTAIL __attribute((musttail))
+// Indicates that the following return must be a tail call. Supported by modern clang and GCC.
+#define MUSTTAIL [[clang::musttail]]
 #define MAX_INSN_KIND (bjvm_insn_putstatic_L + 1)
 
 // Forward declarations
@@ -177,6 +177,28 @@ int64_t java_lrem_(int64_t a, int64_t b) {
   if (a == LONG_MIN && b == -1)
     return 0;
   return a % b;
+}
+
+// Java saturates the conversion
+static int double_to_int(double x) {
+  if (x > INT_MAX)
+    return INT_MAX;
+  if (x < INT_MIN)
+    return INT_MIN;
+  if (isnan(x))
+    return 0;
+  return (int)x;
+}
+
+// Java saturates the conversion
+static int64_t double_to_long(double x) {
+  if (x >= (double)(ULLONG_MAX / 2))
+    return LLONG_MAX;
+  if (x < (double)LLONG_MIN)
+    return LLONG_MIN;
+  if (isnan(x))
+    return 0;
+  return (int64_t)x;
 }
 
 /** BYTECODE IMPLEMENTATIONS */
@@ -764,13 +786,13 @@ FLOAT_BIN_OP(cmpg, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : 1)), int, int)
 FLOAT_BIN_OP(cmpl, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : -1)), int, int)
 
 FLOAT_UN_OP(fneg, -a, float)
-FLOAT_UN_OP(f2i, (int)a, int)
-FLOAT_UN_OP(f2l, (int64_t)a, int64_t)
+FLOAT_UN_OP(f2i, double_to_int(a), int)
+FLOAT_UN_OP(f2l, double_to_long(a), int64_t)
 FLOAT_UN_OP(f2d, (double)a, double)
 
 DOUBLE_UN_OP(dneg, -a, double)
-DOUBLE_UN_OP(d2i, (int)a, int)
-DOUBLE_UN_OP(d2l, (int64_t)a, int64_t)
+DOUBLE_UN_OP(d2i, double_to_int(a), int)
+DOUBLE_UN_OP(d2l, double_to_long(a), int64_t)
 DOUBLE_UN_OP(d2f, (float)a, float)
 
 static bjvm_stack_value idiv_impl_int(ARGS_INT) {
