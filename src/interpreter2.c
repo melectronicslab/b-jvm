@@ -1,6 +1,7 @@
 #include "arrays.h"
 #include "bjvm.h"
 #include "classfile.h"
+#include "util.h"
 
 #include <math.h>
 #include <tgmath.h>
@@ -19,8 +20,14 @@
 #define DEBUG_CHECK
 #else
 #define DEBUG_CHECK \
-  SPILL_VOID \
-  assert(stack_depth(frame) == sd)
+SPILL_VOID \
+  bjvm_cp_method *m = frame->method; \
+  printf("Calling method %.*s, descriptor %.*s, on class %.*s\n", fmt_slice(m->name), fmt_slice(m->unparsed_descriptor), \
+         fmt_slice(m->my_class->name)); \
+  heap_string s = insn_to_string(insn, pc); \
+  printf("Insn kind: %.*s\n", fmt_slice(s)); free_heap_str(s); \
+  dump_frame(stderr, frame); \
+  assert(stack_depth(frame) == sd);
 #endif
 
 
@@ -31,7 +38,7 @@
 #define insn (&insns[pc])
 
 // Indicates that the following return must be a tail call
-#define MUSTTAIL __attribute((musttail))
+#define MUSTTAIL // __attribute((musttail))
 #define MAX_INSN_KIND (bjvm_insn_putstatic_L + 1)
 
 // Forward declarations
@@ -58,16 +65,21 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_TOS(double));
   double: jmp_table_double \
 )
 
+#define CONVERT(tos) _Generic(tos, \
+  bjvm_obj_header *: (int64_t)tos, \
+  default: tos \
+)
+
 // Jump to the instruction at pc, using the given top-of-stack value
-#define JMP(tos) MUSTTAIL return SELECT_TABLE(tos)[insns[pc].kind](thread, frame, insns, pc, sd, tos);
+#define JMP(tos) MUSTTAIL return SELECT_TABLE(tos)[insns[pc].kind](thread, frame, insns, pc, sd, CONVERT(tos));
 // Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos) MUSTTAIL return SELECT_TABLE(tos)[insns[pc].kind](thread, frame, insns, pc + 1, sd, tos);
+#define NEXT(tos) MUSTTAIL return SELECT_TABLE(tos)[insns[pc + 1].kind](thread, frame, insns, pc + 1, sd, CONVERT(tos));
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sd = 0, only that
 // all stack values are in memory (rather than in a register)
 #define JMP_VOID MUSTTAIL return jmp_table_void[insns[pc].kind](thread, frame, insns, pc, sd);
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
-#define NEXT_VOID MUSTTAIL return jmp_table_void[insns[pc].kind](thread, frame, insns, pc + 1, sd);
+#define NEXT_VOID MUSTTAIL return jmp_table_void[insns[pc + 1].kind](thread, frame, insns, pc + 1, sd);
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos) \
@@ -106,7 +118,7 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_TOS(double));
 // Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.
 #define STACK_POLYMORPHIC_JMP(tos) \
-switch (insn->tos_after) { \
+switch (insn->tos_before) { \
   case TOS_VOID: JMP_VOID \
   case TOS_INT: JMP(tos.l) \
   case TOS_FLOAT: JMP(tos.f) \
@@ -114,7 +126,7 @@ switch (insn->tos_after) { \
   default: __builtin_unreachable(); \
 }
 
-// For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter functions
+// For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsdtions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
 #define FORWARD_TO_NULLARY(which) \
 static bjvm_stack_value which##_impl_int(ARGS_TOS(int64_t)) { \
@@ -134,28 +146,28 @@ MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sd);\
 
 /** Helper functions */
 
-int32_t java_idiv(int32_t a, int32_t b) {
+int32_t java_idiv_(int32_t a, int32_t b) {
   assert(b != 0);
   if (a == INT_MIN && b == -1)
     return INT_MIN;
   return a / b;
 }
 
-int64_t java_irem(int32_t a, int32_t b) {
+int64_t java_irem_(int32_t a, int32_t b) {
   assert(b != 0);
   if (a == INT_MIN && b == -1)
     return 0;
   return a % b;
 }
 
-int64_t java_ldiv(int64_t a, int64_t b) {
+int64_t java_ldiv_(int64_t a, int64_t b) {
   assert(b != 0);
   if (a == LONG_MIN && b == -1)
     return LONG_MIN;
   return a / b;
 }
 
-int64_t java_lrem(int64_t a, int64_t b) {
+int64_t java_lrem_(int64_t a, int64_t b) {
   assert(b != 0);
   if (a == LONG_MIN && b == -1)
     return 0;
@@ -258,6 +270,7 @@ DEFINE_ASYNC_SL(resolve_getstatic_putstatic, 100) {
 }
 
 static bjvm_stack_value getstatic_impl_void(ARGS) {
+  DEBUG_CHECK
   resolve_getstatic_putstatic_t ctx = { 0 };
   ctx.args.thread = thread;
   ctx.args.inst = insn;
@@ -274,6 +287,7 @@ FORWARD_TO_NULLARY(getstatic)
 // Never actually directly called -- we just do it this way because it's easier and we might as well merge code paths
 // for different TOS types.
 static bjvm_stack_value putstatic_impl_void(ARGS) {
+  DEBUG_CHECK
   resolve_getstatic_putstatic_t ctx = { 0 };
   ctx.args.thread = thread;
   ctx.args.inst = insn;
@@ -283,11 +297,12 @@ static bjvm_stack_value putstatic_impl_void(ARGS) {
     return value_null();
   }
   assert(fut.status == FUTURE_READY);  // for now
-  STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
+  STACK_POLYMORPHIC_JMP(frame->values[sd - 1]);
 }
 FORWARD_TO_NULLARY(putstatic)
 
 static bjvm_stack_value getstatic_L_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT(*(bjvm_obj_header **)insn->ic)
@@ -295,6 +310,7 @@ static bjvm_stack_value getstatic_L_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_L)
 
 static bjvm_stack_value getstatic_F_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT(*(float *)insn->ic)
@@ -302,6 +318,7 @@ static bjvm_stack_value getstatic_F_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_F)
 
 static bjvm_stack_value getstatic_D_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT(*(double *)insn->ic)
@@ -309,6 +326,7 @@ static bjvm_stack_value getstatic_D_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_D)
 
 static bjvm_stack_value getstatic_J_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT(*(int64_t *)insn->ic)
@@ -316,6 +334,7 @@ static bjvm_stack_value getstatic_J_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_J)
 
 static bjvm_stack_value getstatic_I_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT(*(int *)insn->ic)
@@ -323,6 +342,7 @@ static bjvm_stack_value getstatic_I_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_I)
 
 static bjvm_stack_value getstatic_S_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT((int64_t)*(int16_t *)insn->ic)
@@ -330,6 +350,7 @@ static bjvm_stack_value getstatic_S_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_S)
 
 static bjvm_stack_value getstatic_C_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT((int64_t)*(uint16_t *)insn->ic)
@@ -337,6 +358,7 @@ static bjvm_stack_value getstatic_C_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_C)
 
 static bjvm_stack_value getstatic_B_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT((int64_t)*(int8_t *)insn->ic)
@@ -344,6 +366,7 @@ static bjvm_stack_value getstatic_B_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_B)
 
 static bjvm_stack_value getstatic_Z_impl_void(ARGS) {
+  DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sd++;
   NEXT((int64_t)*(int8_t *)insn->ic)
@@ -351,54 +374,63 @@ static bjvm_stack_value getstatic_Z_impl_void(ARGS) {
 FORWARD_TO_NULLARY(getstatic_Z)
 
 static bjvm_stack_value putstatic_B_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(int8_t *)insn->ic = (int8_t)tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_C_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(uint16_t *)insn->ic = (uint16_t)tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_S_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(int16_t *)insn->ic = (int16_t)tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_I_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(int *)insn->ic = (int)tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_J_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(int64_t *)insn->ic = tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_F_impl_float(ARGS_TOS(float)) {
+  DEBUG_CHECK
   *(float *)insn->ic = tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_D_impl_double(ARGS_TOS(double)) {
+  DEBUG_CHECK
   *(double *)insn->ic = tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_L_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(bjvm_obj_header **)insn->ic = (bjvm_obj_header *)tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putstatic_Z_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   *(int8_t *)insn->ic = (int8_t)tos;
   --sd;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
@@ -477,21 +509,24 @@ DEFINE_ASYNC_SL(resolve_getfield_putfield, 100) {
 }
 
 static bjvm_stack_value getfield_impl_int(ARGS_TOS(int64_t)) {
+  SPILL(tos)
+  DEBUG_CHECK
   resolve_getfield_putfield_t ctx = { 0 };
   ctx.args.thread = thread;
   ctx.args.inst = insn;
   ctx.args.frame = frame;
   ctx.args.sd = sd;
-  SPILL_VOID
   future_t fut = resolve_getfield_putfield(&ctx);
   if (thread->current_exception) {
     return value_null();
   }
+  RELOAD(tos)
   assert(fut.status == FUTURE_READY);  // for now
   JMP(tos)
 }
 
 static bjvm_stack_value putfield_impl_void(ARGS) {
+  DEBUG_CHECK
   resolve_getfield_putfield_t ctx = { 0 };
   ctx.args.thread = thread;
   ctx.args.inst = insn;
@@ -508,108 +543,126 @@ static bjvm_stack_value putfield_impl_void(ARGS) {
 FORWARD_TO_NULLARY(putfield)
 
 static bjvm_stack_value getfield_B_impl_int(ARGS_TOS(int64_t)) {
-  int8_t *field = (int8_t *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  int8_t *field = (int8_t *)((char *)tos + (int)insn->ic2);
   NEXT((int64_t)*field)
 }
 
 static bjvm_stack_value getfield_C_impl_int(ARGS_TOS(int64_t)) {
-  uint16_t *field = (uint16_t *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  uint16_t *field = (uint16_t *)((char *)tos + (int)insn->ic2);
   NEXT((int64_t)*field)
 }
 
 static bjvm_stack_value getfield_S_impl_int(ARGS_TOS(int64_t)) {
-  int16_t *field = (int16_t *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  int16_t *field = (int16_t *)((char *)tos + (int)insn->ic2);
   NEXT((int64_t)*field)
 }
 
 static bjvm_stack_value getfield_I_impl_int(ARGS_TOS(int64_t)) {
-  int *field = (int *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  int *field = (int *)((char *)tos + (int)insn->ic2);
   NEXT((int64_t)*field)
 }
 
 static bjvm_stack_value getfield_J_impl_int(ARGS_TOS(int64_t)) {
-  int64_t *field = (int64_t *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  int64_t *field = (int64_t *)((char *)tos + (int)insn->ic2);
   NEXT(*field)
 }
 
 static bjvm_stack_value getfield_F_impl_int(ARGS_TOS(int64_t)) {
-  float *field = (float *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  float *field = (float *)((char *)tos + (int)insn->ic2);
   NEXT(*field)
 }
 
 static bjvm_stack_value getfield_D_impl_int(ARGS_TOS(int64_t)) {
-  double *field = (double *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  double *field = (double *)((char *)tos + (int)insn->ic2);
   NEXT(*field)
 }
 
 static bjvm_stack_value getfield_L_impl_int(ARGS_TOS(int64_t)) {
-  bjvm_obj_header **field = (bjvm_obj_header **)((char *)tos + insn->index);
+  DEBUG_CHECK
+  bjvm_obj_header **field = (bjvm_obj_header **)((char *)tos + (int)insn->ic2);
   NEXT(*field)
 }
 
 static bjvm_stack_value getfield_Z_impl_int(ARGS_TOS(int64_t)) {
-  int8_t *field = (int8_t *)((char *)tos + insn->index);
+  DEBUG_CHECK
+  int8_t *field = (int8_t *)((char *)tos + (int)insn->ic2);
   NEXT((int64_t)*field)
 }
 
 static bjvm_stack_value putfield_B_impl_int(ARGS_TOS(int64_t)) {
-  int8_t *field = (int8_t *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  int8_t *field = (int8_t *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = (int8_t)tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_C_impl_int(ARGS_TOS(int64_t)) {
-  uint16_t *field = (uint16_t *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  uint16_t *field = (uint16_t *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = (uint16_t)tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_S_impl_int(ARGS_TOS(int64_t)) {
-  int16_t *field = (int16_t *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  int16_t *field = (int16_t *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = (int16_t)tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_I_impl_int(ARGS_TOS(int64_t)) {
-  int *field = (int *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  int *field = (int *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = (int)tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_J_impl_int(ARGS_TOS(int64_t)) {
-  int64_t *field = (int64_t *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  int64_t *field = (int64_t *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_L_impl_int(ARGS_TOS(int64_t)) {
-  bjvm_obj_header **field = (bjvm_obj_header **)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  bjvm_obj_header **field = (bjvm_obj_header **)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = (bjvm_obj_header *)tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_Z_impl_int(ARGS_TOS(int64_t)) {
-  int8_t *field = (int8_t *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  int8_t *field = (int8_t *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = (int8_t)tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_F_impl_float(ARGS_TOS(float)) {
-  float *field = (float *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  float *field = (float *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 static bjvm_stack_value putfield_D_impl_double(ARGS_TOS(double)) {
-  double *field = (double *)((char *)frame->values[sd - 2].obj + insn->index);
+  DEBUG_CHECK
+  double *field = (double *)((char *)frame->values[sd - 2].obj + (int)insn->ic2);
   *field = tos;
   sd -= 2;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
@@ -620,7 +673,8 @@ static bjvm_stack_value putfield_D_impl_double(ARGS_TOS(double)) {
 // Binary operation on two integers (ints or longs)
 #define INTEGER_BIN_OP(which, eval) \
 static bjvm_stack_value which##_impl_int(ARGS_TOS(int64_t)) { \
-  int64_t a = frame->values[sd - 2].i, b = tos; \
+  DEBUG_CHECK \
+  int64_t a = frame->values[sd - 2].l, b = tos; \
   int64_t result = eval; \
   sd--; \
   NEXT(result) \
@@ -647,6 +701,7 @@ INTEGER_BIN_OP(lushr, (uint64_t)a >> (b & 0x3f))
 
 #define INTEGER_UN_OP(which, eval) \
 static bjvm_stack_value which##_impl_int(ARGS_TOS(int64_t)) { \
+  DEBUG_CHECK \
   int64_t a = tos; \
   NEXT(eval) \
 }
@@ -663,96 +718,109 @@ INTEGER_UN_OP(l2i, (int)a)
 INTEGER_UN_OP(l2f, (float)a)
 INTEGER_UN_OP(l2d, (double)a)
 
-#define FLOAT_BIN_OP(which, eval) \
+#define FLOAT_BIN_OP(which, eval, out_float, out_double) \
   static bjvm_stack_value f##which##_impl_float(ARGS_TOS(float)) { \
+  DEBUG_CHECK \
     float a = frame->values[sd - 2].f, b = tos; \
-    float result = eval; \
+    out_float result = eval; \
     sd--; \
     NEXT(result) \
 } \
 static bjvm_stack_value d##which##_impl_double(ARGS_TOS(double)) { \
+  DEBUG_CHECK \
 double a = frame->values[sd - 2].f, b = tos; \
-double result = eval; \
+out_double result = eval; \
 sd--; \
 NEXT(result) \
 }
 
-#define FLOAT_UN_OP(which, eval) \
+#define FLOAT_UN_OP(which, eval, out) \
   static bjvm_stack_value which##_impl_float(ARGS_TOS(float)) { \
+  DEBUG_CHECK \
     float a = tos; \
-    float result = eval; \
+    out result = eval; \
     NEXT(result) \
 }
 
-#define DOUBLE_UN_OP(which, eval) \
+#define DOUBLE_UN_OP(which, eval, out) \
   static bjvm_stack_value which##_impl_double(ARGS_TOS(double)) { \
+  DEBUG_CHECK \
     double a = tos; \
-    double result = eval; \
+    out result = eval; \
     NEXT(result) \
 }
 
-FLOAT_BIN_OP(add, a + b)
-FLOAT_BIN_OP(sub, a - b)
-FLOAT_BIN_OP(mul, a * b)
-FLOAT_BIN_OP(div, a / b)
-FLOAT_BIN_OP(rem, fmod(a, b))
-FLOAT_BIN_OP(cmpg, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : 1)))
-FLOAT_BIN_OP(cmpl, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : -1)))
+FLOAT_BIN_OP(add, a + b, float, double)
+FLOAT_BIN_OP(sub, a - b, float, double)
+FLOAT_BIN_OP(mul, a * b, float, double)
+FLOAT_BIN_OP(div, a / b, float, double)
+FLOAT_BIN_OP(rem, fmod(a, b), float, double)
+FLOAT_BIN_OP(cmpg, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : 1)), int, int)
+FLOAT_BIN_OP(cmpl, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : -1)), int, int)
 
-FLOAT_UN_OP(fneg, -a)
-FLOAT_UN_OP(f2i, (int)a)
-FLOAT_UN_OP(f2l, (int64_t)a)
-FLOAT_UN_OP(f2d, (double)a)
+FLOAT_UN_OP(fneg, -a, float)
+FLOAT_UN_OP(f2i, (int)a, int)
+FLOAT_UN_OP(f2l, (int64_t)a, int64_t)
+FLOAT_UN_OP(f2d, (double)a, double)
 
-DOUBLE_UN_OP(dneg, -a)
-DOUBLE_UN_OP(d2i, (int)a)
-DOUBLE_UN_OP(d2l, (int64_t)a)
-DOUBLE_UN_OP(d2f, (float)a)
+DOUBLE_UN_OP(dneg, -a, double)
+DOUBLE_UN_OP(d2i, (int)a, int)
+DOUBLE_UN_OP(d2l, (int64_t)a, int64_t)
+DOUBLE_UN_OP(d2f, (float)a, float)
 
 static bjvm_stack_value idiv_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   int a = frame->values[sd - 2].i, b = (int)tos; \
   if (unlikely(b == 0)) {
     SPILL(tos);
     bjvm_arithmetic_exception(thread, STR("/ by zero"));
     return value_null();
   }
-  NEXT(java_idiv(a, b));
+  sd--;
+  NEXT(java_idiv_(a, b));
 }
 
 static bjvm_stack_value ldiv_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   int64_t a = frame->values[sd - 2].l, b = tos; \
   if (unlikely(b == 0)) {
     SPILL(tos);
     bjvm_arithmetic_exception(thread, STR("/ by zero"));
     return value_null();
   }
-  NEXT(java_ldiv(a, b));
+  sd--;
+  NEXT(java_ldiv_(a, b));
 }
 
 static bjvm_stack_value lcmp_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   int64_t a = frame->values[sd - 2].l, b = tos;
   sd--;
   NEXT(a > b ? 1 : (a < b ? -1 : 0));
 }
 
 static bjvm_stack_value irem_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   int a = frame->values[sd - 2].i, b = (int)tos; \
   if (unlikely(b == 0)) {
     SPILL(tos);
     bjvm_arithmetic_exception(thread, STR("/ by zero"));
     return value_null();
   }
-  NEXT(java_irem(a, b));
+  sd--;
+  NEXT(java_irem_(a, b));
 }
 
 static bjvm_stack_value lrem_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   int64_t a = frame->values[sd - 2].l, b = tos; \
   if (unlikely(b == 0)) {
     SPILL(tos);
     bjvm_arithmetic_exception(thread, STR("/ by zero"));
     return value_null();
   }
-  NEXT(java_lrem(a, b));
+  sd--;
+  NEXT(java_lrem_(a, b));
 }
 
 /** Array instructions (arraylength, array loads, array stores) */
@@ -768,7 +836,7 @@ static bjvm_stack_value arraylength_impl_int(ARGS_TOS(int64_t)) {
   NEXT(*ArrayLength(array))
 }
 
-#define ARRAY_LOAD(which, load) \
+#define ARRAY_LOAD(which, load, type) \
 static bjvm_stack_value which##_impl_int(ARGS_TOS(int64_t)) { \
   DEBUG_CHECK \
 bjvm_obj_header *array = (bjvm_obj_header *)frame->values[sd - 2].obj; \
@@ -785,17 +853,18 @@ if (unlikely(index < 0 || index >= length)) { \
   return value_null(); \
 } \
 sd--; \
-NEXT(load(array, index)) \
+type cow = load(array, index); \
+NEXT(cow) \
 }
 
-ARRAY_LOAD(iaload, IntArrayLoad)
-ARRAY_LOAD(laload, LongArrayLoad)
-ARRAY_LOAD(faload, FloatArrayLoad)
-ARRAY_LOAD(daload, DoubleArrayLoad)
-ARRAY_LOAD(aaload, ReferenceArrayLoad)
-ARRAY_LOAD(baload, ByteArrayLoad)
-ARRAY_LOAD(saload, ShortArrayLoad)
-ARRAY_LOAD(caload, CharArrayLoad)
+ARRAY_LOAD(iaload, IntArrayLoad, int)
+ARRAY_LOAD(laload, LongArrayLoad, int64_t)
+ARRAY_LOAD(faload, FloatArrayLoad, float)
+ARRAY_LOAD(daload, DoubleArrayLoad, double)
+ARRAY_LOAD(aaload, ReferenceArrayLoad, bjvm_obj_header *)
+ARRAY_LOAD(baload, ByteArrayLoad, int64_t)
+ARRAY_LOAD(saload, ShortArrayLoad, int64_t)
+ARRAY_LOAD(caload, CharArrayLoad, int64_t)
 
 #define ARRAY_STORE(which, tt1, tt2, tt3, store) \
   static bjvm_stack_value which##_impl_##tt1(ARGS_TOS(tt2)) { \
@@ -850,7 +919,7 @@ static bjvm_stack_value aastore_impl_int(ARGS_TOS(int64_t)) {
     bjvm_array_store_exception(thread, hslc(value->descriptor->name));
     return value_null();
   }
-  ReferenceArrayStore(array, index, (bjvm_obj_header *)tos);
+  ReferenceArrayStore(array, index, value);
   sd -= 3;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
@@ -925,9 +994,9 @@ static bjvm_stack_value tableswitch_impl_int(ARGS_TOS(int64_t)) {
   int32_t high = insn->tableswitch.high;
   int32_t *offsets = insn->tableswitch.targets;
   if (index < low || index > high) {
-    pc = insn->tableswitch.default_target;
+    pc = insn->tableswitch.default_target - 1;
   } else {
-    pc = offsets[index - low];
+    pc = offsets[index - low] - 1;
   }
   sd--;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
@@ -945,19 +1014,20 @@ static bjvm_stack_value lookupswitch_impl_int(ARGS_TOS(int64_t)) {
   // TODO replace this with a binary search
   for (int i = 0; i < n; i++) {
     if (keys[i] == key) {
-      pc = offsets[i];
+      pc = offsets[i] - 1;
       sd--;
       STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
     }
   }
-  pc = default_target;
+  pc = default_target - 1;
   sd--;
   STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]);
 }
 
 #define MAKE_INT_BRANCH_AGAINST_0(which, op) \
   static bjvm_stack_value which##_impl_int(ARGS_TOS(int64_t)) { \
-    pc = tos op 0 ? insn->index : pc + 1; \
+    DEBUG_CHECK \
+    pc = tos op 0 ? (insn->index - 1) : pc; \
     sd--; \
     STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]); \
   }
@@ -974,8 +1044,8 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
 #define MAKE_INT_BRANCH(which, op) \
   static bjvm_stack_value which##_impl_int(ARGS_TOS(int64_t)) { \
     DEBUG_CHECK \
-    int64_t a = frame->values[sd - 2].i, b = tos; \
-    pc = a op b ? insn->index : pc + 1; \
+    int64_t a = frame->values[sd - 2].i, b = (int)tos; \
+    pc = a op b ? (insn->index - 1) : pc; \
     sd -= 2; \
     STACK_POLYMORPHIC_NEXT(frame->values[sd - 1]); \
   }
@@ -986,8 +1056,22 @@ MAKE_INT_BRANCH(if_icmplt, <)
 MAKE_INT_BRANCH(if_icmpge, >=)
 MAKE_INT_BRANCH(if_icmpgt, >)
 MAKE_INT_BRANCH(if_icmple, <=)
-MAKE_INT_BRANCH(if_acmpeq, ==)
-MAKE_INT_BRANCH(if_acmpne, !=)
+
+static bjvm_stack_value if_acmpeq_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
+  int64_t a = frame->values[sd - 2].l, b = tos;
+  pc = a == b ? (insn->index - 1) : pc;
+  sd -= 2;
+  STACK_POLYMORPHIC_NEXT(frame->values[sd - 1])
+}
+
+static bjvm_stack_value if_acmpne_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
+  int64_t a = frame->values[sd - 2].l, b = tos;
+  pc = a != b ? (insn->index - 1) : pc;
+  sd -= 2;
+  STACK_POLYMORPHIC_NEXT(frame->values[sd - 1])
+}
 
 /** Monitors */
 
@@ -1021,7 +1105,6 @@ static bjvm_stack_value monitorexit_impl_int(ARGS_TOS(int64_t)) {
 static bjvm_stack_value new_impl_void(ARGS) {
   DEBUG_CHECK
   SPILL_VOID
-  sd++;
 
   bjvm_cp_class_info *info = &insn->cp->class_info;
   int error = bjvm_resolve_class(thread, info);
@@ -1040,7 +1123,6 @@ static bjvm_stack_value new_impl_void(ARGS) {
 
   insn->kind = bjvm_insn_new_resolved;
   insn->classdesc = info->classdesc;
-
   JMP_VOID
 }
 FORWARD_TO_NULLARY(new)
@@ -1051,6 +1133,7 @@ static bjvm_stack_value new_resolved_impl_void(ARGS) {
   bjvm_obj_header *obj = new_object(thread, insn->classdesc);
   if (!obj)
     return value_null();
+  sd++;
   NEXT(obj)
 }
 FORWARD_TO_NULLARY(new_resolved)
@@ -1108,6 +1191,7 @@ static bjvm_stack_value multianewarray_impl_int(ARGS_TOS(int64_t)) {
   uint16_t temp_sd = sd;
   if (bjvm_multianewarray(thread, frame, &insn->multianewarray, &temp_sd))
     return value_null();
+  sd = temp_sd;
   NEXT(frame->values[temp_sd - 1].obj)
 }
 
@@ -1208,7 +1292,6 @@ static bjvm_stack_value invokevirtual_impl_void(ARGS) {
 
   insn->kind = bjvm_insn_invokevtable_monomorphic;
   insn->ic = bjvm_vtable_lookup(target->descriptor, method_info->resolved->vtable_index);
-  assert(method);
   insn->ic2 = target->descriptor;
   JMP_VOID
 }
@@ -1271,7 +1354,8 @@ static bjvm_stack_value invokespecial_impl_void(ARGS) {
 
   insn->kind = bjvm_insn_invokespecial_resolved;
   insn->ic = candidate;
-  JMP_VOID
+
+  MUSTTAIL return jmp_table_void[insns[pc].kind](thread, frame, insns, pc, sd);
 }
 FORWARD_TO_NULLARY(invokespecial)
 
@@ -1341,7 +1425,7 @@ static bjvm_stack_value invokeinterface_impl_void(ARGS) {
 FORWARD_TO_NULLARY(invokeinterface)
 
 void make_invokevtable_polymorphic_(bjvm_bytecode_insn *inst) {
-  assert(insn->kind == bjvm_insn_invokevtable_monomorphic);
+  assert(inst->kind == bjvm_insn_invokevtable_monomorphic);
   bjvm_cp_method *method = inst->ic;
   assert(method);
   inst->kind = bjvm_insn_invokevtable_polymorphic;
@@ -1349,7 +1433,7 @@ void make_invokevtable_polymorphic_(bjvm_bytecode_insn *inst) {
 }
 
 void make_invokeitable_polymorphic_(bjvm_bytecode_insn *inst) {
-  assert(insn->kind == bjvm_insn_invokeitable_monomorphic);
+  assert(inst->kind == bjvm_insn_invokeitable_monomorphic);
   inst->kind = bjvm_insn_invokeitable_polymorphic;
   inst->ic = (void *)inst->cp->methodref.resolved->my_class;
   inst->ic2 = (void *)inst->cp->methodref.resolved->itable_index;
@@ -1606,7 +1690,7 @@ static bjvm_stack_value iinc_impl_float(ARGS_TOS(float)) {
   NEXT(tos)
 }
 
-static bjvm_stack_value iinc_impl_int(ARGS_TOS(int)) {
+static bjvm_stack_value iinc_impl_int(ARGS_TOS(int64_t)) {
   DEBUG_CHECK
   int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
@@ -1832,12 +1916,13 @@ FORWARD_TO_NULLARY(dup2_x2)
 
 __attribute__((always_inline))
 static bjvm_stack_value entry(ARGS) {
-  STACK_POLYMORPHIC_NEXT(frame->values[sd - 1])
+  STACK_POLYMORPHIC_JMP(frame->values[sd - 1])
 }
 
 /** Misc. */
 static bjvm_stack_value athrow_impl_int(ARGS_TOS(int64_t)) {
   DEBUG_CHECK
+  SPILL(tos)
   thread->current_exception = (bjvm_obj_header *)tos;
   return value_null();
 }
@@ -1857,11 +1942,13 @@ static bjvm_stack_value checkcast_impl_int(ARGS_TOS(int64_t)) {
 
 static bjvm_stack_value checkcast_resolved_impl_int(ARGS_TOS(int64_t)) {
   DEBUG_CHECK
-  bjvm_obj_header *obj = frame->values[sd - 1].obj;
+  bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   if (obj && unlikely(!bjvm_instanceof(obj->descriptor, insn->classdesc))) {
     INIT_STACK_STRING(complaint, 1000);
     complaint = bprintf(complaint, "Expected instance of %.*s, got %.*s", fmt_slice(insn->classdesc->name),
                         fmt_slice(obj->descriptor->name));
+    printf("COMPLAINT: %.*s\n", fmt_slice(complaint));
+    SPILL(tos)
     bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
     return value_null();
   }
@@ -1869,6 +1956,7 @@ static bjvm_stack_value checkcast_resolved_impl_int(ARGS_TOS(int64_t)) {
 }
 
 static bjvm_stack_value instanceof_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   bjvm_cp_class_info *info = &insn->cp->class_info;
   SPILL(tos)
   int error = bjvm_resolve_class(thread, info);
@@ -1876,14 +1964,15 @@ static bjvm_stack_value instanceof_impl_int(ARGS_TOS(int64_t)) {
     return value_null();
   RELOAD(tos)
   insn->classdesc = info->classdesc;
-  insn->kind = bjvm_insn_checkcast_resolved;
+  insn->kind = bjvm_insn_instanceof_resolved;
   JMP(tos)
 }
 
 static bjvm_stack_value instanceof_resolved_impl_int(ARGS_TOS(int64_t)) {
+  DEBUG_CHECK
   bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   int result = obj ? bjvm_instanceof(obj->descriptor, insn->classdesc) : 0;
-  JMP(result)
+  NEXT(result)
 }
 
 bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) {
@@ -1894,6 +1983,8 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
     bjvm_run_native_t ctx = {0};
     ctx.args.thread = thread;
     ctx.args.frame = bjvm_get_native_frame(frame);
+    future_t fut = bjvm_run_native(&ctx);
+    assert(fut.status == FUTURE_READY);
     bjvm_pop_frame(thread, frame);
     return ctx._result;
   }
@@ -1925,14 +2016,14 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
               frame->values[0] = (bjvm_stack_value){.obj = thread->current_exception};
               thread->current_exception = nullptr;
 
-              break;  // start interpreting again
+              goto cont;  // start interpreting again
             }
           }
         }
       }
-    } else {
-      break;
     }
+    break;
+    cont:
   }
 
   done:
@@ -2045,7 +2136,7 @@ static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS) = {
   new_impl_void,
   nullptr /* putfield_impl_void */,
   nullptr /* putstatic_impl_void */,
-  nullptr /* invokevirtual_impl_void */,
+  invokevirtual_impl_void,
   nullptr /* invokespecial_impl_void */,
   invokestatic_impl_void,
   ldc_impl_void,
@@ -2083,7 +2174,7 @@ static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS) = {
   fconst_impl_void,
   lconst_impl_void,
   iinc_impl_void,
-  nullptr /* invokeinterface_impl_void */,
+  invokeinterface_impl_void,
   nullptr /* multianewarray_impl_void */,
   nullptr /* newarray_impl_void */,
   nullptr /* tableswitch_impl_void */,
@@ -2093,11 +2184,11 @@ static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS) = {
   nullptr /* checkcast_resolved_impl_void */,
   nullptr /* instanceof_resolved_impl_void */,
   new_resolved_impl_void,
-  nullptr /* invokevtable_monomorphic_impl_void */,
-  nullptr /* invokevtable_polymorphic_impl_void */,
-  nullptr /* invokeitable_monomorphic_impl_void */,
-  nullptr /* invokeitable_polymorphic_impl_void */,
-  nullptr /* invokespecial_resolved_impl_void */,
+  invokeitable_vtable_monomorphic_impl_void,
+  invokevtable_polymorphic_impl_void,
+  invokeitable_vtable_monomorphic_impl_void,
+  invokeitable_polymorphic_impl_void,
+  invokespecial_resolved_impl_void,
   invokestatic_resolved_impl_void,
   invokecallsite_impl_void,
   nullptr /* getfield_B_impl_void */,
