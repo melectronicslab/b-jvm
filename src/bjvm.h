@@ -131,7 +131,7 @@ DECLARE_ASYNC(struct bjvm_native_MethodType *, resolve_mh_mt, locals(),
 
 DECLARE_ASYNC(
     struct bjvm_native_MethodHandle *, bjvm_resolve_method_handle,
-    locals(bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m),
+    locals(bjvm_classdesc * DirectMethodHandle; bjvm_classdesc * MemberName; bjvm_cp_method * m; bjvm_cp_field *f),
     arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
     invoked_methods(
       invoked_method(bjvm_initialize_class)
@@ -158,12 +158,11 @@ DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
                   ),
 );
 
-DECLARE_ASYNC(bjvm_value, bjvm_resolve_indy_static_argument,
+DECLARE_ASYNC(bjvm_stack_value, bjvm_resolve_indy_static_argument,
               locals(),
               arguments(
                 bjvm_thread *thread;
                 bjvm_cp_entry *ent;
-                bool *is_object;
               ),
               invoked_methods(invoked_method(bjvm_resolve_method_handle))
 );
@@ -172,7 +171,7 @@ DECLARE_ASYNC(
     int, indy_resolve,
     locals(
       bjvm_handle *bootstrap_handle;
-      bjvm_plain_frame *fake_frame;
+      bjvm_handle *invoke_array;
       int static_i;
     ),
     arguments(bjvm_thread *thread; bjvm_bytecode_insn *insn; bjvm_cp_indy_info *indy),

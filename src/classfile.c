@@ -2047,7 +2047,8 @@ parse_result_t bjvm_parse_classfile(const uint8_t *bytes, size_t len,
   cf->indy_insns = nullptr;
 
   bool in_MethodHandle =
-      utf8_equals(hslc(cf->name), "java/lang/invoke/MethodHandle");
+      utf8_equals(hslc(cf->name), "java/lang/invoke/MethodHandle") ||
+      utf8_equals(hslc(cf->name), "java/lang/invoke/VarHandle");
   for (int i = 0; i < cf->methods_count; ++i) {
     bjvm_cp_method *method = cf->methods + i;
     *method = parse_method(&reader, &ctx);
