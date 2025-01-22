@@ -649,9 +649,9 @@ int push_branch_target(struct method_analysis_ctx *ctx, uint32_t curr,
   return 0;
 }
 
-void calculate_tos_type(bjvm_bytecode_insn * insn, struct method_analysis_ctx * ctx) {
+void calculate_tos_type(struct method_analysis_ctx *ctx, bjvm_reduced_tos_kind *reduced) {
   if (ctx->stack.entries_count == 0) {
-    insn->tos_after = TOS_VOID;
+    *reduced = TOS_VOID;
   } else {
     switch (ctx->stack.entries[ctx->stack.entries_count - 1].type) {
     case BJVM_TYPE_KIND_BOOLEAN:
@@ -661,13 +661,13 @@ void calculate_tos_type(bjvm_bytecode_insn * insn, struct method_analysis_ctx * 
     case BJVM_TYPE_KIND_INT:
     case BJVM_TYPE_KIND_LONG:
     case BJVM_TYPE_KIND_REFERENCE:
-      insn->tos_after = TOS_INT;
+      *reduced = TOS_INT;
       break;
     case BJVM_TYPE_KIND_FLOAT:
-      insn->tos_after = TOS_FLOAT;
+      *reduced = TOS_FLOAT;
       break;
     case BJVM_TYPE_KIND_DOUBLE:
-      insn->tos_after = TOS_DOUBLE;
+      *reduced = TOS_DOUBLE;
       break;
     case BJVM_TYPE_KIND_VOID:
       UNREACHABLE();
@@ -676,8 +676,10 @@ void calculate_tos_type(bjvm_bytecode_insn * insn, struct method_analysis_ctx * 
 }
 
 
-int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index,
-                        struct method_analysis_ctx *ctx) {
+int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_analysis_ctx *ctx) {
+  // Add top of stack type before the instruction executes
+  calculate_tos_type(ctx, &insn->tos_before);
+
   switch (insn->kind) {
   case bjvm_insn_nop:
   case bjvm_insn_ret:
@@ -1208,7 +1210,7 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index,
   }
 
   // Add top of stack type after the instruction executes
-  calculate_tos_type(insn, ctx);
+  calculate_tos_type(ctx, &insn->tos_after);
 
   return 0; // ok
 

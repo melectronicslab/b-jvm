@@ -4,10 +4,10 @@
 // instruction. This messes up the debug dumps but can lead to slightly better
 // performance because the branch predictor has more information about pairs
 // of instructions which tend to follow another.
-#define ONE_GOTO_PER_INSN 1
+#define ONE_GOTO_PER_INSN 0
 // Skip the memset(...) call to clear each frame's locals/stack. This messes
 // up the debug dumps, but makes setting up frames faster.
-#define SKIP_CLEARING_FRAME 1
+#define SKIP_CLEARING_FRAME 0
 
 #include <assert.h>
 #include <limits.h>
@@ -2596,6 +2596,11 @@ DEFINE_ASYNC(bjvm_interpret) {
 #define raw_frame args->raw_frame
   assert(*(thread->frames + thread->frames_count - 1) == raw_frame && "Frame is not last frame on stack");
 
+  bjvm_stack_value the_result = bjvm_interpret_2(thread, raw_frame);
+  ASYNC_END(the_result);
+
+#if 0
+
   // these should be cleaned up at some point
 
 #define async_attempt_allocate(ty)                                                                                     \
@@ -4354,6 +4359,7 @@ done:;
 
   bjvm_pop_frame(thread, raw_frame);
   ASYNC_END(result);
+#endif
 }
 // #pragma GCC diagnostic pop
 

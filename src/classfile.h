@@ -256,7 +256,7 @@ typedef enum {
   bjvm_insn_putstatic_L,
 } bjvm_insn_code_kind;
 
-typedef enum {
+typedef enum : uint8_t {
   TOS_VOID,
   TOS_INT,
   TOS_FLOAT,
@@ -571,6 +571,7 @@ struct bjvm_bc_invokeinterface_data {
 
 typedef struct bjvm_bytecode_insn {
   bjvm_insn_code_kind kind;
+  bjvm_reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
   bjvm_reduced_tos_kind tos_after;  // the (reduced) top-of-stack type after this instruction executes
   int original_pc;
 

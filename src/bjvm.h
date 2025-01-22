@@ -367,6 +367,7 @@ typedef struct bjvm_stack_frame {
 uint16_t stack_depth(const bjvm_plain_frame *frame);
 
 bool bjvm_is_frame_native(const bjvm_stack_frame *frame);
+bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame);
 
 bjvm_native_frame *bjvm_get_native_frame(bjvm_stack_frame *frame);
 bjvm_plain_frame *bjvm_get_plain_frame(bjvm_stack_frame *frame);
