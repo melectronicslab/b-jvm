@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE(
     "sun/reflect", NativeConstructorAccessorImpl, newInstance0,

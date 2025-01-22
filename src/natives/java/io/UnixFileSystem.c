@@ -1,6 +1,6 @@
 #include "unixlike-fs.h"
 
-#include <natives.h>
+#include <natives-dsl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -15,8 +15,8 @@ DECLARE_NATIVE("java/io", UnixFileSystem, initIDs, "()V") {
   return value_null();
 }
 
-DECLARE_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
-               "(Ljava/io/File;)I") {
+DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
+               "(Ljava/io/File;)I", locals(), invoked_methods()) {
   unixlike_fs const *fs = unix_get_active_fs();
   if (!fs) {
     ThrowLangException(UnsupportedOperationException);
@@ -37,10 +37,12 @@ DECLARE_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
     goto exception;
   }
 
-  return (bjvm_stack_value) {.i = result};
+  ASYNC_RETURN((bjvm_stack_value) {.i = result});
 
   exception:
-  return value_null();
+  ASYNC_RETURN(value_null());
+
+  ASYNC_END(value_null());
 }
 
 static heap_string canonicalize_path(bjvm_utf8 path) {

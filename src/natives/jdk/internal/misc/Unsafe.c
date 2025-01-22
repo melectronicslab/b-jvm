@@ -1,7 +1,7 @@
 #include "objects.h"
 
 
-#include <natives.h>
+#include <natives-dsl.h>
 
 // In general, for the Unsafe API, we use the byte offset of the field
 // (be it static or nonstatic) to identify it. This works well because we're

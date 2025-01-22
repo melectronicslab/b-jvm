@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/util/concurrent/atomic", AtomicLong, VMSupportsCS8,
                "()Z") {

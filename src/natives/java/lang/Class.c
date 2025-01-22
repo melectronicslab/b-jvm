@@ -1,6 +1,6 @@
 #include "cached_classdescs.h"
 
-#include <natives.h>
+#include <natives-dsl.h>
 
 static bjvm_attribute *find_attribute_by_kind(bjvm_classdesc *desc, bjvm_attribute_kind kind) {
   for (int i = 0; i < desc->attributes_count; ++i) {

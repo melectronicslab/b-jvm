@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("sun/nio/ch", NativeThread, init, "()V") {
   return value_null();

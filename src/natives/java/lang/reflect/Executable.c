@@ -1,5 +1,5 @@
 #include "bjvm.h"
-#include "natives.h"
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang/reflect", Executable, getParameters0, "()[Ljava/lang/reflect/Parameter;") {
   assert(argc == 0);

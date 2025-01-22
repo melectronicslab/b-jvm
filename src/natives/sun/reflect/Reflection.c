@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("jdk/internal/reflect", Reflection, getCallerClass,
                "()Ljava/lang/Class;") {

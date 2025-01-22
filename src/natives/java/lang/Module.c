@@ -1,7 +1,7 @@
 #include "objects.h"
 
 
-#include <natives.h>
+#include <natives-dsl.h>
 
 /**
 *Module module,

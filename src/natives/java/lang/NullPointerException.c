@@ -2,7 +2,7 @@
 #include "objects.h"
 
 
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang", NullPointerException, getExtendedNPEMessage, "()Ljava/lang/String;") {
 #define T ((struct bjvm_native_Throwable *)obj->obj)

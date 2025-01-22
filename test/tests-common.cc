@@ -8,7 +8,7 @@
 
 #include "tests-common.h"
 
-#include "natives.h"
+#include "catch2/catch_test_macros.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -243,7 +243,9 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
     bjvm_stack_value args[1] = {{.obj = thread->current_exception}}, result;
     thread->current_exception = nullptr;
     bjvm_thread_run_root(thread, method, args, &result);
-    heap_string read = AsHeapString(result.obj, on_oom);
+    heap_string read;
+    REQUIRE(!read_string_to_utf8(thread, &read, result.obj));
+
     std::cout << "Exception thrown!\n" << read.chars << '\n' << '\n';
     free_heap_str(read);
 

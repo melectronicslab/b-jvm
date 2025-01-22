@@ -1,5 +1,5 @@
 
-#include <natives.h>
+#include <natives-dsl.h>
 #include "cached_classdescs.h"
 
 #include <unistd.h>

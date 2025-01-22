@@ -19,7 +19,6 @@
 #include "arrays.h"
 #include "bjvm.h"
 #include "classloader.h"
-#include "natives.h"
 #include "objects.h"
 #include "util.h"
 
@@ -162,7 +161,7 @@ void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *metho
 // between bjvm_stack_value and bjvm_value
 static void make_handles_array(bjvm_thread *thread, const bjvm_method_descriptor *descriptor, bool is_static,
                                bjvm_stack_value *stack_args, bjvm_value *args) {
-  int argc = descriptor->args_count;
+  uint8_t argc = descriptor->args_count;
   int j = 0;
   if (!is_static) {
     args[j].handle = bjvm_make_handle(thread, stack_args[j].obj);
@@ -188,7 +187,7 @@ static void drop_handles_array(bjvm_thread *thread, const bjvm_cp_method *method
 }
 
 bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *method,
-                                         const bjvm_method_descriptor *descriptor, bjvm_stack_value *args, int argc) {
+                                         const bjvm_method_descriptor *descriptor, bjvm_stack_value *args, uint8_t argc) {
   bjvm_native_callback *native = method->native_handle;
   if (!native) {
     bjvm_unsatisfied_link_error(thread, method);
@@ -225,7 +224,7 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
   return frame;
 }
 
-bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, int argc) {
+bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc) {
   const bjvm_attribute_code *code = method->code;
   if (!code) {
     bjvm_abstract_method_error(thread, method);
@@ -278,7 +277,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
 //
 // Interrupt behavior:
 //   - No interrupts will occur as a result of executing this function.
-bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, int argc) {
+bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc) {
   assert(method != nullptr && "Method is null");
   bool argc_ok = argc == method->descriptor->args_count + !(method->access_flags & BJVM_ACCESS_STATIC);
   assert(argc_ok && "Wrong argc");
@@ -1861,7 +1860,7 @@ bjvm_async_run_ctx *bjvm_thread_async_run(bjvm_thread *thread, bjvm_cp_method *m
   }
 
   int nonstatic = !(method->access_flags & BJVM_ACCESS_STATIC);
-  int argc = method->descriptor->args_count + nonstatic;
+  uint8_t argc = method->descriptor->args_count + nonstatic;
 
   bjvm_stack_value *stack_top = (bjvm_stack_value *) (thread->frame_buffer + thread->frame_buffer_used);
   size_t args_size = sizeof(bjvm_stack_value) * argc;
@@ -2201,7 +2200,12 @@ heap_string debug_dump_string(bjvm_thread *thread, bjvm_obj_header *header) {
       bjvm_method_lookup(header->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, true);
   bjvm_stack_value result;
   bjvm_thread_run_root(thread, toString, (bjvm_stack_value[]){{.obj = header}}, &result);
-  return AsHeapString(result.obj, on_oom);
+
+  heap_string str;
+  if (read_string_to_utf8(thread, &str, result.obj)) {
+    UNREACHABLE();
+  }
+  return str;
 
 on_oom:
   UNREACHABLE();
@@ -2520,12 +2524,13 @@ DEFINE_ASYNC(bjvm_run_native) {
 
   if (!handle->async_ctx_bytes) {
     bjvm_stack_value result =
-        ((bjvm_sync_native_callback)handle->ptr)(thread, target_handle, native_args, argc);
+        handle->sync(thread, target_handle, native_args, argc);
     ASYNC_RETURN(result);
   }
 
   self->native_struct = malloc(handle->async_ctx_bytes);
-  AWAIT_FUTURE_EXPR(((bjvm_async_native_callback)handle->ptr)(self->native_struct, thread, target_handle, native_args, argc));
+  *self->native_struct = (async_natives_args){thread, target_handle, native_args, argc, 0};
+  AWAIT_FUTURE_EXPR(handle->async(self->native_struct));
   // We've laid out the context struct so that the result is always at offset 0
   bjvm_stack_value result = *(bjvm_stack_value *)self->native_struct;
   free(self->native_struct);

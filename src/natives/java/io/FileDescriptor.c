@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/io", FileDescriptor, initIDs, "()V") {
   return value_null();

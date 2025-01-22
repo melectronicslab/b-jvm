@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang", Object, hashCode, "()I") {
   return (bjvm_stack_value){.i = (int)obj->obj->mark_word};

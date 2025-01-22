@@ -1,7 +1,7 @@
 #ifndef IO_NATIVES_H
 #define IO_NATIVES_H
 
-#include <natives.h>
+#include <natives-dsl.h>
 #include <stddef.h>
 
 #define ThrowIOExceptionM(fmt, ...)                                                                                    \

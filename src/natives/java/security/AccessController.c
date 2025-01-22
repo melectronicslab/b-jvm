@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 static bjvm_stack_value impl(bjvm_thread *thread, bjvm_obj_header *target,
                              bjvm_obj_header *context) {

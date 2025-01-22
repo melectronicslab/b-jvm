@@ -2,9 +2,6 @@
 
 uint64_t ObjNextHashCode();
 
-/// Create a java.lang.String from a null-terminated C string.
-bjvm_obj_header *MakeJavaStringUtf8(bjvm_thread *thread, char const *chars);
-
 /// Create a java.lang.String from a slice string.
 bjvm_obj_header *MakeJavaStringSlice(bjvm_thread *thread, bjvm_utf8 slice);
 

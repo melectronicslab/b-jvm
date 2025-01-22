@@ -1,5 +1,5 @@
 #include <errno.h>
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/io", FileInputStream, initIDs, "()V") {
   return value_null();

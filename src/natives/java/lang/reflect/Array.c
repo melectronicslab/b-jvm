@@ -1,5 +1,5 @@
 #include "bjvm.h"
-#include "natives.h"
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang/reflect", Array, newArray,
                "(Ljava/lang/Class;I)Ljava/lang/Object;") {

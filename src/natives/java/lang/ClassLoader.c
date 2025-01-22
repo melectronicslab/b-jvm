@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang", ClassLoader, registerNatives, "()V") {
   return value_null();

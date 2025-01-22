@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("jdk/internal/misc", Signal, findSignal0, "(Ljava/lang/String;)I") {
   heap_string signal_name;

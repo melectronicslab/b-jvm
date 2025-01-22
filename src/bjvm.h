@@ -69,15 +69,27 @@ static inline bjvm_stack_value value_null() { return (bjvm_stack_value){.obj = n
 
 bool bjvm_instanceof(const bjvm_classdesc *o, const bjvm_classdesc *target);
 
-typedef bjvm_stack_value (*bjvm_sync_native_callback)(bjvm_thread *vm, bjvm_handle *obj, bjvm_value *args, int argc);
-typedef future_t (*bjvm_async_native_callback)(void *ctx, bjvm_thread *vm, bjvm_handle *obj, bjvm_value *args,
-                                               int argc);
+typedef struct {
+  struct {
+    bjvm_thread *thread;
+    bjvm_handle *obj;
+    bjvm_value *args;
+    uint8_t argc;
+  };
+  uint32_t stage;
+} async_natives_args;
+
+typedef bjvm_stack_value (*sync_native_callback)(bjvm_thread *vm, bjvm_handle *obj, bjvm_value *args, uint8_t argc);
+typedef future_t (*async_native_callback)(async_natives_args *args);
 
 typedef struct {
   // Number of bytes needed for the context struct allocation (0 if sync)
   size_t async_ctx_bytes;
-  // either bjvm_sync_native_callback or bjvm_async_native_callback
-  void *ptr;
+  // either sync_native_callback or async_native_callback
+  union {
+    sync_native_callback sync;
+    async_native_callback async;
+  };
 } bjvm_native_callback;
 
 // represents a native method somewhere in this binary
@@ -113,7 +125,7 @@ typedef struct bjvm_stack_frame bjvm_stack_frame;
 typedef struct bjvm_native_frame bjvm_native_frame;
 
 DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native,
-  locals(void *native_struct),
+  locals(async_natives_args *native_struct),
   arguments(bjvm_thread *thread; bjvm_stack_frame *frame),
   invoked_methods()
 );
@@ -145,7 +157,7 @@ DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
                   locals(
                     bjvm_interpret_t *interpreter_ctx;
                     bjvm_cp_method *method;
-                    int argc;
+                    uint8_t argc;
                     bjvm_stack_frame *frame;
                   ),
                   arguments(
@@ -444,11 +456,11 @@ void bjvm_drop_handle(bjvm_thread *thread, bjvm_handle *handle);
  * Create an uninitialized frame with space sufficient for the given method.
  * Raises a StackOverflowError if the frames are exhausted.
  */
-bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, int argc);
+bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc);
 
-bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, int argc);
+bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc);
 bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *method,
-                                       const bjvm_method_descriptor *descriptor, bjvm_stack_value *args, int argc);
+                                       const bjvm_method_descriptor *descriptor, bjvm_stack_value *args, uint8_t argc);
 struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjvm_method_descriptor *method);
 
 /**

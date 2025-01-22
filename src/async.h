@@ -12,6 +12,8 @@ extern "C" {
 #include "util.h"
 #include <assert.h>
 #include <stdint.h>
+#include <util.h>
+#include <stdint.h>
 
 typedef enum { FUTURE_NOT_READY, FUTURE_READY } future_status;
 
@@ -92,7 +94,7 @@ template <typename T> using pick_or_zero_sized_t = typename pick_or_zero_sized<T
   future_t name(name##_t *self);                                                                                       \
   struct name##_s {                                                                                                    \
     FixTypeSize(struct name##_args) args;                                                                              \
-    int _state;                                                                                                        \
+    uint32_t _state;                                                                                                        \
     locals;                                                                                                            \
     FixTypeSize(union name##_invoked_async_methods) invoked_async_methods;                                             \
   };
@@ -122,7 +124,8 @@ template <typename T> T ZeroInternalState_(T t) {
 #define DEFINE_ASYNC_SL(name, start_idx)                                                                               \
   future_t name(name##_t *self) {                                                                                      \
     assert(self);                                                                                                      \
-    [[maybe_unused]] DoArgsDecl(name);                                                                                 \
+    _DECLARE_CACHED_STATE(name);                                                                                       \
+    _RELOAD_CACHED_STATE();                                                                                            \
     start_counter(label_counter, (start_idx) + 1);                                                                     \
     self->_state = (self->_state == 0) ? (start_idx) : self->_state;                                                   \
     switch (self->_state) {                                                                                            \
@@ -136,6 +139,15 @@ template <typename T> T ZeroInternalState_(T t) {
 /// another switch/case
 #define DEFINE_ASYNC(name) DEFINE_ASYNC_SL(name, 0)
 
+/// reload the cached state from the self pointer
+#define _RELOAD_CACHED_STATE()                                                                                         \
+  do {                                                                                                                 \
+    args = &self->args;                                                                                                \
+  } while (0)
+
+/// used to cache state on the stack for easy access -- must be reloaded in _RELOAD_CACHED_STATE
+#define _DECLARE_CACHED_STATE(method_name) DoArgsDecl(method_name);
+
 /// Begins a block of code that will be executed asynchronously from inside
 /// another block. DO NOT USE STACK VARIABLES FROM BEFORE AWAIT() AFTER AWAIT.
 #define AWAIT_INNER(context, method_name, ...)                                                                         \
@@ -146,7 +158,9 @@ template <typename T> T ZeroInternalState_(T t) {
     PUSH_PRAGMA("GCC diagnostic ignored \"-Wimplicit-fallthrough\"");                                                  \
     PUSH_PRAGMA("GCC diagnostic ignored \"-Wswitch\"");                                                                \
   case state_index:                                                                                                    \
-    args = &self->args;                                                                                                \
+    /* if we've fallen through to this point, we don't need to reload the state */                                     \
+    if (unlikely(self->_state == state_index))                                                                         \
+      _RELOAD_CACHED_STATE();                                                                                          \
     future_t __fut = method_name(context);                                                                             \
     if (__fut.status == FUTURE_NOT_READY) {                                                                            \
       self->_state = state_index;                                                                                      \
@@ -160,7 +174,9 @@ template <typename T> T ZeroInternalState_(T t) {
   do {                                                                                                                 \
     get_counter_value(label_counter, state_index);                                                                     \
   case state_index:                                                                                                    \
-    args = &self->args;                                                                                                \
+    /* if we've fallen through to this point, we don't need to reload the state */                                     \
+    if (unlikely(self->_state == state_index))                                                                         \
+      _RELOAD_CACHED_STATE();                                                                                          \
     future_t __fut = (expr);                                                                                           \
     if (__fut.status == FUTURE_NOT_READY) {                                                                            \
       self->_state = state_index;                                                                                      \

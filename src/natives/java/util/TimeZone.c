@@ -1,5 +1,5 @@
 
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/util", TimeZone, getSystemTimeZoneID,
                "(Ljava/lang/String;)Ljava/lang/String;") {

@@ -1,5 +1,5 @@
 #include "bjvm.h"
-#include <natives.h>
+#include <natives-dsl.h>
 
 // TODO make these async
 DECLARE_NATIVE("java/lang/invoke", MethodHandle, linkToVirtual,

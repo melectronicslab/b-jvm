@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("jdk/internal/misc", CDS, isDumpingClassList0, "()Z") { return (bjvm_stack_value) { .i = 0 }; }
 DECLARE_NATIVE("jdk/internal/misc", CDS, isDumpingArchive0, "()Z") { return (bjvm_stack_value) { .i = 0 }; }

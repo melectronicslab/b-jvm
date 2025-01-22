@@ -1,9 +1,12 @@
-#ifndef BJVM_NATIVES_H
-#define BJVM_NATIVES_H
+#ifndef NATIVES_DSL_H
+#define NATIVES_DSL_H
 
 #include "arrays.h"
 #include "bjvm.h"
+#include <natives-dsl.h>
 #include <stddef.h>
+
+void _push_bjvm_native(bjvm_utf8 class_name, bjvm_utf8 method_name, bjvm_utf8 signature, bjvm_native_callback native);
 
 #define ThrowLangException(exception_name)                                                                             \
   bjvm_raise_vm_exception(thread, STR("java/lang/" #exception_name), null_str())
@@ -59,9 +62,9 @@ static inline void StoreField(bjvm_obj_header *thing, bjvm_utf8 field_name, bjvm
   bjvm_set_field(thing, field, value);
 }
 
-#define GenerateStoreField(type_cap, type, stack_field, desc)                                                                \
+#define GenerateStoreField(type_cap, type, stack_field, desc)                                                          \
   static inline void StoreField##type_cap(bjvm_obj_header *thing, bjvm_utf8 name, type value) {                        \
-    StoreField(thing, name, (bjvm_stack_value) {.stack_field = value }, STR(#desc));                                                                                    \
+    StoreField(thing, name, (bjvm_stack_value){.stack_field = value}, STR(#desc));                                     \
   }
 
 static inline void StoreFieldInt(bjvm_obj_header *thing, bjvm_utf8 name, int32_t value) {
@@ -77,51 +80,82 @@ static inline void StoreFieldLong(bjvm_obj_header *thing, bjvm_utf8 name, int64_
 
 #define HandleIsNull(expr) ((expr)->obj == nullptr)
 
+#define force_expand_args(macro_name, ...) macro_name(__VA_ARGS__)
+
 extern size_t bjvm_native_count;
 extern size_t bjvm_native_capacity;
 extern bjvm_native_t *bjvm_natives;
 
-static void _push_bjvm_native(bjvm_native_t native) {
-  if (bjvm_native_count == bjvm_native_capacity) {
-    bjvm_native_capacity = bjvm_native_capacity ? bjvm_native_capacity * 2 : 16;
-    bjvm_native_t *bjvm_natives_ = (bjvm_native_t *)realloc(bjvm_natives, bjvm_native_capacity * sizeof(bjvm_native_t));
-    assert(bjvm_natives_ != nullptr);
-
-    bjvm_natives = bjvm_natives_;
-  }
-  bjvm_natives[bjvm_native_count++] = native;
-}
-
 #define DECLARE_NATIVE_CALLBACK(class_name_, method_name_, modifier)                                                   \
-  static bjvm_stack_value bjvm_native_##class_name_##_##method_name_##_cb##modifier(                                   \
+  static bjvm_stack_value class_name_##_##method_name_##_cb##modifier(                                                 \
       [[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] bjvm_handle *obj, [[maybe_unused]] bjvm_value *args,      \
-      [[maybe_unused]] int argc)
+      [[maybe_unused]] uint8_t argc)
 
-#define DECLARE_ASYNC_NATIVE_CALLBACK(class_name_, method_name_, modifier)                                             \
-  static bjvm_interpreter_result_t bjvm_native_##class_name_##_##method_name_##_cb##modifier(                          \
-      [[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] bjvm_handle *obj, [[maybe_unused]] bjvm_value *args,      \
-      [[maybe_unused]] int argc, [[maybe_unused]] bjvm_stack_value *result, [[maybe_unused]] void **sm_state)
-
-#define DEFINE_NATIVE_INFO(package_path, class_name_, method_name_, method_descriptor_, modifier, async)               \
-  __attribute__((constructor)) static void bjvm_native_##class_name_##_##method_name_##_init##modifier() {             \
-    _push_bjvm_native(                                                                                                 \
-        (bjvm_native_t){.class_path = STR(package_path "/" #class_name_),                                              \
-                        .method_name = STR(#method_name_),                                                             \
-                        .method_descriptor = STR(method_descriptor_),                                                  \
-                        .callback = {async, &bjvm_native_##class_name_##_##method_name_##_cb##modifier}});             \
+#define create_init_constructor(package_path, class_name_, method_name_, method_descriptor_, modifier, async_sz, variant)       \
+  __attribute__((constructor)) static void class_name_##_##method_name_##_init##modifier() {                           \
+    _push_bjvm_native(STR(package_path "/" #class_name_), STR(#method_name_), STR(method_descriptor_),                 \
+                      (bjvm_native_callback){.async_ctx_bytes = async_sz, .variant = (variant##_native_callback)&class_name_##_##method_name_##_cb##modifier});                 \
   }
 
-#define DECLARE_NATIVE0(DECLARE, package_path, class_name_, method_name_, method_descriptor_, modifier, async)         \
-  DECLARE(class_name_, method_name_, modifier);                                                                        \
-  DEFINE_NATIVE_INFO(package_path, class_name_, method_name_, method_descriptor_, modifier, async)                     \
-  DECLARE(class_name_, method_name_, modifier)
+#define DECLARE_NATIVE_(package_path, class_name_, method_name_, method_descriptor_, modifier)                         \
+  DECLARE_NATIVE_CALLBACK(class_name_, method_name_, modifier);                                                        \
+  create_init_constructor(package_path, class_name_, method_name_, method_descriptor_, modifier, 0, sync)                    \
+      DECLARE_NATIVE_CALLBACK(class_name_, method_name_, modifier)
 
 #define DECLARE_NATIVE(package_path, class_name_, method_name_, method_descriptor_)                                    \
-  DECLARE_NATIVE0(DECLARE_NATIVE_CALLBACK, package_path, class_name_, method_name_, method_descriptor_, __COUNTER__,   \
-                  false)
+  force_expand_args(DECLARE_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, __COUNTER__)
 
-#define DECLARE_ASYNC_NATIVE(package_path, class_name_, method_name_, method_descriptor_)                              \
-  DECLARE_NATIVE0(DECLARE_ASYNC_NATIVE_CALLBACK, package_path, class_name_, method_name_, method_descriptor_,          \
-                  __COUNTER__, true)
+#define offsetof(st, m) \
+    ((size_t)((char *)&((st *)0)->m - (char *)0))
 
-#endif // BJVM_NATIVES_H
+#define check_field_offset(m_name, member_a, member_b) \
+  _Static_assert(offsetof(struct m_name##_s, member_a) == offsetof(async_natives_args, member_b), #member_a " mismatch " #member_b);
+
+#define create_async_declaration(name, locals, async_methods)                                                          \
+  DECLARE_ASYNC(                                                                                                       \
+    bjvm_stack_value, \
+    name, \
+    locals,\
+    arguments(bjvm_thread *thread; bjvm_handle *obj; bjvm_value *args; uint8_t argc), \
+    async_methods\
+  ); \
+  check_field_offset(name, args.thread, thread); \
+  check_field_offset(name, args.obj, obj); \
+  check_field_offset(name, args.args, args); \
+  check_field_offset(name, args.argc, argc); \
+  check_field_offset(name, _state, stage);
+
+
+#undef _DECLARE_CACHED_STATE
+#undef _RELOAD_CACHED_STATE
+
+#define _DECLARE_CACHED_STATE(_)                                                                                       \
+  bjvm_thread *thread = self->args.thread;                                                                             \
+  bjvm_value *args = self->args.args;                                                                                  \
+  bjvm_handle *obj = self->args.obj;                                                                                   \
+  uint8_t argc = self->args.argc;
+
+#define _RELOAD_CACHED_STATE()                                                                                         \
+  do {                                                                                                                 \
+    thread = self->args.thread;                                                                                        \
+    args = self->args.args;                                                                                            \
+    obj = self->args.obj;                                                                                              \
+    argc = self->args.argc;                                                                                            \
+  } while (0)
+
+#define DECLARE_ASYNC_NATIVE_(package_path, class_name_, method_name_, method_descriptor_, locals,                     \
+                              invoked_async_methods, modifier, start_index)                                            \
+  create_async_declaration(class_name_##_##method_name_##_cb##modifier, locals, invoked_async_methods);                \
+  create_init_constructor(package_path, class_name_, method_name_, method_descriptor_, modifier,                       \
+                          sizeof(struct class_name_##_##method_name_##_cb##modifier##_s), async);                             \
+  DEFINE_ASYNC_SL(class_name_##_##method_name_##_cb##modifier, start_index)
+
+#define DECLARE_ASYNC_NATIVE_SL(package_path, class_name_, method_name_, method_descriptor_, locals,                   \
+                                invoked_async_methods, start_index)                                                    \
+  force_expand_args(DECLARE_ASYNC_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, locals,        \
+                    invoked_async_methods, __COUNTER__, start_index)
+
+#define DECLARE_ASYNC_NATIVE(package_path, class_name_, method_name_, method_descriptor_, locals,                      \
+                             invoked_async_methods)                                                                    \
+  DECLARE_ASYNC_NATIVE_SL(package_path, class_name_, method_name_, method_descriptor_, locals, invoked_async_methods, 0)
+#endif

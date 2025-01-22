@@ -1,5 +1,5 @@
 #include <math.h>
-#include <natives.h>
+#include <natives-dsl.h>
 #include <objects.h>
 #include <unistd.h>
 #include <util.h>

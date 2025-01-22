@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("sun/reflect", NativeMethodAccessorImpl, invoke0,
                "(Ljava/lang/reflect/Method;Ljava/lang/Object;[Ljava/lang/"

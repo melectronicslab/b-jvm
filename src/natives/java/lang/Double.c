@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang", Double, doubleToRawLongBits, "(D)J") {
   return (bjvm_stack_value){.l = args[0].l};

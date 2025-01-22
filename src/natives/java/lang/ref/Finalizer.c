@@ -1,4 +1,4 @@
-#include <natives.h>
+#include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang/ref", Finalizer, isFinalizationEnabled, "()Z") {
   return (bjvm_stack_value){.i = 0};

@@ -1,6 +1,6 @@
 #include "analysis.h"
 
-#include <natives.h>
+#include <natives-dsl.h>
 
 bool frame_mentions_object(bjvm_stack_frame *raw_frame,
                            const bjvm_obj_header *obj) {
