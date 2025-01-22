@@ -73,8 +73,9 @@ DEFINE_ASYNC(init_cached_classdescs) {
 
 uint16_t stack_depth(const bjvm_plain_frame *frame) {
   assert(frame->method && "Can't get stack depth of fake frame");
-  bjvm_code_analysis *analy = frame->method->code_analysis;
   int pc = frame->program_counter;
+  if (pc == 0) return 0;
+  bjvm_code_analysis *analy = frame->method->code_analysis;
   assert(pc < analy->insn_count);
   return analy->insn_index_to_stack_depth[pc];
 }

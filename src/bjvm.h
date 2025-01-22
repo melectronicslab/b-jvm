@@ -445,6 +445,9 @@ void bjvm_drop_handle(bjvm_thread *thread, bjvm_handle *handle);
 bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, int argc);
 
 bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, int argc);
+bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *method,
+                                       const bjvm_method_descriptor *descriptor, bjvm_stack_value *args, int argc);
+struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjvm_method_descriptor *method);
 
 /**
  * Pop the topmost frame from the stack, optionally passing a pointer as a debug
