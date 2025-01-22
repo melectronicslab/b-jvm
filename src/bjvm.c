@@ -2207,7 +2207,7 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
 #define target (args->target)
 #define provider_mt (args->provider_mt)
 #define thread (args->thread)
-#define sd (args->sd)
+#define sd (args->sd_)
 
   struct bjvm_native_MethodHandle *mh = (void *)target;
   struct bjvm_native_MethodType *targ = (void *)mh->type;

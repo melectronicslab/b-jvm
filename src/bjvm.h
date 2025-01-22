@@ -151,7 +151,7 @@ DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
                   arguments(
                     bjvm_thread *thread;
                     bjvm_plain_frame *frame;
-                    uint16_t *sd;
+                    uint16_t *sd_;
                     bjvm_cp_method *method;
                     struct bjvm_native_MethodType *provider_mt;
                     bjvm_obj_header *target;
