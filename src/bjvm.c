@@ -574,6 +574,14 @@ void bjvm_raise_exception_object(bjvm_thread *thread, bjvm_obj_header *obj) {
   printf("Raising exception of type %s\n", obj->descriptor->name);
 #endif
 
+#define T ((struct bjvm_native_Throwable *)obj)
+  if (thread->frames_count > 0) {
+    bjvm_stack_frame *frame = thread->frames[thread->frames_count - 1];
+    if (!bjvm_is_frame_native(frame)) {
+      T->faulting_insn = frame->plain.program_counter;
+      T->method = frame->plain.method;
+    }
+  }
   thread->current_exception = obj;
 }
 
