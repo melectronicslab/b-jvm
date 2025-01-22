@@ -244,7 +244,9 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
 
   // Copy in the arguments
   if (likely(argc)) {
-    memcpy(frame->plain.values + code->max_stack, args, argc * sizeof(bjvm_stack_value));
+    for (int i = 0, j = code->max_stack; i < argc; ++i, ++j) {
+      frame->plain.values[j] = args[i];
+    }
   }
 
   return frame;
