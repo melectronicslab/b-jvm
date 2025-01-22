@@ -88,6 +88,16 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   double: jmp_table_double \
 )
 
+#ifdef __aarch64__
+#define SELECT_TABLE_ALIGNED(tos) ({ \
+  void *addr; \
+  asm("adrp %0, %1@PAGE\n" : "=r"(addr) : "S"(&SELECT_TABLE(tos))); \
+  (bjvm_stack_value (**)(ARGS_VOID)) addr; \
+})
+#else
+#define SELECT_TABLE_ALIGNED(tos) SELECT_TABLE(tos)
+#endif
+
 #define CONVERT(tos) _Generic(tos, \
   bjvm_obj_header *: (int64_t)tos, \
   default: tos \
@@ -99,9 +109,9 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 
 // Jump to the instruction at pc, using the given top-of-stack value
 #define JMP(tos) WITH_UNDEF(MUSTTAIL \
-  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sd, CVTED(tos));)
+  return SELECT_TABLE_ALIGNED(tos)[insns[0].kind](thread, frame, insns, pc, sd, CVTED(tos));)
 // Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sd, CVTED(tos));)
+#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE_ALIGNED(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sd, CVTED(tos));)
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sd = 0, only that
 // all stack values are in memory (rather than in a register)
@@ -890,23 +900,23 @@ static bjvm_stack_value arraylength_impl_int(ARGS_INT) {
 #define ARRAY_LOAD(which, load, type) \
 static bjvm_stack_value which##_impl_int(ARGS_INT) { \
   DEBUG_CHECK \
-bjvm_obj_header *array = (bjvm_obj_header *)(sd - 2)->obj; \
-int index = (int)tos; \
-if (unlikely(!array)) { \
-  SPILL(tos); \
-  bjvm_null_pointer_exception(thread); \
-  return value_null(); \
-} \
-int length = *ArrayLength(array); \
-if (unlikely(index < 0 || index >= length)) { \
-  SPILL(tos); \
-  bjvm_array_index_oob_exception(thread, index, length); \
-  return value_null(); \
-} \
-sd--; \
-type cow = load(array, index); \
-NEXT(cow) \
-}
+  bjvm_obj_header *array = (bjvm_obj_header *)(sd - 2)->obj; \
+  int index = (int)tos; \
+  if (unlikely(!array)) { \
+    SPILL(tos); \
+    bjvm_null_pointer_exception(thread); \
+    return value_null(); \
+  } \
+  int length = *ArrayLength(array); \
+  if (unlikely(index < 0 || index >= length)) { \
+    SPILL(tos); \
+    bjvm_array_index_oob_exception(thread, index, length); \
+    return value_null(); \
+  } \
+  sd--; \
+  type cow = load(array, index); \
+  NEXT(cow) \
+  }
 
 ARRAY_LOAD(iaload, IntArrayLoad, int)
 ARRAY_LOAD(laload, LongArrayLoad, int64_t)
@@ -2146,7 +2156,9 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
 
 /** Jump table definitions. Must be kept in sync with the enum order. */
 
-static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
+#define PAGE_ALIGN _Alignas(4096)
+
+PAGE_ALIGN static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_void,
   nullptr /* aaload_impl_void */,
   nullptr /* aastore_impl_void */,
@@ -2342,7 +2354,7 @@ static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
   nullptr /* putstatic_L_impl_void */,
 };
 
-static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
+PAGE_ALIGN static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_double,
   nullptr /* aaload_impl_double */,
   nullptr /* aastore_impl_double */,
@@ -2538,7 +2550,7 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
   nullptr, /* putstatic_L_impl_double */
 };
 
-static bjvm_stack_value (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
+PAGE_ALIGN static bjvm_stack_value (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_int,
   aaload_impl_int,
   aastore_impl_int,
@@ -2734,7 +2746,7 @@ static bjvm_stack_value (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
   putstatic_L_impl_int,
 };
 
-static bjvm_stack_value (*jmp_table_float[MAX_INSN_KIND])(ARGS_VOID) = {
+PAGE_ALIGN static bjvm_stack_value (*jmp_table_float[MAX_INSN_KIND])(ARGS_VOID) = {
   nop_impl_float,
   nullptr /* aaload_impl_float */,
   nullptr /* aastore_impl_float */,
