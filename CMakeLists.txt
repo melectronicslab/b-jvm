@@ -37,6 +37,7 @@ elseif (APPLE)
 else ()
     set(CMAKE_C_FLAGS "-O2 -fms-extensions -Wall -Wextra -g -Werror=incompatible-pointer-types -march=native -fno-strict-aliasing -lm")
     set(CMAKE_CXX_FLAGS "-O2 -fms-extensions -Wall -g -fopenmp -march=native -Werror=incompatible-pointer-types -fno-strict-aliasing -lm")
+
     set(EmscriptenFlags "")
 endif ()
 
@@ -75,6 +76,8 @@ target_link_libraries(bjvm PRIVATE zlibstatic)
 else()
 target_link_libraries(bjvm PRIVATE z)
 endif()
+
+target_link_options(bjvm PRIVATE "LINKER:-lm")
 
 add_executable(bjvm_async_test src/bin/async.c)  # for now
 target_link_libraries(bjvm_async_test PRIVATE bjvm)
