@@ -37,7 +37,6 @@ elseif (APPLE)
 else ()
     set(CMAKE_C_FLAGS "-O2 -fms-extensions -Wall -Wextra -g -Werror=incompatible-pointer-types -march=native -fno-strict-aliasing -lm")
     set(CMAKE_CXX_FLAGS "-O2 -fms-extensions -Wall -g -fopenmp -march=native -Werror=incompatible-pointer-types -fno-strict-aliasing -lm")
-
     set(EmscriptenFlags "")
 endif ()
 
@@ -49,7 +48,7 @@ if (TRUE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNDEBUG")
 endif ()
 
-if (FALSE AND NOT EMSCRIPTEN)
+if (TRUE AND NOT EMSCRIPTEN)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address,undefined")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined")
 endif ()
