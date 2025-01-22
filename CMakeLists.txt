@@ -77,8 +77,6 @@ else()
 target_link_libraries(bjvm PRIVATE z)
 endif()
 
-target_link_options(bjvm PRIVATE "LINKER:-lm")
-
 add_executable(bjvm_async_test src/bin/async.c)  # for now
 target_link_libraries(bjvm_async_test PRIVATE bjvm)
 

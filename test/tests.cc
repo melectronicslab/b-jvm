@@ -292,7 +292,6 @@ pi * pi is 9.8696044010893586188344909998761511351995377040468477720717813373783
 
   for (int i = 0; i < 10; ++i)
     expected += expected; // repeat 1024 times
-
   auto result = run_test_case("test_files/bench_big_decimal/");
   REQUIRE(result.stdout_ == expected);
 }

@@ -781,7 +781,6 @@ FLOAT_BIN_OP(add, a + b, float, double)
 FLOAT_BIN_OP(sub, a - b, float, double)
 FLOAT_BIN_OP(mul, a * b, float, double)
 FLOAT_BIN_OP(div, a / b, float, double)
-FLOAT_BIN_OP(rem, fmod(a, b), float, double)
 FLOAT_BIN_OP(cmpg, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : 1)), int, int)
 FLOAT_BIN_OP(cmpl, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : -1)), int, int)
 
@@ -1151,6 +1150,7 @@ static bjvm_stack_value new_impl_void(ARGS_VOID) {
 
   insn->kind = bjvm_insn_new_resolved;
   insn->classdesc = info->classdesc;
+
   JMP_VOID
 }
 FORWARD_TO_NULLARY(new)
@@ -1384,9 +1384,14 @@ static bjvm_stack_value invokespecial_impl_void(ARGS_VOID) {
     return value_null();
   }
 
-  insn->kind = bjvm_insn_invokespecial_resolved;
-  insn->ic = candidate;
-
+  // If this is the <init> method of Object, make it a nop
+  if (utf8_equals(hslc(candidate->my_class->name), "java/lang/Object") &&
+    utf8_equals(candidate->name, "<init>")) {
+    insn->kind = bjvm_insn_pop;
+  } else {
+    insn->kind = bjvm_insn_invokespecial_resolved;
+    insn->ic = candidate;
+  }
   JMP_VOID
 }
 FORWARD_TO_NULLARY(invokespecial)
@@ -2169,7 +2174,7 @@ static bjvm_stack_value (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
   nullptr /* lxor_impl_void */,
   nullptr /* monitorenter_impl_void */,
   nullptr /* monitorexit_impl_void */,
-  nullptr /* pop_impl_void */,
+  pop_impl_void,
   nullptr /* pop2_impl_void */,
   return_impl_void,
   nullptr /* saload_impl_void */,
@@ -2300,7 +2305,7 @@ static bjvm_stack_value (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE) = {
   ddiv_impl_double,
   dmul_impl_double,
   dneg_impl_double,
-  drem_impl_double,
+  nullptr /* drem_impl_double */,
   dreturn_impl_double,
   dsub_impl_double,
   dup_impl_double,
@@ -2713,7 +2718,7 @@ static bjvm_stack_value (*jmp_table_float[MAX_INSN_KIND])(ARGS_FLOAT) = {
   fdiv_impl_float,
   fmul_impl_float,
   fneg_impl_float,
-  frem_impl_float,
+  nullptr /* frem_impl_float */,
   freturn_impl_float,
   fsub_impl_float,
   nullptr /* i2b_impl_float */,
