@@ -521,7 +521,6 @@ DECLARE_ASYNC(bjvm_stack_value, run_thread,
     bjvm_thread *thread;
     bjvm_cp_method *method;
     bjvm_stack_value *args;
-    bjvm_stack_value *result;
   ),
   invoked_methods(invoked_method(bjvm_interpret))
 );

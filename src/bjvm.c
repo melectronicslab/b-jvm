@@ -1922,6 +1922,20 @@ done:
   return ret;
 }
 
+DEFINE_ASYNC(run_thread) {
+#define method args->method
+#define thread args->thread
+
+  int nonstatic = !(method->access_flags & BJVM_ACCESS_STATIC);
+  uint8_t argc = method->descriptor->args_count + nonstatic;
+
+  AWAIT(bjvm_interpret, thread, bjvm_push_frame(thread, method, args->args, argc));
+
+  ASYNC_END(get_async_result(bjvm_interpret));
+#undef method
+#undef thread
+}
+
 int bjvm_thread_run_root(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
                          bjvm_stack_value *result) {
   bjvm_stack_value blah;

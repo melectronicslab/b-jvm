@@ -94,7 +94,7 @@ template <typename T> using pick_or_zero_sized_t = typename pick_or_zero_sized<T
   future_t name(name##_t *self);                                                                                       \
   struct name##_s {                                                                                                    \
     FixTypeSize(struct name##_args) args;                                                                              \
-    uint32_t _state;                                                                                                        \
+    uint32_t _state;                                                                                                   \
     locals;                                                                                                            \
     FixTypeSize(union name##_invoked_async_methods) invoked_async_methods;                                             \
   };
@@ -121,16 +121,21 @@ template <typename T> T ZeroInternalState_(T t) {
 /// for cases. Should be followed by a block containing the code of the async
 /// function.  MUST end with ASYNC_END, or ASYNC_END_VOID if the function is
 /// guaranteed to call ASYNC_RETURN() before it reaches the end statement.
-#define DEFINE_ASYNC_SL(name, start_idx)                                                                               \
+#define DEFINE_ASYNC_SL(name, start_idx) DEFINE_ASYNC_SL_(cached_state_prelude, name, start_idx)
+
+#define DEFINE_ASYNC_SL_(prelude, name, start_idx)                                                                     \
   future_t name(name##_t *self) {                                                                                      \
     assert(self);                                                                                                      \
-    _DECLARE_CACHED_STATE(name);                                                                                       \
-    _RELOAD_CACHED_STATE();                                                                                            \
+    prelude(name);                                                                                                     \
     start_counter(label_counter, (start_idx) + 1);                                                                     \
     self->_state = (self->_state == 0) ? (start_idx) : self->_state;                                                   \
     switch (self->_state) {                                                                                            \
     case (start_idx):                                                                                                  \
       ZeroInternalState(*self);
+
+#define cached_state_prelude(name)                                                                                     \
+  _DECLARE_CACHED_STATE(name);                                                                                         \
+  _RELOAD_CACHED_STATE();
 
 /// Defines a value-returning async function. Should be followed by a block
 /// containing the code of the async function.  MUST end with ASYNC_END, or
@@ -148,9 +153,14 @@ template <typename T> T ZeroInternalState_(T t) {
 /// used to cache state on the stack for easy access -- must be reloaded in _RELOAD_CACHED_STATE
 #define _DECLARE_CACHED_STATE(method_name) DoArgsDecl(method_name);
 
+#define do_maybe_reload_state()                                                                                        \
+  if (unlikely(self->_state == state_index))                                                                           \
+    _RELOAD_CACHED_STATE();
+
 /// Begins a block of code that will be executed asynchronously from inside
 /// another block. DO NOT USE STACK VARIABLES FROM BEFORE AWAIT() AFTER AWAIT.
-#define AWAIT_INNER(context, method_name, ...)                                                                         \
+#define AWAIT_INNER(context, method_name, ...) AWAIT_INNER_(do_maybe_reload_state, context, method_name, __VA_ARGS__)
+#define AWAIT_INNER_(after_label, context, method_name, ...)                                                           \
   do {                                                                                                                 \
     get_counter_value(label_counter, state_index);                                                                     \
     (context)->_state = 0;                                                                                             \
@@ -159,8 +169,7 @@ template <typename T> T ZeroInternalState_(T t) {
     PUSH_PRAGMA("GCC diagnostic ignored \"-Wswitch\"");                                                                \
   case state_index:                                                                                                    \
     /* if we've fallen through to this point, we don't need to reload the state */                                     \
-    if (unlikely(self->_state == state_index))                                                                         \
-      _RELOAD_CACHED_STATE();                                                                                          \
+    after_label();                                                                                             \
     future_t __fut = method_name(context);                                                                             \
     if (__fut.status == FUTURE_NOT_READY) {                                                                            \
       self->_state = state_index;                                                                                      \
