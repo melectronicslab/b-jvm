@@ -1998,27 +1998,28 @@ int bjvm_resolve_field(bjvm_thread *thread, bjvm_cp_field_info *info) {
 void store_stack_value(void *field_location, bjvm_stack_value value, bjvm_type_kind kind) {
   switch (kind) {
   case BJVM_TYPE_KIND_BOOLEAN:
+    assert((value.i == 0) || (value.i == 1));
   case BJVM_TYPE_KIND_BYTE:
-    *(int8_t *)field_location = (int8_t)value.i;
+    *(jbyte *)field_location = (jbyte)value.i;
     break;
   case BJVM_TYPE_KIND_CHAR:
   case BJVM_TYPE_KIND_SHORT:
-    *(int16_t *)field_location = (int16_t)value.i;
+    *(jshort *)field_location = (int16_t)value.i;
     break;
   case BJVM_TYPE_KIND_FLOAT:
-    *(float *)field_location = value.f;
+    *(jfloat *)field_location = value.f;
     break;
   case BJVM_TYPE_KIND_DOUBLE:
-    *(double *)field_location = value.d;
+    *(jdouble *)field_location = value.d;
     break;
   case BJVM_TYPE_KIND_INT:
-    *(int *)field_location = value.i;
+    *(jint *)field_location = value.i;
     break;
   case BJVM_TYPE_KIND_LONG:
-    *(int64_t *)field_location = value.l;
+    *(jlong *)field_location = value.l;
     break;
   case BJVM_TYPE_KIND_REFERENCE:
-    *(void **)field_location = value.obj;
+    *(jobject *)field_location = value.obj;
     break;
   case BJVM_TYPE_KIND_VOID:
   default:

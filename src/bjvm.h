@@ -30,16 +30,29 @@ typedef struct bjvm_obj_header bjvm_obj_header;
 #endif
 
 /**
+ * These typedefs are to be used for any values that a Java program might see.  These mimick JNI types.
+ */
+typedef int32_t jint;
+typedef int64_t jlong;
+typedef float jfloat;
+typedef double jdouble;
+typedef bool jboolean;
+typedef int8_t jbyte;
+typedef int16_t jshort;
+typedef uint16_t jchar;
+typedef bjvm_obj_header *jobject;
+
+/**
  * For simplicity, we always store local variables/stack variables as 64 bits,
  * and only use part of them in the case of integer or float (or, in 32-bit
  * mode, reference) values.
  */
 typedef union {
-  int64_t l;
-  int32_t i; // used for all integer types except long, plus boolean
-  float f;
-  double d;
-  bjvm_obj_header *obj; // reference type
+  jlong l;
+  jint i; // used for all integer types except long, plus boolean
+  jfloat f;
+  jdouble d;
+  jobject obj; // reference type
 } bjvm_stack_value;
 
 // A thread-local handle to an underlying object. Used in case the object is

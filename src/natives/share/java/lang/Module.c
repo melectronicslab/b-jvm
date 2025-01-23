@@ -14,7 +14,7 @@ DECLARE_NATIVE("java/lang", Module, defineModule0,
   "(Ljava/lang/Module;ZLjava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)V") {
   assert(argc == 5);
 
-  bjvm_obj_header *name = LoadFieldObject(args[0].handle->obj, "name", "Ljava/lang/String;");
+  bjvm_obj_header *name = LoadFieldObject(args[0].handle->obj, "java/lang/String", "name");
   heap_string s;
   if (read_string_to_utf8(thread, &s, name)) {
     return value_null();  // oom

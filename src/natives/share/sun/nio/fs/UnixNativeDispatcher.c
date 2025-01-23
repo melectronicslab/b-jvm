@@ -50,9 +50,8 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
 
   bjvm_obj_header *attrs = args[1].handle->obj;
 
-#define MapAttrLong(name, value) StoreFieldLong(attrs, STR(#name), value)
-#define MapAttrInt(name, value) StoreFieldInt(attrs, STR(#name), value)
-
+#define MapAttrLong(name, value) StoreFieldLong(attrs, (#name), value)
+#define MapAttrInt(name, value) StoreFieldInt(attrs, (#name), value)
   MapAttrInt(st_mode, st.st_mode);
   MapAttrLong(st_ino, st.st_ino);
   MapAttrLong(st_dev, st.st_dev);

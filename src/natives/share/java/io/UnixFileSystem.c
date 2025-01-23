@@ -24,7 +24,7 @@ DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
   }
 
   // todo: replace with getPath when async natives work
-  bjvm_obj_header *path = LoadFieldObject(args[0].handle->obj, "path", "Ljava/lang/String;");
+  bjvm_obj_header *path = LoadFieldObject(args[0].handle->obj, "java/lang/String", "path");
   heap_string str = AsHeapString(path, exception);
 
   boolean_attributes attrs;
@@ -95,7 +95,7 @@ DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0,
 DECLARE_NATIVE("java/io", UnixFileSystem, getLastModifiedTime,
                "(Ljava/io/File;)J") {
   bjvm_obj_header *file_obj = args[0].handle->obj;
-  bjvm_obj_header *path = LoadFieldObject(file_obj, "path", "Ljava/lang/String;");
+  bjvm_obj_header *path = LoadFieldObject(file_obj, "java/lang/String", "path");
 
   heap_string path_str = AsHeapString(path, on_oom);
 

@@ -88,6 +88,7 @@ add_executable(tests test/tests.cc test/arrays-test.cc test/tests-common.cc test
         test/async-tests.cc
         test/analysis-tests.cc
         test/classpath-tests.cc
+        test/natives-test.cc
         test/benches.cc)
 target_link_libraries(tests PRIVATE bjvm)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
