@@ -39,10 +39,10 @@
 #define pc pc_
 #define tos tos_
 
-#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, int64_t arg_1, float arg_2, double arg_3
-#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, int64_t tos_, float arg_2, double arg_3
-#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, int64_t arg_1, float arg_2, double tos_
-#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, int64_t arg_1, float tos_, double arg_3
+#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
+#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t tos_, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double tos_
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3
 #else
 #define sp (*sp_)
 #define pc (*pc_)
@@ -88,20 +88,37 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   double: jmp_table_double \
 )
 
-#define CONVERT(tos) _Generic(tos, \
+#define TOS_TYPE(tos) (_Generic(tos, \
+  float: TOS_FLOAT, \
+  double: TOS_DOUBLE, \
+  default: TOS_INT \
+))
+
+// Convert the particular representation of the TOS to the general representation.
+#define CONVERT_TOS(tos) _Generic(tos, \
   bjvm_obj_header *: (int64_t)tos, \
   default: tos \
 )
 
-#define CVTED(tos) SELECT_TABLE(tos) == jmp_table_int ? CONVERT(tos) : a_undef, SELECT_TABLE(tos) == jmp_table_float ? CONVERT(tos) : b_undef, SELECT_TABLE(tos) == jmp_table_double ? CONVERT(tos) : c_undef
+// Shepherd the TOS to the correct argument based on its type.
+#define SHEPHERD_TOS(tos) TOS_TYPE(tos) == TOS_INT ? CONVERT_TOS(tos) : a_undef, \
+  TOS_TYPE(tos) == TOS_FLOAT ? CONVERT_TOS(tos) : b_undef, \
+  TOS_TYPE(tos) == TOS_DOUBLE ? CONVERT_TOS(tos) : c_undef
 
-#define WITH_UNDEF(expr) { int64_t a_undef; float b_undef; double c_undef; expr }
+#ifdef EMSCRIPTEN
+// Sad :(
+#define WITH_UNDEF(expr) { int64_t a_undef = 0; float b_undef = 0.0f; double c_undef = 0.0; expr }
+#else
+#define WITH_UNDEF(expr) { \
+  int64_t a_undef; float b_undef; double c_undef; \
+  asm ("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef)); expr }
+#endif
 
 // Jump to the instruction at pc, using the given top-of-stack value
 #define JMP(tos) WITH_UNDEF(MUSTTAIL \
-  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sp, CVTED(tos));)
+  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sp, SHEPHERD_TOS(tos));)
 // Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, CVTED(tos));)
+#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, SHEPHERD_TOS(tos));)
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
 // all stack values are in memory (rather than in a register)
@@ -1356,7 +1373,6 @@ static int64_t multianewarray_impl_int(ARGS_INT) {
 
 __attribute__((noinline))
 static int64_t invokestatic_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_cp_method_info *info = &insn->cp->methodref;
 
@@ -1378,7 +1394,6 @@ FORWARD_TO_NULLARY(invokestatic)
 
 __attribute__((always_inline))
 static int64_t invokestatic_resolved_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_cp_method *method = insn->ic;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1410,7 +1425,6 @@ FORWARD_TO_NULLARY(invokestatic_resolved)
 
 __attribute__((noinline))
 static int64_t invokevirtual_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
   int argc = insn->args = method_info->descriptor->args_count + 1;
@@ -1466,7 +1480,6 @@ FORWARD_TO_NULLARY(invokevirtual)
 
 __attribute__((noinline))
 static int64_t invokespecial_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
   int argc = insn->args = method_info->descriptor->args_count + 1;
@@ -1476,7 +1489,6 @@ static int64_t invokespecial_impl_void(ARGS_VOID) {
   if (!target) {
     bjvm_null_pointer_exception(thread);
     return 0;
-
   }
 
   resolve_methodref_t ctx = {0};
@@ -1486,7 +1498,6 @@ static int64_t invokespecial_impl_void(ARGS_VOID) {
   assert(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
-
   }
 
   method_info = &insn->cp->methodref;
@@ -1608,6 +1619,7 @@ static int64_t invokeinterface_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokeinterface)
 
+__attribute__((noinline))
 void make_invokevtable_polymorphic_(bjvm_bytecode_insn *inst) {
   assert(inst->kind == bjvm_insn_invokevtable_monomorphic);
   bjvm_cp_method *method = inst->ic;
@@ -1616,6 +1628,7 @@ void make_invokevtable_polymorphic_(bjvm_bytecode_insn *inst) {
   inst->ic2 = (void *)method->vtable_index;
 }
 
+__attribute__((noinline))
 void make_invokeitable_polymorphic_(bjvm_bytecode_insn *inst) {
   assert(inst->kind == bjvm_insn_invokeitable_monomorphic);
   inst->kind = bjvm_insn_invokeitable_polymorphic;
@@ -1625,7 +1638,6 @@ void make_invokeitable_polymorphic_(bjvm_bytecode_insn *inst) {
 
 __attribute__((always_inline))
 static int64_t invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1633,7 +1645,6 @@ static int64_t invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
   if (target == nullptr) {
     bjvm_null_pointer_exception(thread);
     return 0;
-
   }
   if (unlikely(target->descriptor != insn->ic2)) {
     if (insn->kind == bjvm_insn_invokevtable_monomorphic)
@@ -1659,9 +1670,7 @@ static int64_t invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokeitable_vtable_monomorphic)
 
-__attribute__((always_inline))
 static int64_t invokeitable_polymorphic_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1696,9 +1705,7 @@ static int64_t invokeitable_polymorphic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokeitable_polymorphic)
 
-__attribute__((always_inline))
 static int64_t invokevtable_polymorphic_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   bjvm_obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1706,7 +1713,6 @@ static int64_t invokevtable_polymorphic_impl_void(ARGS_VOID) {
   if (target == nullptr) {
     bjvm_null_pointer_exception(thread);
     return 0;
-
   }
   bjvm_cp_method *target_method = bjvm_vtable_lookup(target->descriptor, (int)insn->ic2);
   assert(target_method);
@@ -1728,8 +1734,8 @@ static int64_t invokevtable_polymorphic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokevtable_polymorphic)
 
+__attribute__((noinline))
 static int64_t invokedynamic_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   SPILL_VOID
 
@@ -1759,7 +1765,6 @@ static int64_t invokedynamic_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(invokedynamic)
 
 static int64_t invokecallsite_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   // Call the "vmtarget" method with the correct number of arguments
   struct bjvm_native_CallSite *cs = insn->ic;
@@ -1785,7 +1790,6 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
     memcpy(arguments, &temp, sizeof(temp)); // restore clobbered shit
     if (!invoked) {
       return 0;
-
     }
 
     bjvm_stack_value result = bjvm_interpret_2(thread, invoked);
@@ -1794,7 +1798,6 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
     }
     if (thread->current_exception) {
       return 0;
-
     }
     sp -= insn->args - 1;
     sp += returns;
@@ -1808,7 +1811,6 @@ FORWARD_TO_NULLARY(invokecallsite)
 /** Local variable accessors */
 __attribute__((always_inline))
 static int64_t iload_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   sp++;
   NEXT(frame->values[frame->max_stack + insn->index].i)
@@ -1817,7 +1819,6 @@ FORWARD_TO_NULLARY(iload)
 
 __attribute__((always_inline))
 static int64_t fload_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   sp++;
   NEXT(frame->values[frame->max_stack + insn->index].f)
@@ -1853,7 +1854,6 @@ FORWARD_TO_NULLARY(aload)
 
 __attribute__((always_inline))
 static int64_t astore_impl_int(ARGS_INT) {
-
   DEBUG_CHECK
   frame->values[frame->max_stack + insn->index].obj = (bjvm_obj_header *)tos;
   sp--;
@@ -1861,7 +1861,6 @@ static int64_t astore_impl_int(ARGS_INT) {
 }
 
 static int64_t istore_impl_int(ARGS_INT) {
-
   DEBUG_CHECK
   frame->values[frame->max_stack + insn->index].i = (int)tos;
   sp--;
