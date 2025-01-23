@@ -514,6 +514,18 @@ bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *classdesc, const bjvm_utf8 na
 // Cannot be called if an interpreter is already running.
 int bjvm_thread_run_root(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result);
 
+// runs interpreter (async)
+DECLARE_ASYNC(bjvm_stack_value, run_thread,
+  locals(),
+  arguments(
+    bjvm_thread *thread;
+    bjvm_cp_method *method;
+    bjvm_stack_value *args;
+    bjvm_stack_value *result;
+  ),
+  invoked_methods(invoked_method(bjvm_interpret))
+);
+
 // Run a short-lived, second-level interpreter.  The provided method may NEVER
 // block.
 int bjvm_thread_run_leaf(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result);
@@ -535,7 +547,7 @@ typedef struct {
 // Get an asynchronous running context. The caller should repeatedly call
 // bjvm_async_run_step() until it returns true.
 EMSCRIPTEN_KEEPALIVE
-bjvm_async_run_ctx *bjvm_thread_async_run(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
+bjvm_async_run_ctx *create_run_ctx(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
                                           bjvm_stack_value *result);
 
 EMSCRIPTEN_KEEPALIVE

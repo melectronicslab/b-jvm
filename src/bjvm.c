@@ -1850,7 +1850,7 @@ bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor, const bjvm_utf8 n
   return nullptr;
 }
 
-bjvm_async_run_ctx *bjvm_thread_async_run(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
+bjvm_async_run_ctx *create_run_ctx(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
                                           bjvm_stack_value *result) {
   assert(method && "Method is null");
   bjvm_async_run_ctx *ctx = calloc(1, sizeof(bjvm_async_run_ctx));
@@ -1904,7 +1904,7 @@ void bjvm_free_async_run_ctx(bjvm_async_run_ctx *ctx) { free(ctx); }
 
 static int _bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
                             bjvm_stack_value *result) {
-  bjvm_async_run_ctx *ctx = bjvm_thread_async_run(thread, method, args, result);
+  bjvm_async_run_ctx *ctx = create_run_ctx(thread, method, args, result);
   int ret;
   while (!bjvm_async_run_step(ctx)) {
     if (thread->must_unwind) {

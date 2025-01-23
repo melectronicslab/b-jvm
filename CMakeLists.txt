@@ -56,15 +56,7 @@ file(GLOB_RECURSE bjvm_NATIVES CONFIGURE_DEPENDS "src/natives/*.c" "src/natives/
 add_library(bjvm OBJECT ${bjvm_SRC} ${bjvm_NATIVES}
         vendor/stb_ds.h
         vendor/stb_ds.c
-        src/natives/java/lang/reflect/Executable.c
-        src/wasm_adapter.c
-        src/wasm_adapter.h
-        src/natives/jdk/internal/misc/CDS.c
-        src/natives/java/lang/NullPointerException.c
-        src/natives/java/lang/StringUTF16.c
-        src/natives/jdk/internal/misc/Signal.c
-        src/natives/jdk/internal/loader/BootLoader.c
-        src/natives/java/lang/Module.c)
+        )
 target_include_directories(bjvm PUBLIC src ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (NOT EMSCRIPTEN)

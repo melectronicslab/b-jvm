@@ -105,9 +105,6 @@ extern bjvm_native_t *bjvm_natives;
 #define DECLARE_NATIVE(package_path, class_name_, method_name_, method_descriptor_)                                    \
   force_expand_args(DECLARE_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, __COUNTER__)
 
-#define offsetof(st, m) \
-    ((size_t)((char *)&((st *)0)->m - (char *)0))
-
 #define check_field_offset(m_name, member_a, member_b) \
   _Static_assert(offsetof(struct m_name##_s, member_a) == offsetof(async_natives_args, member_b), #member_a " mismatch " #member_b);
 
@@ -132,10 +129,10 @@ extern bjvm_native_t *bjvm_natives;
 #undef _RELOAD_CACHED_STATE
 
 #define _DECLARE_CACHED_STATE(_)                                                                                       \
-  bjvm_thread *thread = self->args.thread;                                                                             \
-  bjvm_value *args = self->args.args;                                                                                  \
-  bjvm_handle *obj = self->args.obj;                                                                                   \
-  uint8_t argc = self->args.argc;
+  [[maybe_unused]] bjvm_thread *thread = self->args.thread;                                                                             \
+  [[maybe_unused]] bjvm_value *args = self->args.args;                                                                                  \
+  [[maybe_unused]] bjvm_handle *obj = self->args.obj;                                                                                   \
+  [[maybe_unused]] uint8_t argc = self->args.argc;
 
 #define _RELOAD_CACHED_STATE()                                                                                         \
   do {                                                                                                                 \

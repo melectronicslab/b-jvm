@@ -13,7 +13,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../src/async.h"
-#include "../src/util.h"
 
 struct async_wakeup_info {
   int index;
