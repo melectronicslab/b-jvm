@@ -39,10 +39,18 @@
 #define pc pc_
 #define tos tos_
 
-#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
-#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t tos_, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
-#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double tos_
-#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3
+#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, \
+  bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3, \
+  bjvm_insn_code_kind prefetched
+#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, \
+  bjvm_stack_value *sp_, [[maybe_unused]] int64_t tos_, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3, \
+  bjvm_insn_code_kind prefetched
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, \
+  bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double tos_, \
+  bjvm_insn_code_kind prefetched
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, \
+  bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3, \
+  bjvm_insn_code_kind prefetched
 #else
 #define sp (*sp_)
 #define pc (*pc_)
@@ -109,22 +117,21 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 // Sad :(
 #define WITH_UNDEF(expr) { int64_t a_undef = 0; float b_undef = 0.0f; double c_undef = 0.0; expr }
 #else
-#define WITH_UNDEF(expr) { \
-  int64_t a_undef; float b_undef; double c_undef; \
-  asm ("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef)); expr }
+// TODO: Research a less-UB way of doing this
+#define WITH_UNDEF(expr) { int64_t a_undef; float b_undef; double c_undef; expr }
 #endif
 
 // Jump to the instruction at pc, using the given top-of-stack value
 #define JMP(tos) WITH_UNDEF(MUSTTAIL \
-  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sp, SHEPHERD_TOS(tos));)
+  return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sp, SHEPHERD_TOS(tos), prefetched);)
 // Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, SHEPHERD_TOS(tos));)
+#define NEXT(tos) WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[prefetched](thread, frame, insns + 1, pc + 1, sp, SHEPHERD_TOS(tos), insns[2].kind);)
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
 // all stack values are in memory (rather than in a register)
-#define JMP_VOID WITH_UNDEF(MUSTTAIL return jmp_table_void[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, c_undef);)
+#define JMP_VOID WITH_UNDEF(MUSTTAIL return jmp_table_void[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, c_undef, insns[1].kind);)
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
-#define NEXT_VOID WITH_UNDEF(MUSTTAIL return jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef);)
+#define NEXT_VOID WITH_UNDEF(MUSTTAIL return jmp_table_void[prefetched](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef, insns[2].kind);)
 #else
 #endif
 
@@ -178,17 +185,17 @@ switch (insn->tos_before) { \
 #define FORWARD_TO_NULLARY(which) \
 static int64_t which##_impl_int(ARGS_INT) { \
 *(sp - 1) = (bjvm_stack_value) { .l = tos }; \
-MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3); \
+MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3, prefetched); \
 } \
 \
 static int64_t which##_impl_float(ARGS_FLOAT) { \
 *(sp - 1) = (bjvm_stack_value) { .f = tos }; \
-MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3); \
+MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3, prefetched); \
 } \
 \
 static int64_t which##_impl_double(ARGS_DOUBLE) {\
 *(sp - 1) = (bjvm_stack_value) { .d = tos };\
-MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos);\
+MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos, prefetched);\
 }
 
 /** Helper functions */
@@ -1095,15 +1102,16 @@ static int64_t goto_impl_void(ARGS_VOID) {
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
+  prefetched = insns[1].kind;
   JMP_VOID
 }
 
 static int64_t goto_impl_double(ARGS_DOUBLE) {
-
   DEBUG_CHECK
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
+  prefetched = insns[1].kind;
   JMP(tos)
 }
 
@@ -1113,6 +1121,7 @@ static int64_t goto_impl_float(ARGS_FLOAT) {
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
+  prefetched = insns[1].kind;
   JMP(tos)
 }
 
@@ -1122,6 +1131,7 @@ static int64_t goto_impl_int(ARGS_INT) {
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
+  prefetched = insns[1].kind;
   JMP(tos)
 }
 
@@ -1141,6 +1151,7 @@ static int64_t tableswitch_impl_int(ARGS_INT) {
     pc = offsets[index - low] - 1;
     insns += delta;
   }
+  prefetched = insns[1].kind;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1162,6 +1173,7 @@ static int64_t lookupswitch_impl_int(ARGS_INT) {
       int delta = (offsets[i] - 1) - pc;
       pc = offsets[i] - 1;
       insns += delta;
+      prefetched = insns[1].kind;
       sp--;
       STACK_POLYMORPHIC_NEXT(*(sp - 1));
     }
@@ -1169,6 +1181,7 @@ static int64_t lookupswitch_impl_int(ARGS_INT) {
   int delta = (default_target - 1) - pc;
   pc = default_target - 1;
   insns += delta;
+  prefetched = insns[1].kind;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1179,6 +1192,7 @@ static int64_t lookupswitch_impl_int(ARGS_INT) {
     int old_pc = pc; \
     pc = (int)tos op 0 ? (insn->index - 1) : pc; \
     insns += pc - old_pc; \
+    prefetched = insns[1].kind; \
     sp--; \
     STACK_POLYMORPHIC_NEXT(*(sp - 1)); \
   }
@@ -1199,6 +1213,7 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
     int old_pc = pc; \
     pc = a op b ? (insn->index - 1) : pc; \
     insns += pc - old_pc; \
+    prefetched = insns[1].kind; \
     sp -= 2; \
     STACK_POLYMORPHIC_NEXT(*(sp - 1)); \
   }
@@ -1217,6 +1232,7 @@ static int64_t if_acmpeq_impl_int(ARGS_INT) {
   int old_pc = pc;
   pc = a == b ? (insn->index - 1) : pc;
   insns += pc - old_pc;
+  prefetched = insns[1].kind;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1))
 }
@@ -1228,6 +1244,7 @@ static int64_t if_acmpne_impl_int(ARGS_INT) {
   int old_pc = pc;
   pc = a != b ? (insn->index - 1) : pc;
   insns += pc - old_pc;
+  prefetched = insns[1].kind;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1))
 }
@@ -2254,7 +2271,7 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
     bjvm_bytecode_insn *insns = frame->method->code->code;
 
 #if DO_TAILS
-    result.l = entry(thread, frame, insns + pc_, pc_, sp_, 0, 0, 0);
+    result.l = entry(thread, frame, insns + pc_, pc_, sp_, 0, 0, 0, insns[pc_ + 1].kind);
 #else
     int64_t int_tos = 0;
     float float_tos = 0;
