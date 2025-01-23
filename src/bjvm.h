@@ -305,12 +305,12 @@ typedef struct {
 //
 // Frames are aligned to 8 bytes, the natural alignment of a stack value.
 // Layout:
-//             -> stack grows this way
-// ┌──────────┬───────────────────────────────┬───────────────────────────────────────────────┐
-// │ metadata │ max_stack x bjvm_stack_value  │ (values_count - max_stack) x
-// bjvm_stack_value │
-// └──────────┴───────────────────────────────┴───────────────────────────────────────────────┘
-//                      stack values                            local values
+//                                       -> stack grows this way
+// ┌────────────────┬───────────────────┬───────────────────────────────────┐
+// │    array of    │      metadata     │          space until
+// │     values     │     num_values    │           max_stack
+// └────────────────┴───────────────────┴───────────────────────────────────┘
+//    locals array  | bjvm_stack_frame  |    more stack space
 //
 // The stack depth should be inferred from the program counter: In particular,
 // the method contains an analysis of the stack depth at each instruction.
