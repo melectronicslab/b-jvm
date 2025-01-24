@@ -110,8 +110,7 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 #define WITH_UNDEF(expr) { int64_t a_undef = 0; float b_undef = 0.0f; double c_undef = 0.0; expr }
 #else
 #define WITH_UNDEF(expr) { \
-  int64_t a_undef; float b_undef; double c_undef; \
-  asm ("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef)); expr }
+  int64_t a_undef; float b_undef; double c_undef; expr }
 #endif
 
 // Jump to the instruction at pc, using the given top-of-stack value
@@ -1812,12 +1811,17 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokecallsite)
 
+__attribute__((always_inline))
+bjvm_stack_value *get_local(bjvm_stack_frame *frame, bjvm_bytecode_insn *inst) {
+  return (bjvm_stack_value*)frame + inst->args;
+}
+
 /** Local variable accessors */
 __attribute__((always_inline))
 static int64_t iload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(bjvm_get_plain_locals(frame)[insn->index].i)
+  NEXT(get_local(frame, insn)->i)
 }
 FORWARD_TO_NULLARY(iload)
 
@@ -1825,7 +1829,7 @@ __attribute__((always_inline))
 static int64_t fload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(bjvm_get_plain_locals(frame)[insn->index].f)
+  NEXT(get_local(frame, insn)->f)
 }
 FORWARD_TO_NULLARY(fload)
 
@@ -1834,7 +1838,7 @@ static int64_t dload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(bjvm_get_plain_locals(frame)[insn->index].d)
+  NEXT(get_local(frame, insn)->d)
 }
 FORWARD_TO_NULLARY(dload)
 
@@ -1843,7 +1847,7 @@ static int64_t lload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(bjvm_get_plain_locals(frame)[insn->index].l)
+  NEXT(get_local(frame, insn)->l)
 }
 FORWARD_TO_NULLARY(lload)
 
@@ -1851,21 +1855,21 @@ __attribute__((always_inline))
 static int64_t aload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(bjvm_get_plain_locals(frame)[insn->index].obj)
+  NEXT(get_local(frame, insn)->obj)
 }
 FORWARD_TO_NULLARY(aload)
 
 __attribute__((always_inline))
 static int64_t astore_impl_int(ARGS_INT) {
   DEBUG_CHECK
-  bjvm_get_plain_locals(frame)[insn->index].obj = (bjvm_obj_header *)tos;
+  get_local(frame, insn)->obj = (bjvm_obj_header *)tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
 
 static int64_t istore_impl_int(ARGS_INT) {
   DEBUG_CHECK
-  bjvm_get_plain_locals(frame)[insn->index].i = (int)tos;
+  get_local(frame, insn)->i = (int)tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1873,7 +1877,7 @@ static int64_t istore_impl_int(ARGS_INT) {
 static int64_t fstore_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  bjvm_get_plain_locals(frame)[insn->index].f = tos;
+  get_local(frame, insn)->f = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1881,7 +1885,7 @@ static int64_t fstore_impl_float(ARGS_FLOAT) {
 static int64_t dstore_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  bjvm_get_plain_locals(frame)[insn->index].d = tos;
+  get_local(frame, insn)->d = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1889,7 +1893,7 @@ static int64_t dstore_impl_double(ARGS_DOUBLE) {
 static int64_t lstore_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  bjvm_get_plain_locals(frame)[insn->index].l = tos;
+  get_local(frame, insn)->l = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }

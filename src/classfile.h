@@ -605,7 +605,7 @@ typedef struct bjvm_bytecode_insn {
   // Per-instruction inline cache data
   void *ic;
   void *ic2;
-  int args;
+  int args;  // for aload* it's offset from frame base (e.g. if num_locals = 2, then args = -2 for aload_0)
 } bjvm_bytecode_insn;
 
 typedef struct {

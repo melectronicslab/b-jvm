@@ -1392,6 +1392,7 @@ void intersect_analy_stack_state(bjvm_analy_stack_state *src, bjvm_analy_stack_s
   }
 }
 
+
 /**
  * Analyze the method's code attribute if it exists, rewriting instructions in
  * place to make longs/doubles one stack value wide, writing the analysis into
@@ -1551,6 +1552,18 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
 
     // Instructions that can intrinsically raise NPE
     switch (insn->kind) {
+    case bjvm_insn_aload:
+    case bjvm_insn_iload:
+    case bjvm_insn_lload:
+    case bjvm_insn_fload:
+    case bjvm_insn_dload:
+    case bjvm_insn_astore:
+    case bjvm_insn_istore:
+    case bjvm_insn_lstore:
+    case bjvm_insn_fstore:
+    case bjvm_insn_dstore:
+      insn->args = (int)insn->index - code->max_locals;
+      break;
     case bjvm_insn_putfield:
     case bjvm_insn_aaload:
     case bjvm_insn_baload:
