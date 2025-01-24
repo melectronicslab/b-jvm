@@ -211,7 +211,7 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
     return nullptr;
   }
 
-  bjvm_value *locals = (bjvm_value *) (args + argc);
+  bjvm_value *locals = (bjvm_value *) (args + argc); // reserve new memory on stack
   bjvm_stack_frame *frame = (bjvm_stack_frame *) (locals + argc);
 
   assert((uintptr_t)frame % 8 == 0 && "Frame is aligned");
@@ -1881,6 +1881,7 @@ bjvm_async_run_ctx *bjvm_thread_async_run(bjvm_thread *thread, bjvm_cp_method *m
   }
 
   memcpy(stack_top, args, args_size);
+  thread->frame_buffer_used += args_size;
 
   ctx->thread = thread;
   ctx->frame = bjvm_push_frame(thread, method, stack_top, argc);

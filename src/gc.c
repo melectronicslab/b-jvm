@@ -85,6 +85,9 @@ void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
     bjvm_code_analysis *analy = raw_frame->method->code_analysis;
     bjvm_compressed_bitset refs =
         analy->insn_index_to_references[frame->program_counter];
+    // List of stack and local values which are references
+    // In particular, 0 through max_stack - 1 refer to the stack, and max_stack through max_stack + max_locals - 1
+    // refer to the locals array
     bitset_list = bjvm_list_compressed_bitset_bits(refs, bitset_list,
                                                    &bs_list_len, &bs_list_cap);
     for (int i = 0; i < bs_list_len; ++i) {
