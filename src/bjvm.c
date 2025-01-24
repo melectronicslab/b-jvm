@@ -216,8 +216,9 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
 
   assert((uintptr_t)frame % 8 == 0 && "Frame is aligned");
 
-  thread->frame_buffer_used += total;
   *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
+
+  thread->frame_buffer_used = (char*)frame + sizeof(*frame) - thread->frame_buffer;
 
   frame->is_native = 1;
   frame->num_locals = argc;
@@ -240,7 +241,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   assert(argc <= code->max_locals);
 
   const size_t header_bytes = sizeof(bjvm_stack_frame);
-  size_t values_bytes = (int) code->max_stack;
+  size_t values_bytes = code->max_stack * sizeof(bjvm_stack_value);
   size_t total = header_bytes + values_bytes;
 
   if (total + thread->frame_buffer_used > thread->frame_buffer_capacity) {
@@ -249,13 +250,13 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   }
 
 //  bjvm_stack_frame *frame = (bjvm_stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
-  bjvm_stack_frame *frame = (bjvm_stack_frame *) (args + argc);
+  bjvm_stack_frame *frame = (bjvm_stack_frame *) (args + code->max_locals);
 
 #if !SKIP_CLEARING_FRAME
   memset(frame, 0xee, total);
 #endif
 
-  thread->frame_buffer_used += sizeof(total);
+  thread->frame_buffer_used = (char*)(frame->plain.stack + code->max_stack) - thread->frame_buffer;
   *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
   frame->is_native = 0;
   frame->num_locals = code->max_locals;
@@ -318,14 +319,14 @@ void dump_frame(FILE *stream, const bjvm_stack_frame *frame) {
   int sd = stack_depth(frame);
 
   for (int i = 0; i < sd; ++i) {
-    bjvm_stack_value value = bjvm_get_plain_locals(frame)[i];
+    bjvm_stack_value value = bjvm_get_plain_stack((void*) frame)[i];
     const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i);
     write += snprintf(write, end - write, " stack[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj, value.i, is_ref);
   }
 
   for (int i = 0; i < frame->num_locals; ++i) {
     bjvm_stack_value value = bjvm_get_plain_locals(frame)[i];
-    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i);
+    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i + frame->plain.max_stack);
     write += snprintf(write, end - write, "locals[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj,
                       value.i, is_ref);
   }
@@ -341,7 +342,8 @@ void bjvm_pop_frame(bjvm_thread *thr, [[maybe_unused]] const bjvm_stack_frame *r
     drop_handles_array(thr, frame->method, frame->native.method_shape, bjvm_get_native_args(frame));
   }
   thr->frames_count--;
-  thr->frame_buffer_used = thr->frames_count == 0 ? 0 : (char *)frame - thr->frame_buffer;
+  thr->frame_buffer_used = thr->frames_count == 0 ? 0 :
+    (char *)(frame->plain.stack + frame->plain.max_stack) - thr->frame_buffer;
 }
 
 // Symmetry with make_primitive_classdesc
@@ -2292,7 +2294,7 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
     self->method = name->vmtarget;
     assert(self->method);
     self->argc = self->method->descriptor->args_count;
-    self->frame = bjvm_push_frame(thread, self->method, bjvm_get_plain_stack(self->frame) + *sd - self->argc, self->argc);
+    self->frame = bjvm_push_frame(thread, self->method, bjvm_get_plain_stack(args->frame) + *sd - self->argc, self->argc);
     // TODO arena allocate this in the VM so that it gets freed appropriately
     // if the VM is deleted
     self->interpreter_ctx = calloc(1, sizeof(bjvm_interpret_t));

@@ -289,7 +289,6 @@ void relocate_instance_fields(bjvm_gc_ctx *ctx) {
 }
 
 void bjvm_major_gc(bjvm_vm *vm) {
-  UNREACHABLE();
   // TODO wait for all threads to get ready (for now we'll just call this from
   // an already-running thread)
   bjvm_gc_ctx ctx = {.vm = vm};

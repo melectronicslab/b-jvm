@@ -17,7 +17,7 @@
 // read back, e.g. for GC purposes, or when interrupting), the TOS value and
 
 #define DEBUG_CHECK
-#if 1
+#if 0
 #undef DEBUG_CHECK
 #define DEBUG_CHECK \
   SPILL_VOID \
@@ -1779,15 +1779,19 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
 
     // Invoke name->vmtarget with arguments mh, args
     bjvm_cp_method *invoke = name->vmtarget;
-    // TODO MEGA UB WHEN STACK IS EMPTY
-    bjvm_stack_value *arguments = sp - insn->args;
 
-    bjvm_stack_value temp;
-    memcpy(&temp, arguments, sizeof(temp));
+    // State of the stack:
+    // ... args
+    //   ^------^ length insn->args - 1
+    // Want prepend an mh:
+    // [mh] ... args
+    // ^------------^ length insn->args
+    bjvm_stack_value *arguments = sp - insn->args + 1;
+
+    memmove(arguments + 1, arguments, (insn->args - 1) * sizeof(bjvm_stack_value));
     arguments[0] = (bjvm_stack_value){.obj = (void *)mh}; // MethodHandle
 
     bjvm_stack_frame *invoked = bjvm_push_frame(thread, invoke, arguments, insn->args);
-    memcpy(arguments, &temp, sizeof(temp)); // restore clobbered shit
     if (!invoked) {
       return 0;
     }
