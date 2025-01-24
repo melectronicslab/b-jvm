@@ -1469,7 +1469,7 @@ static int64_t invokevirtual_impl_void(ARGS_VOID) {
     bjvm_invokevirtual_signature_polymorphic_t ctx = {0};
     ctx.args.thread = thread;
     ctx.args.frame = frame;
-    uint16_t temp_sd = sp - frame->values;  // nubmer of things currently on stack
+    uint16_t temp_sd = sp - frame->values;
     ctx.args.sd_ = &temp_sd;
     ctx.args.method = method_info->resolved;
     ctx.args.provider_mt = bjvm_resolve_method_type(thread, method_info->descriptor);
