@@ -7,7 +7,7 @@
 #define ONE_GOTO_PER_INSN 0
 // Skip the memset(...) call to clear each frame's locals/stack. This messes
 // up the debug dumps, but makes setting up frames faster.
-#define SKIP_CLEARING_FRAME 0
+#define SKIP_CLEARING_FRAME 1
 
 #include <assert.h>
 #include <limits.h>
@@ -83,6 +83,7 @@ uint16_t stack_depth(const bjvm_stack_frame *frame) {
 
 bool bjvm_is_frame_native(const bjvm_stack_frame *frame) { return frame->is_native != 0; }
 
+__attribute__((always_inline))
 bjvm_stack_value *bjvm_get_plain_locals(const bjvm_stack_frame *frame) {
   assert(!bjvm_is_frame_native(frame));
   return ((bjvm_stack_value *) frame) - frame->num_locals;
@@ -253,7 +254,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   bjvm_stack_frame *frame = (bjvm_stack_frame *) (args + code->max_locals);
 
 #if !SKIP_CLEARING_FRAME
-  memset(frame, 0xee, total);
+  memset(frame, 0x0, total);
 #endif
 
   thread->frame_buffer_used = (char*)(frame->plain.stack + code->max_stack) - thread->frame_buffer;
@@ -2295,6 +2296,7 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
     self->method = name->vmtarget;
     assert(self->method);
     self->argc = self->method->descriptor->args_count;
+    (bjvm_get_plain_stack(args->frame) + *sd - self->argc)->obj = (void*) mh;
     self->frame = bjvm_push_frame(thread, self->method, bjvm_get_plain_stack(args->frame) + *sd - self->argc, self->argc);
     // TODO arena allocate this in the VM so that it gets freed appropriately
     // if the VM is deleted

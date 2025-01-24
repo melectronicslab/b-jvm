@@ -77,7 +77,12 @@ void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
   PUSH_ROOT(&thr->thread_obj);
   PUSH_ROOT(&thr->current_exception);
 
-  for (int frame_i = 0; frame_i < thr->frames_count; ++frame_i) {
+  // To prevent double GC roots on shared stuff, we start from the highest address (innermost) frames and walk down,
+  // keeping track of the minimum address we have scanned for references.
+
+  uintptr_t min_frame_addr_scanned = UINTPTR_MAX;
+
+  for (int frame_i = thr->frames_count - 1; frame_i >= 0; --frame_i) {
     bjvm_stack_frame *raw_frame = thr->frames[frame_i];
     if (bjvm_is_frame_native(raw_frame))
       continue;
@@ -90,9 +95,24 @@ void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
     // refer to the locals array
     bitset_list = bjvm_list_compressed_bitset_bits(refs, bitset_list,
                                                    &bs_list_len, &bs_list_cap);
-    for (int i = 0; i < bs_list_len; ++i) {
-      PUSH_ROOT(&frame->stack[bitset_list[i]].obj);
+    // Scan the stack
+    int i = 0;
+    int max_stack = raw_frame->plain.max_stack;
+    for (; i < bs_list_len && bitset_list[i] < max_stack; ++i) {
+      bjvm_obj_header **val = &frame->stack[bitset_list[i]].obj;
+      if ((uintptr_t)val >= min_frame_addr_scanned) {
+        // We already processed this part of the stack as part of the inner frame's locals
+        continue;
+      }
+      PUSH_ROOT(val);
     }
+
+    // Scan the locals
+    for (; i < bs_list_len; ++i) {
+      PUSH_ROOT(&bjvm_get_plain_locals(raw_frame)[bitset_list[i] - max_stack].obj);
+    }
+
+    min_frame_addr_scanned = (uintptr_t)bjvm_get_plain_locals(raw_frame);
   }
 
   // Non-null local handles

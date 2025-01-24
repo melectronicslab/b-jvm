@@ -1849,7 +1849,6 @@ FORWARD_TO_NULLARY(lload)
 
 __attribute__((always_inline))
 static int64_t aload_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   sp++;
   NEXT(bjvm_get_plain_locals(frame)[insn->index].obj)
