@@ -452,7 +452,7 @@ struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjv
  * Pop the topmost frame from the stack, optionally passing a pointer as a debug
  * check.
  */
-void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference);
+void bjvm_pop_frame(bjvm_thread *thr, [[maybe_unused]] const bjvm_stack_frame *reference);
 
 bjvm_vm_options bjvm_default_vm_options();
 

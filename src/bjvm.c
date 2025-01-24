@@ -211,7 +211,7 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
     return nullptr;
   }
 
-  bjvm_value *locals = (bjvm_value *) (args + argc);
+  bjvm_value *locals = (bjvm_value *) (args + argc); // reserve new memory on stack
   bjvm_stack_frame *frame = (bjvm_stack_frame *) (locals + argc);
 
   assert((uintptr_t)frame % 8 == 0 && "Frame is aligned");
@@ -240,7 +240,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   assert(argc <= code->max_locals);
 
   const size_t header_bytes = sizeof(bjvm_stack_frame);
-  size_t values_bytes = (int) code->max_stack;
+  size_t values_bytes = code->max_stack * sizeof(bjvm_stack_value);
   size_t total = header_bytes + values_bytes;
 
   if (total + thread->frame_buffer_used > thread->frame_buffer_capacity) {
@@ -249,13 +249,13 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   }
 
 //  bjvm_stack_frame *frame = (bjvm_stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
-  bjvm_stack_frame *frame = (bjvm_stack_frame *) (args + argc);
+  bjvm_stack_frame *frame = (bjvm_stack_frame *) (args + code->max_locals);
 
 #if !SKIP_CLEARING_FRAME
   memset(frame, 0xee, total);
 #endif
 
-  thread->frame_buffer_used += sizeof(total);
+  thread->frame_buffer_used = thread->frame_buffer_used = (char*)(frame->plain.stack + code->max_stack) - thread->frame_buffer;
   *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
   frame->is_native = 0;
   frame->num_locals = code->max_locals;
@@ -341,7 +341,7 @@ void bjvm_pop_frame(bjvm_thread *thr, [[maybe_unused]] const bjvm_stack_frame *r
     drop_handles_array(thr, frame->method, frame->native.method_shape, bjvm_get_native_args(frame));
   }
   thr->frames_count--;
-  thr->frame_buffer_used = thr->frames_count == 0 ? 0 : (char *)frame - thr->frame_buffer;
+  thr->frame_buffer_used = thr->frames_count == 0 ? 0 :(char *)(frame->plain.stack + frame->plain.max_stack) - thr->frame_buffer;
 }
 
 // Symmetry with make_primitive_classdesc
@@ -1879,6 +1879,7 @@ bjvm_async_run_ctx *bjvm_thread_async_run(bjvm_thread *thread, bjvm_cp_method *m
   }
 
   memcpy(stack_top, args, args_size);
+  thread->frame_buffer_used += args_size;
 
   ctx->thread = thread;
   ctx->frame = bjvm_push_frame(thread, method, stack_top, argc);
