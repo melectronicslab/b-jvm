@@ -81,14 +81,14 @@ void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
     bjvm_stack_frame *raw_frame = thr->frames[frame_i];
     if (bjvm_is_frame_native(raw_frame))
       continue;
-    bjvm_plain_frame *frame = bjvm_get_plain_frame(raw_frame);
-    bjvm_code_analysis *analy = frame->method->code_analysis;
+    bjvm_plain_frame *frame = bjvm_get_plain_frame_data(raw_frame);
+    bjvm_code_analysis *analy = raw_frame->method->code_analysis;
     bjvm_compressed_bitset refs =
         analy->insn_index_to_references[frame->program_counter];
     bitset_list = bjvm_list_compressed_bitset_bits(refs, bitset_list,
                                                    &bs_list_len, &bs_list_cap);
     for (int i = 0; i < bs_list_len; ++i) {
-      PUSH_ROOT(&frame->values[bitset_list[i]].obj);
+      PUSH_ROOT(&frame->stack[bitset_list[i]].obj);
     }
   }
 
@@ -289,6 +289,7 @@ void relocate_instance_fields(bjvm_gc_ctx *ctx) {
 }
 
 void bjvm_major_gc(bjvm_vm *vm) {
+  UNREACHABLE();
   // TODO wait for all threads to get ready (for now we'll just call this from
   // an already-running thread)
   bjvm_gc_ctx ctx = {.vm = vm};

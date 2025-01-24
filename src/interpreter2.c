@@ -17,7 +17,7 @@
 // read back, e.g. for GC purposes, or when interrupting), the TOS value and
 
 #define DEBUG_CHECK
-#if 0
+#if 1
 #undef DEBUG_CHECK
 #define DEBUG_CHECK \
   SPILL_VOID \
@@ -27,7 +27,7 @@
   heap_string s = insn_to_string(insn, pc); \
   printf("Insn kind: %.*s\n", fmt_slice(s)); free_heap_str(s); \
   dump_frame(stderr, frame); \
-  assert(stack_depth(frame) == sp);
+  assert(stack_depth(frame) == sp - frame->plain.stack);
 #endif
 
 // If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
@@ -39,10 +39,10 @@
 #define pc pc_
 #define tos tos_
 
-#define ARGS_VOID bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
-#define ARGS_INT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t tos_, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
-#define ARGS_DOUBLE bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double tos_
-#define ARGS_FLOAT bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3
+#define ARGS_VOID bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
+#define ARGS_INT bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t tos_, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
+#define ARGS_DOUBLE bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double tos_
+#define ARGS_FLOAT bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_, [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3
 #else
 #define sp (*sp_)
 #define pc (*pc_)
@@ -130,7 +130,7 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos) \
-  frame->program_counter = pc; \
+  frame->plain.program_counter = pc; \
   *(sp - 1) = _Generic((tos), \
     int64_t: (bjvm_stack_value) { .l = (int64_t)tos }, \
     float: (bjvm_stack_value) { .f = (float)tos }, \
@@ -139,7 +139,7 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   );
 // Same as SPILL(tos), but when no top-of-stack value is available
 #define SPILL_VOID \
-  frame->program_counter = pc;
+  frame->plain.program_counter = pc;
 
 // Reload the top of stack type -- used after an instruction which may have instigated a GC. RELOAD_VOID is not
 // required.
@@ -555,7 +555,7 @@ bjvm_insn_code_kind getfield_putfield_resolved_kind(bool putfield, bjvm_type_kin
 // appropriate. The stack should be made consistent before this function is called, as it may interrupt.
 DECLARE_ASYNC(int, resolve_getfield_putfield,
   locals(bjvm_cp_field_info *field_info; bjvm_cp_class_info *class),
-  arguments(bjvm_thread *thread; bjvm_bytecode_insn *inst; bjvm_plain_frame *frame; bjvm_stack_value *sp_;),
+  arguments(bjvm_thread *thread; bjvm_bytecode_insn *inst; bjvm_stack_frame *frame; bjvm_stack_value *sp_;),
   invoked_methods(invoked_method(bjvm_initialize_class)));
 
 DEFINE_ASYNC_SL(resolve_getfield_putfield, 100) {
@@ -1361,12 +1361,12 @@ static int64_t anewarray_resolved_impl_int(ARGS_INT) {
 static int64_t multianewarray_impl_int(ARGS_INT) {
   DEBUG_CHECK
   SPILL(tos)
-  uint16_t temp_sp = sp - frame->values;
-  if (bjvm_multianewarray(thread, frame, &insn->multianewarray, &temp_sp))
+  uint16_t temp_sp = sp - bjvm_get_plain_stack(frame);
+  if (bjvm_multianewarray(thread, &frame->plain, &insn->multianewarray, &temp_sp))
     return 0;
 
-  sp = frame->values + temp_sp;
-  NEXT(frame->values[temp_sp - 1].obj)
+  sp = bjvm_get_plain_stack(frame) + temp_sp;
+  NEXT(bjvm_get_plain_stack(frame)[temp_sp - 1].obj)
 }
 
 /** Method invocations */
@@ -1452,7 +1452,7 @@ static int64_t invokevirtual_impl_void(ARGS_VOID) {
     bjvm_invokevirtual_signature_polymorphic_t ctx = {0};
     ctx.args.thread = thread;
     ctx.args.frame = frame;
-    uint16_t temp_sd = sp - frame->values;
+    uint16_t temp_sd = sp - bjvm_get_plain_stack(frame);
     ctx.args.sd_ = &temp_sd;
     ctx.args.method = method_info->resolved;
     ctx.args.provider_mt = bjvm_resolve_method_type(thread, method_info->descriptor);
@@ -1461,7 +1461,7 @@ static int64_t invokevirtual_impl_void(ARGS_VOID) {
     if (thread->current_exception)
       return 0;
 
-    sp = temp_sd + frame->values;
+    sp = temp_sd + bjvm_get_plain_stack(frame);
     STACK_POLYMORPHIC_NEXT(*(sp - 1))
   }
 
@@ -1813,7 +1813,7 @@ __attribute__((always_inline))
 static int64_t iload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].i)
+  NEXT(bjvm_get_plain_locals(frame)[insn->index].i)
 }
 FORWARD_TO_NULLARY(iload)
 
@@ -1821,7 +1821,7 @@ __attribute__((always_inline))
 static int64_t fload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].f)
+  NEXT(bjvm_get_plain_locals(frame)[insn->index].f)
 }
 FORWARD_TO_NULLARY(fload)
 
@@ -1830,7 +1830,7 @@ static int64_t dload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].d)
+  NEXT(bjvm_get_plain_locals(frame)[insn->index].d)
 }
 FORWARD_TO_NULLARY(dload)
 
@@ -1839,7 +1839,7 @@ static int64_t lload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].l)
+  NEXT(bjvm_get_plain_locals(frame)[insn->index].l)
 }
 FORWARD_TO_NULLARY(lload)
 
@@ -1848,21 +1848,21 @@ static int64_t aload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].obj)
+  NEXT(bjvm_get_plain_locals(frame)[insn->index].obj)
 }
 FORWARD_TO_NULLARY(aload)
 
 __attribute__((always_inline))
 static int64_t astore_impl_int(ARGS_INT) {
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].obj = (bjvm_obj_header *)tos;
+  bjvm_get_plain_locals(frame)[insn->index].obj = (bjvm_obj_header *)tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
 
 static int64_t istore_impl_int(ARGS_INT) {
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].i = (int)tos;
+  bjvm_get_plain_locals(frame)[insn->index].i = (int)tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1870,7 +1870,7 @@ static int64_t istore_impl_int(ARGS_INT) {
 static int64_t fstore_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].f = tos;
+  bjvm_get_plain_locals(frame)[insn->index].f = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1878,7 +1878,7 @@ static int64_t fstore_impl_float(ARGS_FLOAT) {
 static int64_t dstore_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].d = tos;
+  bjvm_get_plain_locals(frame)[insn->index].d = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1886,7 +1886,7 @@ static int64_t dstore_impl_double(ARGS_DOUBLE) {
 static int64_t lstore_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].l = tos;
+  bjvm_get_plain_locals(frame)[insn->index].l = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -1894,7 +1894,7 @@ static int64_t lstore_impl_int(ARGS_INT) {
 static int64_t iinc_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &bjvm_get_plain_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT_VOID
 }
@@ -1902,7 +1902,7 @@ static int64_t iinc_impl_void(ARGS_VOID) {
 static int64_t iinc_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &bjvm_get_plain_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT(tos)
 }
@@ -1910,7 +1910,7 @@ static int64_t iinc_impl_double(ARGS_DOUBLE) {
 static int64_t iinc_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &bjvm_get_plain_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT(tos)
 }
@@ -1918,7 +1918,7 @@ static int64_t iinc_impl_float(ARGS_FLOAT) {
 static int64_t iinc_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &bjvm_get_plain_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT(tos)
 }
@@ -2238,18 +2238,19 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
   if (bjvm_is_frame_native(frame)) {
     bjvm_run_native_t ctx = {0};
     ctx.args.thread = thread;
-    ctx.args.frame = bjvm_get_native_frame(frame);
+    ctx.args.frame = frame;
     future_t fut = bjvm_run_native(&ctx);
     assert(fut.status == FUTURE_READY);
     bjvm_pop_frame(thread, frame);
     return ctx._result;
   }
 
-  bjvm_plain_frame *plain = bjvm_get_plain_frame(frame);
+  // otherwise, handle plain frames
+
+  bjvm_plain_frame *plain = bjvm_get_plain_frame_data(frame);
   bjvm_stack_value result;
   while (true) {
-    bjvm_plain_frame *frame = plain;
-    bjvm_stack_value *sp_ = &frame->values[stack_depth(plain)];
+    bjvm_stack_value *sp_ = &bjvm_get_plain_stack(frame)[stack_depth(frame)];
     int pc_ = plain->program_counter;
     bjvm_bytecode_insn *insns = frame->method->code->code;
 
@@ -2268,7 +2269,7 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
     if (unlikely(thread->current_exception)) {
       bjvm_attribute_exception_table *table = frame->method->code->exception_table;
       if (table) {
-        int pc = frame->program_counter;
+        int pc = frame->plain.program_counter;
         for (int i = 0; i < table->entries_count; ++i) {
           bjvm_exception_table_entry ent = table->entries[i];
           if (ent.start_insn <= pc && pc < ent.end_insn) {
@@ -2278,9 +2279,9 @@ bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) 
                 goto done; // O dear
             }
             if (!ent.catch_type || bjvm_instanceof(thread->current_exception->descriptor, ent.catch_type->classdesc)) {
-              frame->program_counter = ent.handler_insn;
-              sp = &frame->values[1];
-              frame->values[0] = (bjvm_stack_value){.obj = thread->current_exception};
+              frame->plain.program_counter = ent.handler_insn;
+              sp = &bjvm_get_plain_stack(frame)[1];
+              bjvm_get_plain_stack(frame)[0] = (bjvm_stack_value){.obj = thread->current_exception};
               thread->current_exception = nullptr;
 
               goto cont;  // start interpreting again
