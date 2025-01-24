@@ -60,7 +60,7 @@
 // Indicates that the following return must be a tail call. Supported by modern clang and GCC (but GCC support seems
 // somewhat buggy...)
 #define MUSTTAIL [[clang::musttail]]
-#define MAX_INSN_KIND (bjvm_insn_putstatic_L + 1)
+#define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
 
 // Forward declarations
 bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame);
@@ -1370,6 +1370,17 @@ static int64_t multianewarray_impl_int(ARGS_INT) {
 
 /** Method invocations */
 
+static int intrinsify(bjvm_bytecode_insn *inst) {
+  bjvm_cp_method *method = inst->ic;
+  if (utf8_equals(hslc(method->my_class->name), "java/lang/Math")) {
+    if (utf8_equals(method->name, "sqrt") && utf8_equals(method->unparsed_descriptor, "(D)D")) {
+      inst->kind = bjvm_insn_dsqrt;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 __attribute__((noinline))
 static int64_t invokestatic_impl_void(ARGS_VOID) {
   DEBUG_CHECK
@@ -1383,10 +1394,16 @@ static int64_t invokestatic_impl_void(ARGS_VOID) {
   if (thread->current_exception)
     return 0;
 
+
   info = &insn->cp->methodref;
   insn->kind = bjvm_insn_invokestatic_resolved;
   insn->ic = info->resolved;
   insn->args = info->descriptor->args_count;
+
+  if (intrinsify(insn)) {
+    STACK_POLYMORPHIC_JMP(*(sp - 1));
+  }
+
   JMP_VOID
 }
 FORWARD_TO_NULLARY(invokestatic)
@@ -2238,6 +2255,11 @@ static int64_t instanceof_resolved_impl_int(ARGS_INT) {
   NEXT(result)
 }
 
+static int64_t sqrt_impl_double(ARGS_DOUBLE) {
+  DEBUG_CHECK
+  NEXT(sqrt(tos))
+}
+
 bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame) {
   // Load the instruction to jump to and perform a stack-polymorphic jump there
 
@@ -2700,6 +2722,7 @@ PAGE_ALIGN static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
   putstatic_D_impl_double,
   nullptr /* putstatic_Z_impl_double */,
   nullptr, /* putstatic_L_impl_double */
+  sqrt_impl_double
 };
 
 PAGE_ALIGN static int64_t (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
@@ -2896,6 +2919,7 @@ PAGE_ALIGN static int64_t (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
   nullptr /* putstatic_D_impl_int */,
   putstatic_Z_impl_int,
   putstatic_L_impl_int,
+  nullptr
 };
 
 PAGE_ALIGN static int64_t (*jmp_table_float[MAX_INSN_KIND])(ARGS_VOID) = {
@@ -3091,5 +3115,6 @@ PAGE_ALIGN static int64_t (*jmp_table_float[MAX_INSN_KIND])(ARGS_VOID) = {
   putstatic_F_impl_float,
   nullptr /* putstatic_D_impl_float */,
   nullptr /* putstatic_Z_impl_float */,
-  nullptr /* putstatic_L_impl_float */
+  nullptr /* putstatic_L_impl_float */,
+  nullptr
 };
