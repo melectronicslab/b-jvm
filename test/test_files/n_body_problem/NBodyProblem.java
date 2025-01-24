@@ -27,7 +27,7 @@ public final class NBodyProblem {
         double py = 0.0;
         double pz = 0.0;
         Body b;
-            for (int i=0; i < bodies.length; i++) {
+        for (int i=0; i < bodies.length; i++) {
             b = bodies[i];
             px += b.vx * b.mass;
             py += b.vy * b.mass;
@@ -79,7 +79,7 @@ public final class NBodyProblem {
             }
         }
 
-            for (int i=0; i < numBodies; i++) {
+        for (int i=0; i < numBodies; i++) {
             bodies[i].x += bodies[i].vx * dt;
             bodies[i].y += bodies[i].vy * dt;
             bodies[i].z += bodies[i].vz * dt;
@@ -141,9 +141,11 @@ public final class NBodyProblem {
         double energyBefore = energy(bodies);
         System.out.println("Initial energy: " + energyBefore);
         System.out.println("Roughly equals: " + roughlyEquals(energyBefore, -0.169075164, 1e-3));
+
         for (int i=0; i<n; i++) {
             advance(bodies, 0.01);
         }
+
         double energyAfter = energy(bodies);
         System.out.println("Roughly equals: " + roughlyEquals(energyAfter, -0.169059907, 1e-3));
         System.out.println("Final energy: " + energyAfter);
