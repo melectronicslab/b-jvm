@@ -745,13 +745,7 @@ static int64_t getfield_C_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   uint16_t *field = (uint16_t *)((char *)tos + (int)insn->ic2);
-  int k = insns[1].kind;
-  {
-    int64_t a_undef; float b_undef; double c_undef;
-    asm("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef));
-    [[clang::musttail]] return jmp_table_int[k](thread, frame, insns + 1, pc_ + 1, sp_,
-      (int64_t)(int64_t)*field, b_undef, c_undef);
-  }
+  NEXT_INT((int64_t)*field)
 }
 
 static int64_t getfield_S_impl_int(ARGS_INT) {
