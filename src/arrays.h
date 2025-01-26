@@ -77,6 +77,7 @@ static inline void ReferenceArrayStore(bjvm_obj_header *array, int index,
 
 MAKE_PRIMITIVE_LOAD_STORE(Byte, int8_t)
 MAKE_PRIMITIVE_LOAD_STORE(Short, int16_t)
+MAKE_PRIMITIVE_LOAD_STORE(Char, uint16_t)
 MAKE_PRIMITIVE_LOAD_STORE(Int, int32_t)
 MAKE_PRIMITIVE_LOAD_STORE(Long, int64_t)
 MAKE_PRIMITIVE_LOAD_STORE(Float, float)
