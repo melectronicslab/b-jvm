@@ -14,7 +14,7 @@ static bjvm_stack_frame *wasm_runtime_push_empty_frame(bjvm_thread *thread, bjvm
 bjvm_wasm_expression **generate_writes(bjvm_wasm_module *module, bjvm_type_kind *kinds, int kinds_len, bjvm_wasm_expression *addr) {
   bjvm_wasm_expression **result = nullptr;
   for (int i = 0; i < kinds_len; ++i) {
-    int offset = offsetof(bjvm_plain_frame, values) + i * sizeof(bjvm_stack_value);
+    int offset = offsetof(bjvm_plain_frame, stack) + i * sizeof(bjvm_stack_value);
     bjvm_wasm_store_op_kind store_op;
     switch (kinds[i]) {
     case BJVM_TYPE_KIND_BOOLEAN:

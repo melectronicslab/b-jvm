@@ -225,6 +225,8 @@ const char *bjvm_insn_code_name(bjvm_insn_code_kind code) {
     CASE(putstatic_F)
     CASE(putstatic_D)
     CASE(putstatic_L)
+    CASE(invokesigpoly)
+    CASE(dsqrt)
   }
   printf("Unknown code: %d\n", code);
   UNREACHABLE();
@@ -577,6 +579,7 @@ struct method_analysis_ctx {
   char *insn_error;
   heap_string *error;
   struct edge *edges;
+  bool *is_branch_target;  // if 1, this insn is the target of a branch
   int edges_count;
   int edges_cap;
 };
@@ -645,6 +648,7 @@ int push_branch_target(struct method_analysis_ctx *ctx, uint32_t curr,
 
     *VECTOR_PUSH(ctx->edges, ctx->edges_count, ctx->edges_cap) =
         (struct edge){.start = curr, .end = target};
+    ctx->is_branch_target[target] = true;
   }
   return 0;
 }
@@ -1302,7 +1306,7 @@ bool gross_quadratic_algorithm_to_refine_local_references(
   bool stack_terminated = true;
   for (int i = 0; i < ctx->code->insn_count; ++i) {
     bjvm_bytecode_insn *insn = ctx->code->code + i;
-    if (stack_terminated) {
+    if (stack_terminated || ctx->is_branch_target[i]) {
       copy_analy_stack_state(ctx->inferred_locals[i], &ctx->locals);
       stack_terminated = false;
     } else {
@@ -1392,6 +1396,7 @@ void intersect_analy_stack_state(bjvm_analy_stack_state *src, bjvm_analy_stack_s
   }
 }
 
+
 /**
  * Analyze the method's code attribute if it exists, rewriting instructions in
  * place to make longs/doubles one stack value wide, writing the analysis into
@@ -1413,6 +1418,7 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
   int result = 0;
   ctx.stack.entries =
       calloc(code->max_stack + 1, sizeof(bjvm_analy_stack_entry));
+  ctx.is_branch_target = calloc(code->insn_count, sizeof(bool));
 
   // After jumps, we can infer the stack and locals at these points
   bjvm_analy_stack_state *inferred_stacks = ctx.inferred_stacks =
@@ -1551,6 +1557,18 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
 
     // Instructions that can intrinsically raise NPE
     switch (insn->kind) {
+    case bjvm_insn_aload:
+    case bjvm_insn_iload:
+    case bjvm_insn_lload:
+    case bjvm_insn_fload:
+    case bjvm_insn_dload:
+    case bjvm_insn_astore:
+    case bjvm_insn_istore:
+    case bjvm_insn_lstore:
+    case bjvm_insn_fstore:
+    case bjvm_insn_dstore:
+      insn->args = (int)insn->index - code->max_locals;
+      break;
     case bjvm_insn_putfield:
     case bjvm_insn_aaload:
     case bjvm_insn_baload:
@@ -1626,6 +1644,7 @@ done:
   free(ctx.stack_before.entries);
   free(ctx.locals_swizzle);
   free(ctx.edges);
+  free(ctx.is_branch_target);
   free(inferred_stacks);
   free(inferred_locals);
 

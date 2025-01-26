@@ -309,6 +309,15 @@ Hello, world.
 )");
 }
 
+TEST_CASE("N-body problem") {
+  auto result = run_test_case("test_files/n_body_problem/", false, "NBodyProblem");
+
+//  REQUIRE(result.stdout_.find("Running Simulation...") != std::string::npos);
+//  REQUIRE(result.stdout_.find("Roughly Equals: true") != std::string::npos);
+//  REQUIRE(result.stdout_.find("Energy change minimal: true") != std::string::npos);
+//  REQUIRE(result.stdout_.find("Sun final position: ") != std::string::npos);
+}
+
 TEST_CASE("Basic lambda") {
   auto result = run_test_case("test_files/basic_lambda/", true);
 
@@ -563,6 +572,18 @@ TEST_CASE("java.lang.reflect.Method", "[reflection]") {
   REQUIRE(result.stdout_ == "abcdefghijklmnopqr");
 }
 #endif
+
+TEST_CASE("Simple generic types") {
+  auto result = run_test_case("test_files/generic_types/", true, "GenericBox");
+  REQUIRE(result.stdout_ == R"(Integer Value: 10
+String Value: Hello World
+Box in Box Value: 10
+Cursed time
+Reached
+Correctly threw ClassCastException upon getting
+Done
+)");
+}
 
 TEST_CASE("Playground") {
   auto result = run_test_case("test_files/compiler", false);

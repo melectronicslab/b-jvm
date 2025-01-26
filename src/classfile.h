@@ -255,6 +255,9 @@ typedef enum : uint8_t {
   bjvm_insn_putstatic_D,
   bjvm_insn_putstatic_Z,
   bjvm_insn_putstatic_L,
+
+  /** intrinsics */
+  bjvm_insn_dsqrt
 } bjvm_insn_code_kind;
 
 typedef enum : uint8_t {

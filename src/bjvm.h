@@ -114,7 +114,7 @@ typedef struct bjvm_native_frame bjvm_native_frame;
 
 DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native,
   locals(void *native_struct),
-  arguments(bjvm_thread *thread; bjvm_native_frame *frame),
+  arguments(bjvm_thread *thread; bjvm_stack_frame *frame),
   invoked_methods()
 );
 
@@ -144,8 +144,9 @@ typedef struct bjvm_interpret_s bjvm_interpret_t;
 DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
                   locals(
                     bjvm_interpret_t *interpreter_ctx;
-                    bjvm_cp_method * method;
-                    bjvm_stack_frame * frame;
+                    bjvm_cp_method *method;
+                    int argc;
+                    bjvm_stack_frame *frame;
                   ),
                   arguments(
                     bjvm_thread *thread;
@@ -302,27 +303,24 @@ typedef struct {
 // Stack frame associated with a Java method.
 //
 // Frames are aligned to 8 bytes, the natural alignment of a stack value.
+// in native frames, locals are of type bjvm_value
+// in plain frames,  locals are of type bjvm_stack_value
 // Layout:
-//             -> stack grows this way
-// ┌──────────┬───────────────────────────────┬───────────────────────────────────────────────┐
-// │ metadata │ max_stack x bjvm_stack_value  │ (values_count - max_stack) x
-// bjvm_stack_value │
-// └──────────┴───────────────────────────────┴───────────────────────────────────────────────┘
-//                      stack values                              local values
+//                                       -> stack grows this way
+// ┌────────────────┬───────────────────┬───────────────────────────────────┐
+// │    array of    │      metadata     │          space until
+// │     locals     │     num_locals    │           max_stack
+// └────────────────┴───────────────────┴───────────────────────────────────┘
+//    locals array  | bjvm_stack_frame  |    more stack space
 //
 // The stack depth should be inferred from the program counter: In particular,
 // the method contains an analysis of the stack depth at each instruction.
 typedef struct bjvm_plain_frame {
-  uint8_t is_native; // always 0
-  uint8_t is_async_suspended;
   uint16_t values_count;
   uint16_t program_counter; // in instruction indices
   uint16_t max_stack;
 
-  // The method associated with this frame
-  bjvm_cp_method *method;
-
-  bjvm_stack_value values[];
+  bjvm_stack_value stack[];
 } bjvm_plain_frame;
 
 // Stack frame associated with a native method. Note that this is stored
@@ -330,31 +328,29 @@ typedef struct bjvm_plain_frame {
 // data necessary for correct stack trace recovery and resumption after
 // interrupts.
 typedef struct bjvm_native_frame {
-  uint8_t is_native;    // always 1
-  uint8_t is_async_suspended;
   uint16_t values_count; // number of args passed into the native method
 
   // Used by async native methods for their state machines
   int state;
 
-  // see bjvm_plain_frame
-  bjvm_cp_method *method;
   // Descriptor on the instruction itself. Unequal to method->descriptor only
   // in the situation of signature-polymorphic methods.
   const bjvm_method_descriptor *method_shape;
-
-  // Arguments to the native method, including the class instance as the first
-  // argument (if the method is not static)
-  bjvm_value values[];
 } bjvm_native_frame;
 
 // A frame is either a native frame or a plain frame. They may be distinguished
-// with bjvm_is_frame_native.
+// with is_native.
 //
 // Native frames may be consecutive: for example, a native method might invoke
 // another native method, which itself raises an interrupt.
 typedef struct bjvm_stack_frame {
+  uint8_t is_native;
+  uint8_t is_async_suspended;
+  uint16_t num_locals;
   bjvm_interpret_t async_frame;
+
+  // The method associated with this frame
+  bjvm_cp_method *method;
 
   union {
     bjvm_plain_frame plain;
@@ -364,12 +360,16 @@ typedef struct bjvm_stack_frame {
 
 // Get the current stack depth of the interpreted frame, based on the program
 // counter.
-uint16_t stack_depth(const bjvm_plain_frame *frame);
+uint16_t stack_depth(const bjvm_stack_frame *frame);
 
 bool bjvm_is_frame_native(const bjvm_stack_frame *frame);
+bjvm_stack_value *frame_locals(const bjvm_stack_frame *frame);
+bjvm_value *bjvm_get_native_args(const bjvm_stack_frame *frame); // same as locals, just called args for native
+
+bjvm_stack_value *frame_stack(bjvm_stack_frame *frame);
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame);
 
-bjvm_native_frame *bjvm_get_native_frame(bjvm_stack_frame *frame);
+bjvm_native_frame *bjvm_get_native_frame_data(bjvm_stack_frame *frame);
 bjvm_plain_frame *bjvm_get_plain_frame(bjvm_stack_frame *frame);
 bjvm_cp_method *bjvm_get_frame_method(bjvm_stack_frame *frame);
 
@@ -455,7 +455,7 @@ struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjv
  * Pop the topmost frame from the stack, optionally passing a pointer as a debug
  * check.
  */
-void bjvm_pop_frame(bjvm_thread *thr, const bjvm_stack_frame *reference);
+void bjvm_pop_frame(bjvm_thread *thr, [[maybe_unused]] const bjvm_stack_frame *reference);
 
 bjvm_vm_options bjvm_default_vm_options();
 
@@ -561,7 +561,7 @@ void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *metho
 void bjvm_arithmetic_exception(bjvm_thread *thread, const bjvm_utf8 complaint);
 int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjvm_multianewarray_data *multianewarray,
                       uint16_t *sd);
-void dump_frame(FILE *stream, const bjvm_plain_frame *frame);
+void dump_frame(FILE *stream, const bjvm_stack_frame *frame);
 
 // e.g. int.class
 struct bjvm_native_Class *bjvm_primitive_class_mirror(bjvm_thread *thread, bjvm_type_kind prim_kind);

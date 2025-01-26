@@ -64,8 +64,14 @@ static inline void StoreField(bjvm_obj_header *thing, bjvm_utf8 field_name, bjvm
     StoreField(thing, name, (bjvm_stack_value) {.stack_field = value }, STR(#desc));                                                                                    \
   }
 
-GenerateStoreField(Int, int32_t, i, I);
-GenerateStoreField(Long, int64_t, l, J);
+static inline void StoreFieldInt(bjvm_obj_header *thing, bjvm_utf8 name, int32_t value) {
+  bjvm_utf8 I = (bjvm_utf8){.chars = (char *)("I"), .len = sizeof("I") - 1};
+  StoreField(thing, name, (bjvm_stack_value) {.i = value }, I);
+};
+static inline void StoreFieldLong(bjvm_obj_header *thing, bjvm_utf8 name, int64_t value) {
+  bjvm_utf8 J = (bjvm_utf8){.chars = (char *)("J"), .len = sizeof("J") - 1};
+  StoreField(thing, name, (bjvm_stack_value) {.l = value }, J);
+};
 
 #undef GenerateStoreField
 
