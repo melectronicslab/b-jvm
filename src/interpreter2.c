@@ -19,15 +19,15 @@
 #define DEBUG_CHECK
 #if 0
 #undef DEBUG_CHECK
-#define DEBUG_CHECK                                                                                                    \
-  SPILL_VOID                                                                                                           \
-  bjvm_cp_method *m = frame->method;                                                                                   \
-  printf("Calling method %.*s, descriptor %.*s, on class %.*s; %d\n", fmt_slice(m->name),                              \
-         fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), __LINE__);                                   \
-  heap_string s = insn_to_string(insn, pc);                                                                            \
-  printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
-  free_heap_str(s);                                                                                                    \
-  dump_frame(stderr, frame);
+#define DEBUG_CHECK \
+  SPILL_VOID \
+  bjvm_cp_method *m = frame->method; \
+  printf("Calling method %.*s, descriptor %.*s, on class %.*s; %d\n", fmt_slice(m->name), fmt_slice(m->unparsed_descriptor), \
+         fmt_slice(m->my_class->name), __LINE__); \
+  heap_string s = insn_to_string(insn, pc); \
+  printf("Insn kind: %.*s\n", fmt_slice(s)); free_heap_str(s); \
+  dump_frame(stderr, frame); \
+  assert(stack_depth(frame) == sp - frame->plain.stack);
 #endif
 
 // If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
@@ -40,34 +40,20 @@
 #define tos tos_
 
 #define ARGS_VOID                                                                                                      \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
+  bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
       [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
 #define ARGS_INT                                                                                                       \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
+  bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
       [[maybe_unused]] int64_t tos_, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
 #define ARGS_DOUBLE                                                                                                    \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
+  bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
       [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double tos_
 #define ARGS_FLOAT                                                                                                     \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
+  bjvm_thread *thread, bjvm_stack_frame *frame, bjvm_bytecode_insn *insns, int pc_, bjvm_stack_value *sp_,             \
       [[maybe_unused]] int64_t arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3
-#else
-#define sp (*sp_)
-#define pc (*pc_)
-#define tos (*tos_)
 
-#define ARGS_VOID                                                                                                      \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sp_, int64_t *arg_1,         \
-      float *_2, double *_3
-#define ARGS_INT                                                                                                       \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sp_, int64_t *tos_,          \
-      float *_2, double *_3
-#define ARGS_DOUBLE                                                                                                    \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sp_, int64_t *arg_1,         \
-      float *_2, double *tos_
-#define ARGS_FLOAT                                                                                                     \
-  bjvm_thread *thread, bjvm_plain_frame *frame, bjvm_bytecode_insn *insns, int *pc_, int *sp_, int64_t *arg_1,         \
-      float *tos_, double *_3
+#else
+#error "Not implemented"
 #endif
 
 // The current instruction
@@ -76,7 +62,7 @@
 // Indicates that the following return must be a tail call. Supported by modern clang and GCC (but GCC support seems
 // somewhat buggy...)
 #define MUSTTAIL [[clang::musttail]]
-#define MAX_INSN_KIND (bjvm_insn_putstatic_L + 1)
+#define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
 
 // Forward declarations
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame);
@@ -97,20 +83,14 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 // Sad :(
 #define WITH_UNDEF(expr)                                                                                               \
   {                                                                                                                    \
-    int64_t a_undef = 0;                                                                                               \
-    float b_undef = 0.0f;                                                                                              \
-    double c_undef = 0.0;                                                                                              \
+    int64_t a_undef;                                                                                           \
+    float b_undef;                                                                                              \
+    double c_undef;                                                                                              \
     expr                                                                                                               \
   }
 #else
-#define WITH_UNDEF(expr)                                                                                               \
-  {                                                                                                                    \
-    int64_t a_undef;                                                                                                   \
-    float b_undef;                                                                                                     \
-    double c_undef;                                                                                                    \
-    asm("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef));                                                             \
-    expr                                                                                                               \
-  }
+#define WITH_UNDEF(expr) { \
+  int64_t a_undef; float b_undef; double c_undef; asm("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef)); expr }
 #endif
 
 #define JMP_INT(tos)  int k = insns[0].kind;                                                                                                 \
@@ -140,16 +120,17 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 #endif
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
-#define SPILL(tos)                                                                                                     \
-  frame->program_counter = pc;                                                                                         \
-  *(sp - 1) = _Generic((tos),                                                                                          \
-      int64_t: (bjvm_stack_value){.l = (int64_t)tos},                                                                  \
-      float: (bjvm_stack_value){.f = (float)tos},                                                                      \
-      double: (bjvm_stack_value){.d = (double)tos},                                                                    \
-      bjvm_obj_header *: (bjvm_stack_value){.obj = (bjvm_obj_header *)(uintptr_t)tos} /* shut up float branch */       \
+#define SPILL(tos) \
+  frame->plain.program_counter = pc; \
+  *(sp - 1) = _Generic((tos), \
+    int64_t: (bjvm_stack_value) { .l = (int64_t)tos }, \
+    float: (bjvm_stack_value) { .f = (float)tos }, \
+    double: (bjvm_stack_value) { .d = (double)tos }, \
+    bjvm_obj_header *: (bjvm_stack_value) { .obj = (bjvm_obj_header *)(uintptr_t)tos } /* shut up float branch */\
   );
 // Same as SPILL(tos), but when no top-of-stack value is available
-#define SPILL_VOID frame->program_counter = pc;
+#define SPILL_VOID \
+  frame->plain.program_counter = pc;
 
 // Reload the top of stack type -- used after an instruction which may have instigated a GC. RELOAD_VOID is not
 // required.
@@ -705,7 +686,7 @@ static int64_t getfield_impl_int(ARGS_INT) {
   resolve_getfield_putfield_t ctx = {0};
   ctx.args.thread = thread;
   ctx.args.inst = insn;
-  ctx.args.frame = frame;
+  ctx.args.frame = &frame->plain;
   ctx.args.sp = sp;
   future_t fut = resolve_getfield_putfield(&ctx);
   if (thread->current_exception) {
@@ -722,7 +703,7 @@ static int64_t putfield_impl_void(ARGS_VOID) {
   resolve_getfield_putfield_t ctx = {0};
   ctx.args.thread = thread;
   ctx.args.inst = insn;
-  ctx.args.frame = frame;
+  ctx.args.frame = &frame->plain;
   ctx.args.sp = sp;
   SPILL_VOID
   future_t fut = resolve_getfield_putfield(&ctx);
@@ -1396,7 +1377,6 @@ static int64_t new_resolved_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(new_resolved)
 
 static int64_t newarray_impl_int(ARGS_INT) {
-
   DEBUG_CHECK
   int count = tos;
   SPILL(tos)
@@ -1448,15 +1428,26 @@ static int64_t anewarray_resolved_impl_int(ARGS_INT) {
 static int64_t multianewarray_impl_int(ARGS_INT) {
   DEBUG_CHECK
   SPILL(tos)
-  uint16_t temp_sp = sp - frame->values;
-  if (bjvm_multianewarray(thread, frame, insn->multianewarray, &temp_sp))
+  uint16_t temp_sp = sp - frame_stack(frame);
+  if (bjvm_multianewarray(thread, &frame->plain, insn->multianewarray, &temp_sp))
     return 0;
 
-  sp = frame->values + temp_sp;
-  NEXT_INT(frame->values[temp_sp - 1].obj)
+  sp = frame_stack(frame) + temp_sp;
+  NEXT_INT(frame_stack(frame)[temp_sp - 1].obj)
 }
 
 /** Method invocations */
+
+static int intrinsify(bjvm_bytecode_insn *inst) {
+  bjvm_cp_method *method = inst->ic;
+  if (utf8_equals(hslc(method->my_class->name), "java/lang/Math")) {
+    if (utf8_equals(method->name, "sqrt") && utf8_equals(method->unparsed_descriptor, "(D)D")) {
+      inst->kind = bjvm_insn_dsqrt;
+      return 1;
+    }
+  }
+  return 0;
+}
 
 DECLARE_ASYNC(int, resolve_invokestatic,
               locals(),
@@ -1490,21 +1481,27 @@ __attribute__((noinline)) static int64_t invokestatic_impl_void(ARGS_VOID) {
   if (thread->current_exception)
     return 0;
 
+
   info = &insn->cp->methodref;
   insn->kind = bjvm_insn_invokestatic_resolved;
   insn->ic = info->resolved;
   insn->args = info->descriptor->args_count;
+
+  if (intrinsify(insn)) {
+    STACK_POLYMORPHIC_JMP(*(sp - 1));
+  }
+
   JMP_VOID
 }
 FORWARD_TO_NULLARY(invokestatic)
 
 static inline uint8_t __attempt_invoke(bjvm_thread *thread, bjvm_stack_frame *invoked_frame,
-                                       bjvm_plain_frame *outer_frame, uint8_t argc, bool returns,
+                                       bjvm_stack_frame *outer_frame, uint8_t argc, bool returns,
                                        bjvm_stack_value *result) {
   future_t fut;
   bjvm_stack_value result_ = bjvm_interpret_2(&fut, thread, invoked_frame);
   if (unlikely(fut.status == FUTURE_NOT_READY)) {
-    assert(invoked_frame->plain.is_async_suspended);
+    assert(invoked_frame->is_async_suspended);
     continuation_frame *cont = async_stack_push(thread);
     *cont = (continuation_frame){.pnt = CONT_INVOKE,
                                  .wakeup = fut.wakeup,
@@ -1930,15 +1927,19 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
 
     // Invoke name->vmtarget with arguments mh, args
     bjvm_cp_method *invoke = name->vmtarget;
-    // TODO MEGA UB WHEN STACK IS EMPTY
-    bjvm_stack_value *arguments = sp - insn->args;
 
-    bjvm_stack_value temp;
-    memcpy(&temp, arguments, sizeof(temp));
+    // State of the stack:
+    // ... args
+    //   ^------^ length insn->args - 1
+    // Want prepend an mh:
+    // [mh] ... args
+    // ^------------^ length insn->args
+    bjvm_stack_value *arguments = sp - insn->args + 1;
+
+    memmove(arguments + 1, arguments, (insn->args - 1) * sizeof(bjvm_stack_value));
     arguments[0] = (bjvm_stack_value){.obj = (void *)mh}; // MethodHandle
 
     bjvm_stack_frame *invoked_frame = bjvm_push_frame(thread, invoke, arguments, insn->args);
-    memcpy(arguments, &temp, sizeof(temp)); // restore clobbered shit
     if (!invoked_frame) {
       return 0;
     }
@@ -1962,18 +1963,23 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokecallsite)
 
+__attribute__((always_inline))
+bjvm_stack_value *get_local(bjvm_stack_frame *frame, bjvm_bytecode_insn *inst) {
+  return frame_locals(frame) + inst->index;
+}
+
 /** Local variable accessors */
 __attribute__((always_inline)) static int64_t iload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT_INT(frame->values[frame->max_stack + insn->index].i)
+  NEXT_INT(get_local(frame, insn)->i)
 }
 FORWARD_TO_NULLARY(iload)
 
 __attribute__((always_inline)) static int64_t fload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT_FLOAT(frame->values[frame->max_stack + insn->index].f)
+  NEXT_FLOAT(get_local(frame, insn)->f)
 }
 FORWARD_TO_NULLARY(fload)
 
@@ -1981,7 +1987,7 @@ __attribute__((always_inline)) static int64_t dload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT_DOUBLE(frame->values[frame->max_stack + insn->index].d)
+  NEXT_DOUBLE(get_local(frame, insn)->d)
 }
 FORWARD_TO_NULLARY(dload)
 
@@ -1989,28 +1995,27 @@ __attribute__((always_inline)) static int64_t lload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT_INT(frame->values[frame->max_stack + insn->index].l)
+  NEXT_INT(get_local(frame, insn)->l)
 }
 FORWARD_TO_NULLARY(lload)
 
 __attribute__((always_inline)) static int64_t aload_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK
   sp++;
-  NEXT_INT(frame->values[frame->max_stack + insn->index].obj)
+  NEXT_INT(get_local(frame, insn)->obj)
 }
 FORWARD_TO_NULLARY(aload)
 
 __attribute__((always_inline)) static int64_t astore_impl_int(ARGS_INT) {
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].obj = (bjvm_obj_header *)tos;
+  get_local(frame, insn)->obj = (bjvm_obj_header *)tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
 
 static int64_t istore_impl_int(ARGS_INT) {
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].i = (int)tos;
+  get_local(frame, insn)->i = (int)tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -2018,7 +2023,7 @@ static int64_t istore_impl_int(ARGS_INT) {
 static int64_t fstore_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].f = tos;
+  get_local(frame, insn)->f = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -2026,7 +2031,7 @@ static int64_t fstore_impl_float(ARGS_FLOAT) {
 static int64_t dstore_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].d = tos;
+  get_local(frame, insn)->d = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -2034,7 +2039,7 @@ static int64_t dstore_impl_double(ARGS_DOUBLE) {
 static int64_t lstore_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  frame->values[frame->max_stack + insn->index].l = tos;
+  get_local(frame, insn)->l = tos;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
@@ -2042,7 +2047,7 @@ static int64_t lstore_impl_int(ARGS_INT) {
 static int64_t iinc_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT_VOID
 }
@@ -2050,7 +2055,7 @@ static int64_t iinc_impl_void(ARGS_VOID) {
 static int64_t iinc_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT_DOUBLE(tos)
 }
@@ -2058,7 +2063,7 @@ static int64_t iinc_impl_double(ARGS_DOUBLE) {
 static int64_t iinc_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT_FLOAT(tos)
 }
@@ -2066,7 +2071,7 @@ static int64_t iinc_impl_float(ARGS_FLOAT) {
 static int64_t iinc_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
+  int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
   NEXT_INT(tos)
 }
@@ -2341,7 +2346,6 @@ static int64_t checkcast_resolved_impl_int(ARGS_INT) {
     INIT_STACK_STRING(complaint, 1000);
     complaint = bprintf(complaint, "Expected instance of %.*s, got %.*s", fmt_slice(insn->classdesc->name),
                         fmt_slice(obj->descriptor->name));
-    printf("COMPLAINT: %.*s\n", fmt_slice(complaint));
     SPILL(tos)
     bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
     return 0;
@@ -2372,6 +2376,11 @@ static int64_t instanceof_resolved_impl_int(ARGS_INT) {
   NEXT_INT(result)
 }
 
+static int64_t sqrt_impl_double(ARGS_DOUBLE) {
+  DEBUG_CHECK
+  NEXT_DOUBLE(sqrt(tos))
+}
+
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
   bjvm_stack_value result;
   bjvm_plain_frame *frame;
@@ -2382,20 +2391,20 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
   if (bjvm_is_frame_native(frame_)) {
     bjvm_run_native_t ctx = {0};
     ctx.args.thread = thread;
-    ctx.args.frame = bjvm_get_native_frame(frame_);
-    future_t __fut = bjvm_run_native(&ctx);
-    assert(__fut.status == FUTURE_READY); // todo: fix
+    ctx.args.frame = frame_;
+    *fut = bjvm_run_native(&ctx);
+    assert(fut->status == FUTURE_READY); // todo: fix
     bjvm_pop_frame(thread, frame_);
-
-    *fut = __fut;
     return ctx._result;
   }
 
+  frame = bjvm_get_plain_frame(frame_);
+
   // Load the instruction to jump to and perform a stack-polymorphic jump there
-  if (unlikely(frame_->plain.is_async_suspended)) {
-    // we need to pop (not peek) because if we re-enter this method, it'll need to pop its frame
+  if (unlikely(frame_->is_async_suspended)) {
+    // we need to pop (not peek) because if we re-enter this method, it'll need to pop its fram
     continuation_frame cont = *async_stack_pop(thread);
-    sp_ = &frame->values[stack_depth(frame)];
+    sp_ = &frame->stack[stack_depth(frame_)];
 
     future_t __fut;
 
@@ -2453,17 +2462,17 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
       UNREACHABLE();
     }
 
-    frame_->plain.is_async_suspended = false;
+    frame_->is_async_suspended = false;
   }
 
   while (true) {
     frame = bjvm_get_plain_frame(frame_);
-    sp_ = &frame->values[stack_depth(frame)];
+    sp_ = &frame->stack[stack_depth(frame_)];
     pc_ = frame->program_counter;
-    bjvm_bytecode_insn *insns = frame->method->code->code;
+    bjvm_bytecode_insn *insns = frame_->method->code->code;
 
 #if DO_TAILS
-    result.l = entry(thread, frame, insns + pc_, pc_, sp_, 0, 0, 0);
+    result.l = entry(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
 #else
     int64_t int_tos = 0;
     float float_tos = 0;
@@ -2472,17 +2481,18 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
 #endif
 
     // we really should just have all the methods return a future_t via a pointer, but whatever
-    if (unlikely(frame->is_async_suspended)) {
+    if (unlikely(frame_->is_async_suspended)) {
     suspend:
       // reconstruct future to return
       async_wakeup_info *wk = async_stack_top(thread);
+      printf("REACHED!\n");
       *fut = (future_t){FUTURE_NOT_READY, wk};
       return (bjvm_stack_value){0};
     }
 
     if (unlikely(thread->current_exception)) {
     exception:
-      bjvm_attribute_exception_table *table = frame->method->code->exception_table;
+      bjvm_attribute_exception_table *table = frame_->method->code->exception_table;
       if (table) {
         int pc = frame->program_counter;
         for (int i = 0; i < table->entries_count; ++i) {
@@ -2495,8 +2505,8 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
             }
             if (!ent.catch_type || bjvm_instanceof(thread->current_exception->descriptor, ent.catch_type->classdesc)) {
               frame->program_counter = ent.handler_insn;
-              sp = &frame->values[1];
-              frame->values[0] = (bjvm_stack_value){.obj = thread->current_exception};
+              sp = &frame->stack[1];
+              frame->stack[0] = (bjvm_stack_value){.obj = thread->current_exception};
               thread->current_exception = nullptr;
 
               goto cont; // start interpreting again
@@ -2717,592 +2727,595 @@ PAGE_ALIGN static int64_t (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
 };
 
 PAGE_ALIGN static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
-    nop_impl_double,
-    nullptr /* aaload_impl_double */,
-    nullptr /* aastore_impl_double */,
-    aconst_null_impl_double,
-    nullptr /* areturn_impl_double */,
-    nullptr /* arraylength_impl_double */,
-    nullptr /* athrow_impl_double */,
-    nullptr /* baload_impl_double */,
-    nullptr /* bastore_impl_double */,
-    nullptr /* caload_impl_double */,
-    nullptr /* castore_impl_double */,
-    d2f_impl_double,
-    d2i_impl_double,
-    d2l_impl_double,
-    dadd_impl_double,
-    nullptr /* daload_impl_double */,
-    dastore_impl_double,
-    dcmpg_impl_double,
-    dcmpl_impl_double,
-    ddiv_impl_double,
-    dmul_impl_double,
-    dneg_impl_double,
-    nullptr /* drem_impl_double */,
-    dreturn_impl_double,
-    dsub_impl_double,
-    dup_impl_double,
-    dup_x1_impl_double,
-    dup_x2_impl_double,
-    dup2_impl_double,
-    dup2_x1_impl_double,
-    dup2_x2_impl_double,
-    nullptr /* f2d_impl_double */,
-    nullptr /* f2i_impl_double */,
-    nullptr /* f2l_impl_double */,
-    nullptr /* fadd_impl_double */,
-    nullptr /* faload_impl_double */,
-    nullptr /* fastore_impl_double */,
-    nullptr /* fcmpg_impl_double */,
-    nullptr /* fcmpl_impl_double */,
-    nullptr /* fdiv_impl_double */,
-    nullptr /* fmul_impl_double */,
-    nullptr /* fneg_impl_double */,
-    nullptr /* frem_impl_double */,
-    nullptr /* freturn_impl_double */,
-    nullptr /* fsub_impl_double */,
-    nullptr /* i2b_impl_double */,
-    nullptr /* i2c_impl_double */,
-    nullptr /* i2d_impl_double */,
-    nullptr /* i2f_impl_double */,
-    nullptr /* i2l_impl_double */,
-    nullptr /* i2s_impl_double */,
-    nullptr /* iadd_impl_double */,
-    nullptr /* iaload_impl_double */,
-    nullptr /* iand_impl_double */,
-    nullptr /* iastore_impl_double */,
-    nullptr /* idiv_impl_double */,
-    nullptr /* imul_impl_double */,
-    nullptr /* ineg_impl_double */,
-    nullptr /* ior_impl_double */,
-    nullptr /* irem_impl_double */,
-    nullptr /* ireturn_impl_double */,
-    nullptr /* ishl_impl_double */,
-    nullptr /* ishr_impl_double */,
-    nullptr /* isub_impl_double */,
-    nullptr /* iushr_impl_double */,
-    nullptr /* ixor_impl_double */,
-    nullptr /* l2d_impl_double */,
-    nullptr /* l2f_impl_double */,
-    nullptr /* l2i_impl_double */,
-    nullptr /* ladd_impl_double */,
-    nullptr /* laload_impl_double */,
-    nullptr /* land_impl_double */,
-    nullptr /* lastore_impl_double */,
-    nullptr /* lcmp_impl_double */,
-    nullptr /* ldiv_impl_double */,
-    nullptr /* lmul_impl_double */,
-    nullptr /* lneg_impl_double */,
-    nullptr /* lor_impl_double */,
-    nullptr /* lrem_impl_double */,
-    nullptr /* lreturn_impl_double */,
-    nullptr /* lshl_impl_double */,
-    nullptr /* lshr_impl_double */,
-    nullptr /* lsub_impl_double */,
-    nullptr /* lushr_impl_double */,
-    nullptr /* lxor_impl_double */,
-    nullptr /* monitorenter_impl_double */,
-    nullptr /* monitorexit_impl_double */,
-    pop_impl_double,
-    pop2_impl_double,
-    return_impl_double,
-    nullptr /* saload_impl_double */,
-    nullptr /* sastore_impl_double */,
-    swap_impl_double,
-    nullptr /* anewarray_impl_double */,
-    nullptr /* checkcast_impl_double */,
-    nullptr /* getfield_impl_double */,
-    getstatic_impl_double,
-    nullptr /* instanceof_impl_double */,
-    invokedynamic_impl_double,
-    new_impl_double,
-    putfield_impl_double,
-    putstatic_impl_double,
-    invokevirtual_impl_double,
-    invokespecial_impl_double,
-    invokestatic_impl_double,
-    ldc_impl_double,
-    ldc2_w_impl_double,
-    dload_impl_double,
-    fload_impl_double,
-    iload_impl_double,
-    lload_impl_double,
-    dstore_impl_double,
-    nullptr /* fstore_impl_double */,
-    nullptr /* istore_impl_double */,
-    nullptr /* lstore_impl_double */,
-    aload_impl_double,
-    nullptr /* astore_impl_double */,
-    goto_impl_double,
-    nullptr /* jsr_impl_double */,
-    nullptr /* if_acmpeq_impl_double */,
-    nullptr /* if_acmpne_impl_double */,
-    nullptr /* if_icmpeq_impl_double */,
-    nullptr /* if_icmpne_impl_double */,
-    nullptr /* if_icmplt_impl_double */,
-    nullptr /* if_icmpge_impl_double */,
-    nullptr /* if_icmpgt_impl_double */,
-    nullptr /* if_icmple_impl_double */,
-    nullptr /* ifeq_impl_double */,
-    nullptr /* ifne_impl_double */,
-    nullptr /* iflt_impl_double */,
-    nullptr /* ifge_impl_double */,
-    nullptr /* ifgt_impl_double */,
-    nullptr /* ifle_impl_double */,
-    nullptr /* ifnonnull_impl_double */,
-    nullptr /* ifnull_impl_double */,
-    iconst_impl_double,
-    dconst_impl_double,
-    fconst_impl_double,
-    lconst_impl_double,
-    iinc_impl_double,
-    invokeinterface_impl_double,
-    nullptr /* multianewarray_impl_double */,
-    nullptr /* newarray_impl_double */,
-    nullptr /* tableswitch_impl_double */,
-    nullptr /* lookupswitch_impl_double */,
-    nullptr /* ret_impl_double */,
-    nullptr /* anewarray_resolved_impl_double */,
-    nullptr /* checkcast_resolved_impl_double */,
-    nullptr /* instanceof_resolved_impl_double */,
-    new_resolved_impl_double,
-    invokeitable_vtable_monomorphic_impl_double,
-    invokevtable_polymorphic_impl_double,
-    invokeitable_vtable_monomorphic_impl_double,
-    invokeitable_polymorphic_impl_double,
-    invokespecial_resolved_impl_double,
-    invokestatic_resolved_impl_double,
-    invokecallsite_impl_double,
-    invokesigpoly_impl_double,
-    nullptr /* getfield_B_impl_double */,
-    nullptr /* getfield_C_impl_double */,
-    nullptr /* getfield_S_impl_double */,
-    nullptr /* getfield_I_impl_double */,
-    nullptr /* getfield_J_impl_double */,
-    nullptr /* getfield_F_impl_double */,
-    nullptr /* getfield_D_impl_double */,
-    nullptr /* getfield_Z_impl_double */,
-    nullptr /* getfield_L_impl_double */,
-    nullptr /* putfield_B_impl_double */,
-    nullptr /* putfield_C_impl_double */,
-    nullptr /* putfield_S_impl_double */,
-    nullptr /* putfield_I_impl_double */,
-    nullptr /* putfield_J_impl_double */,
-    nullptr /* putfield_F_impl_double */,
-    putfield_D_impl_double,
-    nullptr /* putfield_Z_impl_double */,
-    nullptr /* putfield_L_impl_double */,
-    getstatic_B_impl_double,
-    getstatic_C_impl_double,
-    getstatic_S_impl_double,
-    getstatic_I_impl_double,
-    getstatic_J_impl_double,
-    getstatic_F_impl_double,
-    getstatic_D_impl_double,
-    getstatic_Z_impl_double,
-    getstatic_L_impl_double,
-    nullptr /* putstatic_B_impl_double */,
-    nullptr /* putstatic_C_impl_double */,
-    nullptr /* putstatic_S_impl_double */,
-    nullptr /* putstatic_I_impl_double */,
-    nullptr /* putstatic_J_impl_double */,
-    nullptr /* putstatic_F_impl_double */,
-    putstatic_D_impl_double,
-    nullptr /* putstatic_Z_impl_double */,
-    nullptr, /* putstatic_L_impl_double */
+  nop_impl_double,
+  nullptr /* aaload_impl_double */,
+  nullptr /* aastore_impl_double */,
+  aconst_null_impl_double,
+  nullptr /* areturn_impl_double */,
+  nullptr /* arraylength_impl_double */,
+  nullptr /* athrow_impl_double */,
+  nullptr /* baload_impl_double */,
+  nullptr /* bastore_impl_double */,
+  nullptr /* caload_impl_double */,
+  nullptr /* castore_impl_double */,
+  d2f_impl_double,
+  d2i_impl_double,
+  d2l_impl_double,
+  dadd_impl_double,
+  nullptr /* daload_impl_double */,
+  dastore_impl_double,
+  dcmpg_impl_double,
+  dcmpl_impl_double,
+  ddiv_impl_double,
+  dmul_impl_double,
+  dneg_impl_double,
+  nullptr /* drem_impl_double */,
+  dreturn_impl_double,
+  dsub_impl_double,
+  dup_impl_double,
+  dup_x1_impl_double,
+  dup_x2_impl_double,
+  dup2_impl_double,
+  dup2_x1_impl_double,
+  dup2_x2_impl_double,
+  nullptr /* f2d_impl_double */,
+  nullptr /* f2i_impl_double */,
+  nullptr /* f2l_impl_double */,
+  nullptr /* fadd_impl_double */,
+  nullptr /* faload_impl_double */,
+  nullptr /* fastore_impl_double */,
+  nullptr /* fcmpg_impl_double */,
+  nullptr /* fcmpl_impl_double */,
+  nullptr /* fdiv_impl_double */,
+  nullptr /* fmul_impl_double */,
+  nullptr /* fneg_impl_double */,
+  nullptr /* frem_impl_double */,
+  nullptr /* freturn_impl_double */,
+  nullptr /* fsub_impl_double */,
+  nullptr /* i2b_impl_double */,
+  nullptr /* i2c_impl_double */,
+  nullptr /* i2d_impl_double */,
+  nullptr /* i2f_impl_double */,
+  nullptr /* i2l_impl_double */,
+  nullptr /* i2s_impl_double */,
+  nullptr /* iadd_impl_double */,
+  nullptr /* iaload_impl_double */,
+  nullptr /* iand_impl_double */,
+  nullptr /* iastore_impl_double */,
+  nullptr /* idiv_impl_double */,
+  nullptr /* imul_impl_double */,
+  nullptr /* ineg_impl_double */,
+  nullptr /* ior_impl_double */,
+  nullptr /* irem_impl_double */,
+  nullptr /* ireturn_impl_double */,
+  nullptr /* ishl_impl_double */,
+  nullptr /* ishr_impl_double */,
+  nullptr /* isub_impl_double */,
+  nullptr /* iushr_impl_double */,
+  nullptr /* ixor_impl_double */,
+  nullptr /* l2d_impl_double */,
+  nullptr /* l2f_impl_double */,
+  nullptr /* l2i_impl_double */,
+  nullptr /* ladd_impl_double */,
+  nullptr /* laload_impl_double */,
+  nullptr /* land_impl_double */,
+  nullptr /* lastore_impl_double */,
+  nullptr /* lcmp_impl_double */,
+  nullptr /* ldiv_impl_double */,
+  nullptr /* lmul_impl_double */,
+  nullptr /* lneg_impl_double */,
+  nullptr /* lor_impl_double */,
+  nullptr /* lrem_impl_double */,
+  nullptr /* lreturn_impl_double */,
+  nullptr /* lshl_impl_double */,
+  nullptr /* lshr_impl_double */,
+  nullptr /* lsub_impl_double */,
+  nullptr /* lushr_impl_double */,
+  nullptr /* lxor_impl_double */,
+  nullptr /* monitorenter_impl_double */,
+  nullptr /* monitorexit_impl_double */,
+  pop_impl_double,
+  pop2_impl_double,
+  return_impl_double,
+  nullptr /* saload_impl_double */,
+  nullptr /* sastore_impl_double */,
+  swap_impl_double,
+  nullptr /* anewarray_impl_double */,
+  nullptr /* checkcast_impl_double */,
+  nullptr /* getfield_impl_double */,
+  getstatic_impl_double,
+  nullptr /* instanceof_impl_double */,
+  invokedynamic_impl_double,
+  new_impl_double,
+  putfield_impl_double,
+  putstatic_impl_double,
+  invokevirtual_impl_double,
+  invokespecial_impl_double,
+  invokestatic_impl_double,
+  ldc_impl_double,
+  ldc2_w_impl_double,
+  dload_impl_double,
+  fload_impl_double,
+  iload_impl_double,
+  lload_impl_double,
+  dstore_impl_double,
+  nullptr /* fstore_impl_double */,
+  nullptr /* istore_impl_double */,
+  nullptr /* lstore_impl_double */,
+  aload_impl_double,
+  nullptr /* astore_impl_double */,
+  goto_impl_double,
+  nullptr /* jsr_impl_double */,
+  nullptr /* if_acmpeq_impl_double */,
+  nullptr /* if_acmpne_impl_double */,
+  nullptr /* if_icmpeq_impl_double */,
+  nullptr /* if_icmpne_impl_double */,
+  nullptr /* if_icmplt_impl_double */,
+  nullptr /* if_icmpge_impl_double */,
+  nullptr /* if_icmpgt_impl_double */,
+  nullptr /* if_icmple_impl_double */,
+  nullptr /* ifeq_impl_double */,
+  nullptr /* ifne_impl_double */,
+  nullptr /* iflt_impl_double */,
+  nullptr /* ifge_impl_double */,
+  nullptr /* ifgt_impl_double */,
+  nullptr /* ifle_impl_double */,
+  nullptr /* ifnonnull_impl_double */,
+  nullptr /* ifnull_impl_double */,
+  iconst_impl_double,
+  dconst_impl_double,
+  fconst_impl_double,
+  lconst_impl_double,
+  iinc_impl_double,
+  invokeinterface_impl_double,
+  nullptr /* multianewarray_impl_double */,
+  nullptr /* newarray_impl_double */,
+  nullptr /* tableswitch_impl_double */,
+  nullptr /* lookupswitch_impl_double */,
+  nullptr /* ret_impl_double */,
+  nullptr /* anewarray_resolved_impl_double */,
+  nullptr /* checkcast_resolved_impl_double */,
+  nullptr /* instanceof_resolved_impl_double */,
+  new_resolved_impl_double,
+  invokeitable_vtable_monomorphic_impl_double,
+  invokevtable_polymorphic_impl_double,
+  invokeitable_vtable_monomorphic_impl_double,
+  invokeitable_polymorphic_impl_double,
+  invokespecial_resolved_impl_double,
+  invokestatic_resolved_impl_double,
+  invokecallsite_impl_double,
+  invokesigpoly_impl_double,
+  nullptr /* getfield_B_impl_double */,
+  nullptr /* getfield_C_impl_double */,
+  nullptr /* getfield_S_impl_double */,
+  nullptr /* getfield_I_impl_double */,
+  nullptr /* getfield_J_impl_double */,
+  nullptr /* getfield_F_impl_double */,
+  nullptr /* getfield_D_impl_double */,
+  nullptr /* getfield_Z_impl_double */,
+  nullptr /* getfield_L_impl_double */,
+  nullptr /* putfield_B_impl_double */,
+  nullptr /* putfield_C_impl_double */,
+  nullptr /* putfield_S_impl_double */,
+  nullptr /* putfield_I_impl_double */,
+  nullptr /* putfield_J_impl_double */,
+  nullptr /* putfield_F_impl_double */,
+  putfield_D_impl_double,
+  nullptr /* putfield_Z_impl_double */,
+  nullptr /* putfield_L_impl_double */,
+  getstatic_B_impl_double,
+  getstatic_C_impl_double,
+  getstatic_S_impl_double,
+  getstatic_I_impl_double,
+  getstatic_J_impl_double,
+  getstatic_F_impl_double,
+  getstatic_D_impl_double,
+  getstatic_Z_impl_double,
+  getstatic_L_impl_double,
+  nullptr /* putstatic_B_impl_double */,
+  nullptr /* putstatic_C_impl_double */,
+  nullptr /* putstatic_S_impl_double */,
+  nullptr /* putstatic_I_impl_double */,
+  nullptr /* putstatic_J_impl_double */,
+  nullptr /* putstatic_F_impl_double */,
+  putstatic_D_impl_double,
+  nullptr /* putstatic_Z_impl_double */,
+  nullptr, /* putstatic_L_impl_double */
+  sqrt_impl_double
 };
 
 PAGE_ALIGN static int64_t (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
-    nop_impl_int,
-    aaload_impl_int,
-    aastore_impl_int,
-    aconst_null_impl_int,
-    areturn_impl_int,
-    arraylength_impl_int,
-    athrow_impl_int,
-    baload_impl_int,
-    bastore_impl_int,
-    caload_impl_int,
-    castore_impl_int,
-    nullptr /* d2f_impl_int */,
-    nullptr /* d2i_impl_int */,
-    nullptr /* d2l_impl_int */,
-    nullptr /* dadd_impl_int */,
-    daload_impl_int,
-    nullptr /* dastore_impl_int */,
-    nullptr /* dcmpg_impl_int */,
-    nullptr /* dcmpl_impl_int */,
-    nullptr /* ddiv_impl_int */,
-    nullptr /* dmul_impl_int */,
-    nullptr /* dneg_impl_int */,
-    nullptr /* drem_impl_int */,
-    nullptr /* dreturn_impl_int */,
-    nullptr /* dsub_impl_int */,
-    dup_impl_int,
-    dup_x1_impl_int,
-    dup_x2_impl_int,
-    dup2_impl_int,
-    dup2_x1_impl_int,
-    dup2_x2_impl_int,
-    nullptr /* f2d_impl_int */,
-    nullptr /* f2i_impl_int */,
-    nullptr /* f2l_impl_int */,
-    nullptr /* fadd_impl_int */,
-    faload_impl_int,
-    nullptr /* fastore_impl_int */,
-    nullptr /* fcmpg_impl_int */,
-    nullptr /* fcmpl_impl_int */,
-    nullptr /* fdiv_impl_int */,
-    nullptr /* fmul_impl_int */,
-    nullptr /* fneg_impl_int */,
-    nullptr /* frem_impl_int */,
-    nullptr /* freturn_impl_int */,
-    nullptr /* fsub_impl_int */,
-    i2b_impl_int,
-    i2c_impl_int,
-    i2d_impl_int,
-    i2f_impl_int,
-    i2l_impl_int,
-    i2s_impl_int,
-    iadd_impl_int,
-    iaload_impl_int,
-    iand_impl_int,
-    iastore_impl_int,
-    idiv_impl_int,
-    imul_impl_int,
-    ineg_impl_int,
-    ior_impl_int,
-    irem_impl_int,
-    ireturn_impl_int,
-    ishl_impl_int,
-    ishr_impl_int,
-    isub_impl_int,
-    iushr_impl_int,
-    ixor_impl_int,
-    l2d_impl_int,
-    l2f_impl_int,
-    l2i_impl_int,
-    ladd_impl_int,
-    laload_impl_int,
-    land_impl_int,
-    lastore_impl_int,
-    lcmp_impl_int,
-    ldiv_impl_int,
-    lmul_impl_int,
-    lneg_impl_int,
-    lor_impl_int,
-    lrem_impl_int,
-    lreturn_impl_int,
-    lshl_impl_int,
-    lshr_impl_int,
-    lsub_impl_int,
-    lushr_impl_int,
-    lxor_impl_int,
-    monitorenter_impl_int,
-    monitorexit_impl_int,
-    pop_impl_int,
-    pop2_impl_int,
-    return_impl_int,
-    saload_impl_int,
-    sastore_impl_int,
-    swap_impl_int,
-    anewarray_impl_int,
-    checkcast_impl_int,
-    getfield_impl_int,
-    getstatic_impl_int,
-    instanceof_impl_int,
-    invokedynamic_impl_int,
-    new_impl_int,
-    putfield_impl_int,
-    putstatic_impl_int,
-    invokevirtual_impl_int,
-    invokespecial_impl_int,
-    invokestatic_impl_int,
-    ldc_impl_int,
-    ldc2_w_impl_int,
-    dload_impl_int,
-    fload_impl_int,
-    iload_impl_int,
-    lload_impl_int,
-    nullptr /* dstore_impl_int */,
-    nullptr /* fstore_impl_int */,
-    istore_impl_int,
-    lstore_impl_int,
-    aload_impl_int,
-    astore_impl_int,
-    goto_impl_int,
-    nullptr /* jsr_impl_int */,
-    if_acmpeq_impl_int,
-    if_acmpne_impl_int,
-    if_icmpeq_impl_int,
-    if_icmpne_impl_int,
-    if_icmplt_impl_int,
-    if_icmpge_impl_int,
-    if_icmpgt_impl_int,
-    if_icmple_impl_int,
-    ifeq_impl_int,
-    ifne_impl_int,
-    iflt_impl_int,
-    ifge_impl_int,
-    ifgt_impl_int,
-    ifle_impl_int,
-    ifnonnull_impl_int,
-    ifnull_impl_int,
-    iconst_impl_int,
-    dconst_impl_int,
-    fconst_impl_int,
-    lconst_impl_int,
-    iinc_impl_int,
-    invokeinterface_impl_int,
-    multianewarray_impl_int,
-    newarray_impl_int,
-    tableswitch_impl_int,
-    lookupswitch_impl_int,
-    nullptr /* ret_impl_int */,
-    anewarray_resolved_impl_int,
-    checkcast_resolved_impl_int,
-    instanceof_resolved_impl_int,
-    new_resolved_impl_int,
-    invokeitable_vtable_monomorphic_impl_int,
-    invokevtable_polymorphic_impl_int,
-    invokeitable_vtable_monomorphic_impl_int,
-    invokeitable_polymorphic_impl_int,
-    invokespecial_resolved_impl_int,
-    invokestatic_resolved_impl_int,
-    invokecallsite_impl_int,
-    invokesigpoly_impl_int,
-    getfield_B_impl_int,
-    getfield_C_impl_int,
-    getfield_S_impl_int,
-    getfield_I_impl_int,
-    getfield_J_impl_int,
-    getfield_F_impl_int,
-    getfield_D_impl_int,
-    getfield_Z_impl_int,
-    getfield_L_impl_int,
-    putfield_B_impl_int,
-    putfield_C_impl_int,
-    putfield_S_impl_int,
-    putfield_I_impl_int,
-    putfield_J_impl_int,
-    nullptr /* putfield_F_impl_int */,
-    nullptr /* putfield_D_impl_int */,
-    putfield_Z_impl_int,
-    putfield_L_impl_int,
-    getstatic_B_impl_int,
-    getstatic_C_impl_int,
-    getstatic_S_impl_int,
-    getstatic_I_impl_int,
-    getstatic_J_impl_int,
-    getstatic_F_impl_int,
-    getstatic_D_impl_int,
-    getstatic_Z_impl_int,
-    getstatic_L_impl_int,
-    putstatic_B_impl_int,
-    putstatic_C_impl_int,
-    putstatic_S_impl_int,
-    putstatic_I_impl_int,
-    putstatic_J_impl_int,
-    nullptr /* putstatic_F_impl_int */,
-    nullptr /* putstatic_D_impl_int */,
-    putstatic_Z_impl_int,
-    putstatic_L_impl_int,
+  nop_impl_int,
+  aaload_impl_int,
+  aastore_impl_int,
+  aconst_null_impl_int,
+  areturn_impl_int,
+  arraylength_impl_int,
+  athrow_impl_int,
+  baload_impl_int,
+  bastore_impl_int,
+  caload_impl_int,
+  castore_impl_int,
+  nullptr /* d2f_impl_int */,
+  nullptr /* d2i_impl_int */,
+  nullptr /* d2l_impl_int */,
+  nullptr /* dadd_impl_int */,
+  daload_impl_int,
+  nullptr /* dastore_impl_int */,
+  nullptr /* dcmpg_impl_int */,
+  nullptr /* dcmpl_impl_int */,
+  nullptr /* ddiv_impl_int */,
+  nullptr /* dmul_impl_int */,
+  nullptr /* dneg_impl_int */,
+  nullptr /* drem_impl_int */,
+  nullptr /* dreturn_impl_int */,
+  nullptr /* dsub_impl_int */,
+  dup_impl_int,
+  dup_x1_impl_int,
+  dup_x2_impl_int,
+  dup2_impl_int,
+  dup2_x1_impl_int,
+  dup2_x2_impl_int,
+  nullptr /* f2d_impl_int */,
+  nullptr /* f2i_impl_int */,
+  nullptr /* f2l_impl_int */,
+  nullptr /* fadd_impl_int */,
+  faload_impl_int,
+  nullptr /* fastore_impl_int */,
+  nullptr /* fcmpg_impl_int */,
+  nullptr /* fcmpl_impl_int */,
+  nullptr /* fdiv_impl_int */,
+  nullptr /* fmul_impl_int */,
+  nullptr /* fneg_impl_int */,
+  nullptr /* frem_impl_int */,
+  nullptr /* freturn_impl_int */,
+  nullptr /* fsub_impl_int */,
+  i2b_impl_int,
+  i2c_impl_int,
+  i2d_impl_int,
+  i2f_impl_int,
+  i2l_impl_int,
+  i2s_impl_int,
+  iadd_impl_int,
+  iaload_impl_int,
+  iand_impl_int,
+  iastore_impl_int,
+  idiv_impl_int,
+  imul_impl_int,
+  ineg_impl_int,
+  ior_impl_int,
+  irem_impl_int,
+  ireturn_impl_int,
+  ishl_impl_int,
+  ishr_impl_int,
+  isub_impl_int,
+  iushr_impl_int,
+  ixor_impl_int,
+  l2d_impl_int,
+  l2f_impl_int,
+  l2i_impl_int,
+  ladd_impl_int,
+  laload_impl_int,
+  land_impl_int,
+  lastore_impl_int,
+  lcmp_impl_int,
+  ldiv_impl_int,
+  lmul_impl_int,
+  lneg_impl_int,
+  lor_impl_int,
+  lrem_impl_int,
+  lreturn_impl_int,
+  lshl_impl_int,
+  lshr_impl_int,
+  lsub_impl_int,
+  lushr_impl_int,
+  lxor_impl_int,
+  monitorenter_impl_int,
+  monitorexit_impl_int,
+  pop_impl_int,
+  pop2_impl_int,
+  return_impl_int,
+  saload_impl_int,
+  sastore_impl_int,
+  swap_impl_int,
+  anewarray_impl_int,
+  checkcast_impl_int,
+  getfield_impl_int,
+  getstatic_impl_int,
+  instanceof_impl_int,
+  invokedynamic_impl_int,
+  new_impl_int,
+  putfield_impl_int,
+  putstatic_impl_int,
+  invokevirtual_impl_int,
+  invokespecial_impl_int,
+  invokestatic_impl_int,
+  ldc_impl_int,
+  ldc2_w_impl_int,
+  dload_impl_int,
+  fload_impl_int,
+  iload_impl_int,
+  lload_impl_int,
+  nullptr /* dstore_impl_int */,
+  nullptr /* fstore_impl_int */,
+  istore_impl_int,
+  lstore_impl_int,
+  aload_impl_int,
+  astore_impl_int,
+  goto_impl_int,
+  nullptr /* jsr_impl_int */,
+  if_acmpeq_impl_int,
+  if_acmpne_impl_int,
+  if_icmpeq_impl_int,
+  if_icmpne_impl_int,
+  if_icmplt_impl_int,
+  if_icmpge_impl_int,
+  if_icmpgt_impl_int,
+  if_icmple_impl_int,
+  ifeq_impl_int,
+  ifne_impl_int,
+  iflt_impl_int,
+  ifge_impl_int,
+  ifgt_impl_int,
+  ifle_impl_int,
+  ifnonnull_impl_int,
+  ifnull_impl_int,
+  iconst_impl_int,
+  dconst_impl_int,
+  fconst_impl_int,
+  lconst_impl_int,
+  iinc_impl_int,
+  invokeinterface_impl_int,
+  multianewarray_impl_int,
+  newarray_impl_int,
+  tableswitch_impl_int,
+  lookupswitch_impl_int,
+  nullptr /* ret_impl_int */,
+  anewarray_resolved_impl_int,
+  checkcast_resolved_impl_int,
+  instanceof_resolved_impl_int,
+  new_resolved_impl_int,
+  invokeitable_vtable_monomorphic_impl_int,
+  invokevtable_polymorphic_impl_int,
+  invokeitable_vtable_monomorphic_impl_int,
+  invokeitable_polymorphic_impl_int,
+  invokespecial_resolved_impl_int,
+  invokestatic_resolved_impl_int,
+  invokecallsite_impl_int,
+  invokesigpoly_impl_int,
+  getfield_B_impl_int,
+  getfield_C_impl_int,
+  getfield_S_impl_int,
+  getfield_I_impl_int,
+  getfield_J_impl_int,
+  getfield_F_impl_int,
+  getfield_D_impl_int,
+  getfield_Z_impl_int,
+  getfield_L_impl_int,
+  putfield_B_impl_int,
+  putfield_C_impl_int,
+  putfield_S_impl_int,
+  putfield_I_impl_int,
+  putfield_J_impl_int,
+  nullptr /* putfield_F_impl_int */,
+  nullptr /* putfield_D_impl_int */,
+  putfield_Z_impl_int,
+  putfield_L_impl_int,
+  getstatic_B_impl_int,
+  getstatic_C_impl_int,
+  getstatic_S_impl_int,
+  getstatic_I_impl_int,
+  getstatic_J_impl_int,
+  getstatic_F_impl_int,
+  getstatic_D_impl_int,
+  getstatic_Z_impl_int,
+  getstatic_L_impl_int,
+  putstatic_B_impl_int,
+  putstatic_C_impl_int,
+  putstatic_S_impl_int,
+  putstatic_I_impl_int,
+  putstatic_J_impl_int,
+  nullptr /* putstatic_F_impl_int */,
+  nullptr /* putstatic_D_impl_int */,
+  putstatic_Z_impl_int,
+  putstatic_L_impl_int,
+  nullptr
 };
 
 PAGE_ALIGN static int64_t (*jmp_table_float[MAX_INSN_KIND])(ARGS_VOID) = {
-    nop_impl_float,
-    nullptr /* aaload_impl_float */,
-    nullptr /* aastore_impl_float */,
-    aconst_null_impl_float,
-    nullptr /* areturn_impl_float */,
-    nullptr /* arraylength_impl_float */,
-    nullptr /* athrow_impl_float */,
-    nullptr /* baload_impl_float */,
-    nullptr /* bastore_impl_float */,
-    nullptr /* caload_impl_float */,
-    nullptr /* castore_impl_float */,
-    nullptr /* d2f_impl_float */,
-    nullptr /* d2i_impl_float */,
-    nullptr /* d2l_impl_float */,
-    nullptr /* dadd_impl_float */,
-    nullptr /* daload_impl_float */,
-    nullptr /* dastore_impl_float */,
-    nullptr /* dcmpg_impl_float */,
-    nullptr /* dcmpl_impl_float */,
-    nullptr /* ddiv_impl_float */,
-    nullptr /* dmul_impl_float */,
-    nullptr /* dneg_impl_float */,
-    nullptr /* drem_impl_float */,
-    nullptr /* dreturn_impl_float */,
-    nullptr /* dsub_impl_float */,
-    dup_impl_float,
-    dup_x1_impl_float,
-    dup_x2_impl_float,
-    dup2_impl_float,
-    dup2_x1_impl_float,
-    dup2_x2_impl_float,
-    f2d_impl_float,
-    f2i_impl_float,
-    f2l_impl_float,
-    fadd_impl_float,
-    nullptr /* faload_impl_float */,
-    fastore_impl_float,
-    fcmpg_impl_float,
-    fcmpl_impl_float,
-    fdiv_impl_float,
-    fmul_impl_float,
-    fneg_impl_float,
-    nullptr /* frem_impl_float */,
-    freturn_impl_float,
-    fsub_impl_float,
-    nullptr /* i2b_impl_float */,
-    nullptr /* i2c_impl_float */,
-    nullptr /* i2d_impl_float */,
-    nullptr /* i2f_impl_float */,
-    nullptr /* i2l_impl_float */,
-    nullptr /* i2s_impl_float */,
-    nullptr /* iadd_impl_float */,
-    nullptr /* iaload_impl_float */,
-    nullptr /* iand_impl_float */,
-    nullptr /* iastore_impl_float */,
-    nullptr /* idiv_impl_float */,
-    nullptr /* imul_impl_float */,
-    nullptr /* ineg_impl_float */,
-    nullptr /* ior_impl_float */,
-    nullptr /* irem_impl_float */,
-    nullptr /* ireturn_impl_float */,
-    nullptr /* ishl_impl_float */,
-    nullptr /* ishr_impl_float */,
-    nullptr /* isub_impl_float */,
-    nullptr /* iushr_impl_float */,
-    nullptr /* ixor_impl_float */,
-    nullptr /* l2d_impl_float */,
-    nullptr /* l2f_impl_float */,
-    nullptr /* l2i_impl_float */,
-    nullptr /* ladd_impl_float */,
-    nullptr /* laload_impl_float */,
-    nullptr /* land_impl_float */,
-    nullptr /* lastore_impl_float */,
-    nullptr /* lcmp_impl_float */,
-    nullptr /* ldiv_impl_float */,
-    nullptr /* lmul_impl_float */,
-    nullptr /* lneg_impl_float */,
-    nullptr /* lor_impl_float */,
-    nullptr /* lrem_impl_float */,
-    nullptr /* lreturn_impl_float */,
-    nullptr /* lshl_impl_float */,
-    nullptr /* lshr_impl_float */,
-    nullptr /* lsub_impl_float */,
-    nullptr /* lushr_impl_float */,
-    nullptr /* lxor_impl_float */,
-    nullptr /* monitorenter_impl_float */,
-    nullptr /* monitorexit_impl_float */,
-    pop_impl_float,
-    pop2_impl_float,
-    return_impl_float,
-    nullptr /* saload_impl_float */,
-    nullptr /* sastore_impl_float */,
-    swap_impl_float,
-    nullptr /* anewarray_impl_float */,
-    nullptr /* checkcast_impl_float */,
-    nullptr /* getfield_impl_float */,
-    getstatic_impl_float,
-    nullptr /* instanceof_impl_float */,
-    invokedynamic_impl_float,
-    new_impl_float,
-    putfield_impl_float,
-    putstatic_impl_float,
-    invokevirtual_impl_float,
-    invokespecial_impl_float,
-    invokestatic_impl_float,
-    ldc_impl_float,
-    ldc2_w_impl_float,
-    dload_impl_float,
-    fload_impl_float,
-    iload_impl_float,
-    lload_impl_float,
-    nullptr /* dstore_impl_float */,
-    fstore_impl_float,
-    nullptr /* istore_impl_float */,
-    nullptr /* lstore_impl_float */,
-    aload_impl_float,
-    nullptr /* astore_impl_float */,
-    goto_impl_float,
-    nullptr /* jsr_impl_float */,
-    nullptr /* if_acmpeq_impl_float */,
-    nullptr /* if_acmpne_impl_float */,
-    nullptr /* if_icmpeq_impl_float */,
-    nullptr /* if_icmpne_impl_float */,
-    nullptr /* if_icmplt_impl_float */,
-    nullptr /* if_icmpge_impl_float */,
-    nullptr /* if_icmpgt_impl_float */,
-    nullptr /* if_icmple_impl_float */,
-    nullptr /* ifeq_impl_float */,
-    nullptr /* ifne_impl_float */,
-    nullptr /* iflt_impl_float */,
-    nullptr /* ifge_impl_float */,
-    nullptr /* ifgt_impl_float */,
-    nullptr /* ifle_impl_float */,
-    nullptr /* ifnonnull_impl_float */,
-    nullptr /* ifnull_impl_float */,
-    iconst_impl_float,
-    dconst_impl_float,
-    fconst_impl_float,
-    lconst_impl_float,
-    iinc_impl_float,
-    invokeinterface_impl_float,
-    nullptr /* multianewarray_impl_float */,
-    nullptr /* newarray_impl_float */,
-    nullptr /* tableswitch_impl_float */,
-    nullptr /* lookupswitch_impl_float */,
-    nullptr /* ret_impl_float */,
-    nullptr /* anewarray_resolved_impl_float */,
-    nullptr /* checkcast_resolved_impl_float */,
-    nullptr /* instanceof_resolved_impl_float */,
-    new_resolved_impl_float,
-    invokeitable_vtable_monomorphic_impl_float,
-    invokevtable_polymorphic_impl_float,
-    invokeitable_vtable_monomorphic_impl_float,
-    invokeitable_polymorphic_impl_float,
-    invokespecial_resolved_impl_float,
-    invokestatic_resolved_impl_float,
-    invokecallsite_impl_float,
-    invokesigpoly_impl_float,
-    nullptr /* getfield_B_impl_float */,
-    nullptr /* getfield_C_impl_float */,
-    nullptr /* getfield_S_impl_float */,
-    nullptr /* getfield_I_impl_float */,
-    nullptr /* getfield_J_impl_float */,
-    nullptr /* getfield_F_impl_float */,
-    nullptr /* getfield_D_impl_float */,
-    nullptr /* getfield_Z_impl_float */,
-    nullptr /* getfield_L_impl_float */,
-    nullptr /* putfield_B_impl_float */,
-    nullptr /* putfield_C_impl_float */,
-    nullptr /* putfield_S_impl_float */,
-    nullptr /* putfield_I_impl_float */,
-    nullptr /* putfield_J_impl_float */,
-    putfield_F_impl_float,
-    nullptr /* putfield_D_impl_float */,
-    nullptr /* putfield_Z_impl_float */,
-    nullptr /* putfield_L_impl_float */,
-    getstatic_B_impl_float,
-    getstatic_C_impl_float,
-    getstatic_S_impl_float,
-    getstatic_I_impl_float,
-    getstatic_J_impl_float,
-    getstatic_F_impl_float,
-    getstatic_D_impl_float,
-    getstatic_Z_impl_float,
-    getstatic_L_impl_float,
-    nullptr /* putstatic_B_impl_float */,
-    nullptr /* putstatic_C_impl_float */,
-    nullptr /* putstatic_S_impl_float */,
-    nullptr /* putstatic_I_impl_float */,
-    nullptr /* putstatic_J_impl_float */,
-    putstatic_F_impl_float,
-    nullptr /* putstatic_D_impl_float */,
-    nullptr /* putstatic_Z_impl_float */,
-    nullptr /* putstatic_L_impl_float */
+  nop_impl_float,
+  nullptr /* aaload_impl_float */,
+  nullptr /* aastore_impl_float */,
+  aconst_null_impl_float,
+  nullptr /* areturn_impl_float */,
+  nullptr /* arraylength_impl_float */,
+  nullptr /* athrow_impl_float */,
+  nullptr /* baload_impl_float */,
+  nullptr /* bastore_impl_float */,
+  nullptr /* caload_impl_float */,
+  nullptr /* castore_impl_float */,
+  nullptr /* d2f_impl_float */,
+  nullptr /* d2i_impl_float */,
+  nullptr /* d2l_impl_float */,
+  nullptr /* dadd_impl_float */,
+  nullptr /* daload_impl_float */,
+  nullptr /* dastore_impl_float */,
+  nullptr /* dcmpg_impl_float */,
+  nullptr /* dcmpl_impl_float */,
+  nullptr /* ddiv_impl_float */,
+  nullptr /* dmul_impl_float */,
+  nullptr /* dneg_impl_float */,
+  nullptr /* drem_impl_float */,
+  nullptr /* dreturn_impl_float */,
+  nullptr /* dsub_impl_float */,
+  dup_impl_float,
+  dup_x1_impl_float,
+  dup_x2_impl_float,
+  dup2_impl_float,
+  dup2_x1_impl_float,
+  dup2_x2_impl_float,
+  f2d_impl_float,
+  f2i_impl_float,
+  f2l_impl_float,
+  fadd_impl_float,
+  nullptr /* faload_impl_float */,
+  fastore_impl_float,
+  fcmpg_impl_float,
+  fcmpl_impl_float,
+  fdiv_impl_float,
+  fmul_impl_float,
+  fneg_impl_float,
+  nullptr /* frem_impl_float */,
+  freturn_impl_float,
+  fsub_impl_float,
+  nullptr /* i2b_impl_float */,
+  nullptr /* i2c_impl_float */,
+  nullptr /* i2d_impl_float */,
+  nullptr /* i2f_impl_float */,
+  nullptr /* i2l_impl_float */,
+  nullptr /* i2s_impl_float */,
+  nullptr /* iadd_impl_float */,
+  nullptr /* iaload_impl_float */,
+  nullptr /* iand_impl_float */,
+  nullptr /* iastore_impl_float */,
+  nullptr /* idiv_impl_float */,
+  nullptr /* imul_impl_float */,
+  nullptr /* ineg_impl_float */,
+  nullptr /* ior_impl_float */,
+  nullptr /* irem_impl_float */,
+  nullptr /* ireturn_impl_float */,
+  nullptr /* ishl_impl_float */,
+  nullptr /* ishr_impl_float */,
+  nullptr /* isub_impl_float */,
+  nullptr /* iushr_impl_float */,
+  nullptr /* ixor_impl_float */,
+  nullptr /* l2d_impl_float */,
+  nullptr /* l2f_impl_float */,
+  nullptr /* l2i_impl_float */,
+  nullptr /* ladd_impl_float */,
+  nullptr /* laload_impl_float */,
+  nullptr /* land_impl_float */,
+  nullptr /* lastore_impl_float */,
+  nullptr /* lcmp_impl_float */,
+  nullptr /* ldiv_impl_float */,
+  nullptr /* lmul_impl_float */,
+  nullptr /* lneg_impl_float */,
+  nullptr /* lor_impl_float */,
+  nullptr /* lrem_impl_float */,
+  nullptr /* lreturn_impl_float */,
+  nullptr /* lshl_impl_float */,
+  nullptr /* lshr_impl_float */,
+  nullptr /* lsub_impl_float */,
+  nullptr /* lushr_impl_float */,
+  nullptr /* lxor_impl_float */,
+  nullptr /* monitorenter_impl_float */,
+  nullptr /* monitorexit_impl_float */,
+  pop_impl_float,
+  pop2_impl_float,
+  return_impl_float,
+  nullptr /* saload_impl_float */,
+  nullptr /* sastore_impl_float */,
+  swap_impl_float,
+  nullptr /* anewarray_impl_float */,
+  nullptr /* checkcast_impl_float */,
+  nullptr /* getfield_impl_float */,
+  getstatic_impl_float,
+  nullptr /* instanceof_impl_float */,
+  invokedynamic_impl_float,
+  new_impl_float,
+  putfield_impl_float,
+  putstatic_impl_float,
+  invokevirtual_impl_float,
+  invokespecial_impl_float,
+  invokestatic_impl_float,
+  ldc_impl_float,
+  ldc2_w_impl_float,
+  dload_impl_float,
+  fload_impl_float,
+  iload_impl_float,
+  lload_impl_float,
+  nullptr /* dstore_impl_float */,
+  fstore_impl_float,
+  nullptr /* istore_impl_float */,
+  nullptr /* lstore_impl_float */,
+  aload_impl_float,
+  nullptr /* astore_impl_float */,
+  goto_impl_float,
+  nullptr /* jsr_impl_float */,
+  nullptr /* if_acmpeq_impl_float */,
+  nullptr /* if_acmpne_impl_float */,
+  nullptr /* if_icmpeq_impl_float */,
+  nullptr /* if_icmpne_impl_float */,
+  nullptr /* if_icmplt_impl_float */,
+  nullptr /* if_icmpge_impl_float */,
+  nullptr /* if_icmpgt_impl_float */,
+  nullptr /* if_icmple_impl_float */,
+  nullptr /* ifeq_impl_float */,
+  nullptr /* ifne_impl_float */,
+  nullptr /* iflt_impl_float */,
+  nullptr /* ifge_impl_float */,
+  nullptr /* ifgt_impl_float */,
+  nullptr /* ifle_impl_float */,
+  nullptr /* ifnonnull_impl_float */,
+  nullptr /* ifnull_impl_float */,
+  iconst_impl_float,
+  dconst_impl_float,
+  fconst_impl_float,
+  lconst_impl_float,
+  iinc_impl_float,
+  invokeinterface_impl_float,
+  nullptr /* multianewarray_impl_float */,
+  nullptr /* newarray_impl_float */,
+  nullptr /* tableswitch_impl_float */,
+  nullptr /* lookupswitch_impl_float */,
+  nullptr /* ret_impl_float */,
+  nullptr /* anewarray_resolved_impl_float */,
+  nullptr /* checkcast_resolved_impl_float */,
+  nullptr /* instanceof_resolved_impl_float */,
+  new_resolved_impl_float,
+  invokeitable_vtable_monomorphic_impl_float,
+  invokevtable_polymorphic_impl_float,
+  invokeitable_vtable_monomorphic_impl_float,
+  invokeitable_polymorphic_impl_float,
+  invokespecial_resolved_impl_float,
+  invokestatic_resolved_impl_float,
+  invokecallsite_impl_float,
+  invokesigpoly_impl_float,
+  nullptr /* getfield_B_impl_float */,
+  nullptr /* getfield_C_impl_float */,
+  nullptr /* getfield_S_impl_float */,
+  nullptr /* getfield_I_impl_float */,
+  nullptr /* getfield_J_impl_float */,
+  nullptr /* getfield_F_impl_float */,
+  nullptr /* getfield_D_impl_float */,
+  nullptr /* getfield_Z_impl_float */,
+  nullptr /* getfield_L_impl_float */,
+  nullptr /* putfield_B_impl_float */,
+  nullptr /* putfield_C_impl_float */,
+  nullptr /* putfield_S_impl_float */,
+  nullptr /* putfield_I_impl_float */,
+  nullptr /* putfield_J_impl_float */,
+  putfield_F_impl_float,
+  nullptr /* putfield_D_impl_float */,
+  nullptr /* putfield_Z_impl_float */,
+  nullptr /* putfield_L_impl_float */,
+  getstatic_B_impl_float,
+  getstatic_C_impl_float,
+  getstatic_S_impl_float,
+  getstatic_I_impl_float,
+  getstatic_J_impl_float,
+  getstatic_F_impl_float,
+  getstatic_D_impl_float,
+  getstatic_Z_impl_float,
+  getstatic_L_impl_float,
+  nullptr /* putstatic_B_impl_float */,
+  nullptr /* putstatic_C_impl_float */,
+  nullptr /* putstatic_S_impl_float */,
+  nullptr /* putstatic_I_impl_float */,
+  nullptr /* putstatic_J_impl_float */,
+  putstatic_F_impl_float,
+  nullptr /* putstatic_D_impl_float */,
+  nullptr /* putstatic_Z_impl_float */,
+  nullptr /* putstatic_L_impl_float */,
+  nullptr
 };

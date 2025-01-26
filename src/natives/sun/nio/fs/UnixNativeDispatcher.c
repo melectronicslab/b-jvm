@@ -43,7 +43,7 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
   if (!args[1].handle)
     return value_null();
 
-  long buf = args[0].l;
+  uintptr_t buf = args[0].l;
   int result = stat((char*)buf, &st);
   if (result)
     return (bjvm_stack_value){.i = errno};
@@ -52,6 +52,7 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
 
 #define MapAttrLong(name, value) StoreFieldLong(attrs, STR(#name), value)
 #define MapAttrInt(name, value) StoreFieldInt(attrs, STR(#name), value)
+
   MapAttrInt(st_mode, st.st_mode);
   MapAttrLong(st_ino, st.st_ino);
   MapAttrLong(st_dev, st.st_dev);

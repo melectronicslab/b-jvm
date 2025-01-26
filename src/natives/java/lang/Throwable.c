@@ -7,10 +7,10 @@ bool frame_mentions_object(bjvm_stack_frame *raw_frame,
   if (bjvm_is_frame_native(raw_frame))
     return false;
   bjvm_plain_frame *frame = bjvm_get_plain_frame(raw_frame);
-  for (int i = 0; i < frame->values_count; ++i) {
-    if (frame->values[i].obj == obj) {
+  for (int i = 0; i < stack_depth(raw_frame); ++i) {
+    if (frame->stack[i].obj == obj) {
       bjvm_compressed_bitset refs =
-          (frame->method->code_analysis)
+          (raw_frame->method->code_analysis)
               ->insn_index_to_references[frame->program_counter];
       if (bjvm_test_compressed_bitset(refs, i)) {
         return true;

@@ -1,10 +1,5 @@
 #define AGGRESSIVE_DEBUG 0
 
-// If set, the interpreter will use a goto per instruction to jump to the next
-// instruction. This messes up the debug dumps but can lead to slightly better
-// performance because the branch predictor has more information about pairs
-// of instructions which tend to follow another.
-#define ONE_GOTO_PER_INSN 0
 // Skip the memset(...) call to clear each frame's locals/stack. This messes
 // up the debug dumps, but makes setting up frames faster.
 #define SKIP_CLEARING_FRAME 1
@@ -71,18 +66,36 @@ DEFINE_ASYNC(init_cached_classdescs) {
 
 #define MAX_CF_NAME_LENGTH 1000
 
-uint16_t stack_depth(const bjvm_plain_frame *frame) {
+uint16_t stack_depth(const bjvm_stack_frame *frame) {
+  assert(!bjvm_is_frame_native(frame) && "Can't get stack depth of native frame");
   assert(frame->method && "Can't get stack depth of fake frame");
-  int pc = frame->program_counter;
+  int pc = frame->plain.program_counter;
   if (pc == 0) return 0;
   bjvm_code_analysis *analy = frame->method->code_analysis;
   assert(pc < analy->insn_count);
   return analy->insn_index_to_stack_depth[pc];
 }
 
-bool bjvm_is_frame_native(const bjvm_stack_frame *frame) { return !!frame->plain.is_native; }
+bool bjvm_is_frame_native(const bjvm_stack_frame *frame) { return frame->is_native != 0; }
 
-bjvm_native_frame *bjvm_get_native_frame(bjvm_stack_frame *frame) {
+__attribute__((always_inline))
+bjvm_stack_value *frame_locals(const bjvm_stack_frame *frame) {
+  assert(!bjvm_is_frame_native(frame));
+  return ((bjvm_stack_value *) frame) - frame->num_locals;
+}
+
+bjvm_value *bjvm_get_native_args(const bjvm_stack_frame *frame) {
+  assert(bjvm_is_frame_native(frame));
+  return ((bjvm_value *) frame) - frame->num_locals;
+}
+
+bjvm_stack_value *frame_stack(bjvm_stack_frame *frame) {
+  assert(!bjvm_is_frame_native(frame));
+  return frame->plain.stack;
+}
+
+
+bjvm_native_frame *bjvm_get_native_frame_data(bjvm_stack_frame *frame) {
   assert(bjvm_is_frame_native(frame));
   return &frame->native;
 }
@@ -93,7 +106,7 @@ bjvm_plain_frame *bjvm_get_plain_frame(bjvm_stack_frame *frame) {
 }
 
 bjvm_cp_method *bjvm_get_frame_method(bjvm_stack_frame *frame) {
-  return bjvm_is_frame_native(frame) ? frame->native.method : frame->plain.method;
+  return frame->method;
 }
 
 bjvm_obj_header *bjvm_deref_js_handle(bjvm_vm *vm, int index) {
@@ -194,20 +207,24 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
     return nullptr;
   }
 
-  bjvm_stack_frame *frame = (bjvm_stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
+  bjvm_value *locals = (bjvm_value *) (args + argc); // reserve new memory on stack
+  bjvm_stack_frame *frame = (bjvm_stack_frame *) (locals + argc);
+
   assert((uintptr_t)frame % 8 == 0 && "Frame is aligned");
-  thread->frame_buffer_used += total;
+
   *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
 
-  frame->native.is_native = 1;
-  frame->native.values_count = argc;
-  frame->native.method = method;
+  thread->frame_buffer_used = (char*)frame + sizeof(*frame) - thread->frame_buffer;
+
+  frame->is_native = 1;
+  frame->num_locals = argc;
+  frame->method = method;
   frame->native.method_shape = descriptor;
   frame->native.state = 0;
-  frame->native.is_async_suspended = false;
+  frame->is_async_suspended = false;
 
   // Now wrap arguments in handles and copy them into the frame
-  make_handles_array(thread, descriptor, method->access_flags & BJVM_ACCESS_STATIC, args, frame->native.values);
+  make_handles_array(thread, descriptor, method->access_flags & BJVM_ACCESS_STATIC, args, locals);
   return frame;
 }
 
@@ -221,7 +238,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   assert(argc <= code->max_locals);
 
   const size_t header_bytes = sizeof(bjvm_stack_frame);
-  size_t values_bytes = ((int)code->max_locals + code->max_stack) * sizeof(bjvm_stack_value);
+  size_t values_bytes = code->max_stack * sizeof(bjvm_stack_value);
   size_t total = header_bytes + values_bytes;
 
   if (total + thread->frame_buffer_used > thread->frame_buffer_capacity) {
@@ -229,27 +246,19 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
     return nullptr;
   }
 
-  bjvm_stack_frame *frame = (bjvm_stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
+//  bjvm_stack_frame *frame = (bjvm_stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
+  bjvm_stack_frame *frame = (bjvm_stack_frame *) (args + code->max_locals);
 
-#if !SKIP_CLEARING_FRAME
-  memset(frame, 0, total);
-#endif
-
-  thread->frame_buffer_used += total;
+  thread->frame_buffer_used = (char*)(frame->plain.stack + code->max_stack) - thread->frame_buffer;
   *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
-  frame->plain.is_native = 0;
-  frame->plain.values_count = code->max_stack + code->max_locals;
+  frame->is_native = 0;
+  frame->num_locals = code->max_locals;
   frame->plain.program_counter = 0;
   frame->plain.max_stack = code->max_stack;
-  frame->plain.method = method;
-  frame->plain.is_async_suspended = false;
+  frame->method = method;
+  frame->is_async_suspended = false;
 
-  // Copy in the arguments
-  if (likely(argc)) {
-    for (int i = 0, j = code->max_stack; i < argc; ++i, ++j) {
-      frame->plain.values[j] = args[i];
-    }
-  }
+  memset(frame_stack(frame), 0x0, code->max_stack * sizeof(bjvm_stack_value));
 
   return frame;
 }
@@ -299,20 +308,22 @@ const char *infer_type(bjvm_code_analysis *analysis, int insn, int index) {
   return "void";
 }
 
-void dump_frame(FILE *stream, const bjvm_plain_frame *frame) {
+void dump_frame(FILE *stream, const bjvm_stack_frame *frame) {
+  assert(!bjvm_is_frame_native(frame) && "Can't dump native frame");
+
   char buf[5000] = {0}, *write = buf, *end = buf + sizeof(buf);
   int sd = stack_depth(frame);
 
   for (int i = 0; i < sd; ++i) {
-    bjvm_stack_value value = frame->values[i];
-    const char *is_ref = infer_type(frame->method->code_analysis, frame->program_counter, i);
+    bjvm_stack_value value = frame_stack((void*) frame)[i];
+    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i);
     write += snprintf(write, end - write, " stack[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj, value.i, is_ref);
   }
 
-  for (int i = frame->max_stack; i < frame->values_count; ++i) {
-    bjvm_stack_value value = frame->values[i];
-    const char *is_ref = infer_type(frame->method->code_analysis, frame->program_counter, i);
-    write += snprintf(write, end - write, "locals[%d] = [ ref = %p, int = %d ] %s\n", i - frame->max_stack, value.obj,
+  for (int i = 0; i < frame->num_locals; ++i) {
+    bjvm_stack_value value = frame_locals(frame)[i];
+    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i + frame->plain.max_stack);
+    write += snprintf(write, end - write, "locals[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj,
                       value.i, is_ref);
   }
 
@@ -324,10 +335,11 @@ void bjvm_pop_frame(bjvm_thread *thr, [[maybe_unused]] const bjvm_stack_frame *r
   bjvm_stack_frame *frame = thr->frames[thr->frames_count - 1];
   assert(reference == nullptr || reference == frame);
   if (bjvm_is_frame_native(frame)) {
-    drop_handles_array(thr, frame->native.method, frame->native.method_shape, frame->native.values);
+    drop_handles_array(thr, frame->method, frame->native.method_shape, bjvm_get_native_args(frame));
   }
   thr->frames_count--;
-  thr->frame_buffer_used = thr->frames_count == 0 ? 0 : (char *)frame - thr->frame_buffer;
+  thr->frame_buffer_used = thr->frames_count == 0 ? 0 :
+    (char *)(frame->plain.stack + frame->plain.max_stack) - thr->frame_buffer;
 }
 
 // Symmetry with make_primitive_classdesc
@@ -584,7 +596,7 @@ void bjvm_raise_exception_object(bjvm_thread *thread, bjvm_obj_header *obj) {
     bjvm_stack_frame *frame = thread->frames[thread->frames_count - 1];
     if (!bjvm_is_frame_native(frame)) {
       T->faulting_insn = frame->plain.program_counter;
-      T->method = frame->plain.method;
+      T->method = frame->method;
     }
   }
   thread->current_exception = obj;
@@ -806,6 +818,7 @@ bjvm_thread_options bjvm_default_thread_options() {
   return options;
 }
 
+__attribute__((noinline))
 bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 const name, bjvm_utf8 const descriptor) {
   for (int i = 0; i < classdesc->fields_count; ++i) {
     bjvm_cp_field *field = classdesc->fields + i;
@@ -829,8 +842,7 @@ bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 const name
 }
 
 bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const bjvm_utf8 name, const bjvm_utf8 descriptor) {
-  bjvm_cp_field *result = bjvm_field_lookup(classdesc, name, descriptor);
-  return result;
+  return bjvm_field_lookup(classdesc, name, descriptor);
 }
 
 bjvm_obj_header *get_main_thread_group(bjvm_thread *thread);
@@ -1854,8 +1866,19 @@ bjvm_async_run_ctx *bjvm_thread_async_run(bjvm_thread *thread, bjvm_cp_method *m
   int nonstatic = !(method->access_flags & BJVM_ACCESS_STATIC);
   int argc = method->descriptor->args_count + nonstatic;
 
+  bjvm_stack_value *stack_top = (bjvm_stack_value *) (thread->frame_buffer + thread->frame_buffer_used);
+  size_t args_size = sizeof(bjvm_stack_value) * argc;
+
+  if (args_size + thread->frame_buffer_used > thread->frame_buffer_capacity) {
+    bjvm_raise_exception_object(thread, thread->stack_overflow_error);
+    return ctx; // todo, not very good error handling, use proper async
+  }
+
+  memcpy(stack_top, args, args_size);
+  thread->frame_buffer_used += args_size;
+
   ctx->thread = thread;
-  ctx->frame = bjvm_push_frame(thread, method, args, argc);
+  ctx->frame = bjvm_push_frame(thread, method, stack_top, argc);
   ctx->result = result;
   ctx->status = BJVM_ASYNC_RUN_RESULT_EXC;
   if (!ctx->frame) // failed to allocate a frame
@@ -2192,19 +2215,6 @@ void bjvm_wrong_method_type_error(bjvm_thread *thread, struct bjvm_native_Method
   UNREACHABLE(); // TODO
 }
 
-static inline bjvm_stack_value __checked_pop(bjvm_plain_frame *frame, uint16_t *sd) {
-  assert(*sd > 0);
-  return frame->values[--*sd];
-}
-
-static inline void __checked_push(bjvm_plain_frame *frame, uint16_t *sd, bjvm_stack_value value) {
-  assert(*sd < frame->max_stack);
-  frame->values[(*sd)++] = value;
-}
-
-#define checked_pop(frame) __checked_pop(frame, &sd)
-#define checked_push(frame, value) __checked_push(frame, &sd, value)
-
 DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
 #define target (args->target)
 #define provider_mt (args->provider_mt)
@@ -2277,8 +2287,10 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
   case BJVM_MH_KIND_INVOKE_STATIC: {
     self->method = name->vmtarget;
     assert(self->method);
-    self->frame = bjvm_push_frame(thread, self->method, args->sp_, self->method->descriptor->args_count);
-    self->frame->plain.values[self->frame->plain.max_stack].obj = (void*) mh;
+
+    args->sp_->obj = (void*) mh;
+    self->frame = bjvm_push_frame(thread, self->method, args->sp_, self->argc = self->method->descriptor->args_count);
+
     // TODO arena allocate this in the VM so that it gets freed appropriately
     // if the VM is deleted
     self->interpreter_ctx = calloc(1, sizeof(bjvm_interpret_t));
@@ -2347,7 +2359,7 @@ int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjv
                         uint16_t *sd) {
   int dims = multianewarray->dimensions;
   assert(*sd >= dims);
-  assert(stack_depth(frame) >= dims);
+  //assert(stack_depth(frame) >= dims);
   assert(dims >= 1);
 
   int error = bjvm_resolve_class(thread, multianewarray->entry);
@@ -2358,7 +2370,7 @@ int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjv
 
   int dim_sizes[kArrayMaxDimensions];
   for (int i = 0; i < dims; ++i) {
-    int dim = frame->values[*sd - dims + i].i;
+    int dim = frame->stack[*sd - dims + i].i;
     if (dim < 0) {
       bjvm_negative_array_size_exception(thread, dim);
       return -1;
@@ -2368,7 +2380,7 @@ int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjv
   }
 
   bjvm_obj_header *result = CreateArray(thread, multianewarray->entry->classdesc, dim_sizes, dims);
-  frame->values[*sd - dims] = (bjvm_stack_value){.obj = result};
+  frame->stack[*sd - dims] = (bjvm_stack_value){.obj = result};
   *sd -= dims - 1;
   return 0;
 }
@@ -2505,18 +2517,18 @@ DEFINE_ASYNC(bjvm_run_native) {
 
   bjvm_native_callback *handle = frame->method->native_handle;
   bool is_static = frame->method->access_flags & BJVM_ACCESS_STATIC;
-  bjvm_handle *target_handle = is_static ? nullptr : frame->values[0].handle;
-  bjvm_value *native_args = frame->values + (is_static ? 0 : 1);
+  bjvm_handle *target_handle = is_static ? nullptr : bjvm_get_native_args(frame)[0].handle;
+  bjvm_value *native_args = bjvm_get_native_args(frame) + (is_static ? 0 : 1);
+  uint16_t argc = frame->num_locals - !is_static;
 
   if (!handle->async_ctx_bytes) {
     bjvm_stack_value result =
-        ((bjvm_sync_native_callback)handle->ptr)(thread, target_handle, native_args, frame->values_count - !is_static);
+        ((bjvm_sync_native_callback)handle->ptr)(thread, target_handle, native_args, argc);
     ASYNC_RETURN(result);
   }
 
   self->native_struct = malloc(handle->async_ctx_bytes);
-  AWAIT_FUTURE_EXPR(((bjvm_async_native_callback)handle->ptr)(self->native_struct, thread, target_handle, native_args,
-                                                              frame->values_count - !is_static));
+  AWAIT_FUTURE_EXPR(((bjvm_async_native_callback)handle->ptr)(self->native_struct, thread, target_handle, native_args, argc));
   // We've laid out the context struct so that the result is always at offset 0
   bjvm_stack_value result = *(bjvm_stack_value *)self->native_struct;
   free(self->native_struct);
@@ -2604,3 +2616,24 @@ bjvm_obj_header *get_main_thread_group(bjvm_thread *thread) {
   }
   return vm->main_thread_group;
 }
+
+#ifdef EMSCRIPTEN
+__attribute__((constructor))
+static void nodejs_bootloader() {
+  MAIN_THREAD_EM_ASM_INT({
+    if (ENVIRONMENT_IS_NODE) {
+      FS.init();
+      const fs = require('fs');
+      const needed = ([ 'jdk23.jar', 'jdk23/lib/modules' ]);
+
+      // Read each of these from disk and put them in the filesystem
+      for (let i = 0; i < needed.length; ++i) {
+        const path = needed[i];
+        const data = fs.readFileSync("./" + path, "binary");
+        FS.createPath('/', path.substring(0, path.lastIndexOf('/')));
+        FS.createDataFile('/', path, data, true, true, true);
+      }
+    }
+  });
+}
+#endif

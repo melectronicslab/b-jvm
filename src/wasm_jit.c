@@ -138,7 +138,7 @@ expression set_local_value(compile_ctx *ctx, int index, bjvm_type_kind kind,
 // or load parameters from the stack at the function beginning.
 expression spill_or_load_code(compile_ctx *ctx, int pc, bool do_load,
                               int return_value, int start, int end) {
-  int values_start = offsetof(bjvm_plain_frame, values);
+  int values_start = offsetof(bjvm_plain_frame, stack);
   int value_size = sizeof(bjvm_stack_value);
 
   bjvm_compressed_bitset refs[5];
@@ -254,7 +254,7 @@ bjvm_obj_header *wasm_runtime_make_object_array(bjvm_thread *thread, int count,
 
 EMSCRIPTEN_KEEPALIVE
 int wasm_runtime_invokestatic(bjvm_thread *thread,
-                                                    bjvm_plain_frame *frame,
+                                                    bjvm_stack_frame *frame,
                                                     bjvm_bytecode_insn *insn) {
   // printf("invokestatic called!\n");
   int sd = stack_depth(frame);
@@ -263,7 +263,7 @@ int wasm_runtime_invokestatic(bjvm_thread *thread,
 
 EMSCRIPTEN_KEEPALIVE
 int
-wasm_runtime_invokenonstatic(bjvm_thread *thread, bjvm_plain_frame *frame,
+wasm_runtime_invokenonstatic(bjvm_thread *thread, bjvm_stack_frame *frame,
                              bjvm_bytecode_insn *insn) {
   // fprintf(stderr, "invokenonstatic called from method %.*s!\n",
   // frame->method->name.len, frame->method->name.chars); dump_frame(stderr,

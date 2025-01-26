@@ -309,6 +309,15 @@ Hello, world.
 )");
 }
 
+TEST_CASE("N-body problem") {
+  auto result = run_test_case("test_files/n_body_problem/", false, "NBodyProblem");
+
+//  REQUIRE(result.stdout_.find("Running Simulation...") != std::string::npos);
+//  REQUIRE(result.stdout_.find("Roughly Equals: true") != std::string::npos);
+//  REQUIRE(result.stdout_.find("Energy change minimal: true") != std::string::npos);
+//  REQUIRE(result.stdout_.find("Sun final position: ") != std::string::npos);
+}
+
 TEST_CASE("Basic lambda") {
   auto result = run_test_case("test_files/basic_lambda/", true);
 
