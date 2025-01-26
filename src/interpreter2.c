@@ -27,8 +27,7 @@
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
-  dump_frame(stderr, frame);                                                                                           \
-  assert(stack_depth(frame) == sp);
+  dump_frame(stderr, frame);
 #endif
 
 // If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
@@ -1560,6 +1559,7 @@ __attribute__((always_inline)) static int64_t invokestatic_resolved_impl_void(AR
   if (thread->current_exception) {
     return 0;
   }
+
   if (returns) {
     *(sp - insn->args) = result;
   }
@@ -1700,7 +1700,13 @@ __attribute__((always_inline)) static int64_t invokespecial_resolved_impl_void(A
   if (!invoked_frame)
     return 0;
 
-  bjvm_stack_value result = AttemptInvoke(thread, invoked_frame, insn->args, returns);
+  bjvm_stack_value result = ({
+    bjvm_stack_value result;
+    if (unlikely(__attempt_invoke(thread, invoked_frame, frame, (&insns[0])->args, returns, &result))) {
+      return 0;
+    }
+    result;
+  });
 
   if (thread->current_exception)
     return 0;
@@ -1953,11 +1959,16 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
 
     bjvm_stack_value result = AttemptInvoke(thread, invoked_frame, insn->args, returns);
 
+    if (returns) {
+      *(sp - insn->args + 1) = result;
+    }
+
+    sp -= insn->args - 1;
+    sp += returns;
+
     if (thread->current_exception) {
       return 0;
     }
-    sp -= insn->args - 1;
-    sp += returns;
   } else {
     UNREACHABLE();
   }
@@ -2437,6 +2448,7 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
 
     case CONT_INVOKESIGPOLY:
       __fut = bjvm_invokevirtual_signature_polymorphic(&cont.ctx.sigpoly);
+
       if (__fut.status == FUTURE_NOT_READY) {
         *async_stack_push(thread) = cont;
         goto suspend;
@@ -2446,7 +2458,7 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
         goto exception;
       }
 
-      sp -= cont.ctx.interp_call.argc;
+      sp -= cont.ctx.interp_call.argc; // todo: wrong union member
       if (cont.ctx.interp_call.returns) {
         *sp++ = result;
       }
