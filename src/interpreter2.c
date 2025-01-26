@@ -113,19 +113,19 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   }
 #endif
 
-#define JMP_INT(tos)                                                                                                   \
-  WITH_UNDEF(MUSTTAIL return jmp_table_int[insns[0].kind](thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
-#define JMP_FLOAT(tos)                                                                                                 \
-  WITH_UNDEF(MUSTTAIL return jmp_table_float[insns[0].kind](thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
-#define JMP_DOUBLE(tos)                                                                                                \
-  WITH_UNDEF(MUSTTAIL return jmp_table_double[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
+#define JMP_INT(tos)  int k = insns[0].kind;                                                                                                 \
+  WITH_UNDEF(MUSTTAIL return jmp_table_int[k](thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
+#define JMP_FLOAT(tos)  int k = insns[0].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return jmp_table_float[k](thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
+#define JMP_DOUBLE(tos)  int k = insns[0].kind;                                                                                              \
+  WITH_UNDEF(MUSTTAIL return jmp_table_double[k](thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
 
-#define NEXT_INT(tos) \
-  WITH_UNDEF(MUSTTAIL return jmp_table_int[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef);)
-#define NEXT_FLOAT(tos) \
-  WITH_UNDEF(MUSTTAIL return jmp_table_float[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef);)
-#define NEXT_DOUBLE(tos) \
-  WITH_UNDEF(MUSTTAIL return jmp_table_double[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos);)
+#define NEXT_INT(tos) int k = insns[1].kind; \
+  WITH_UNDEF(MUSTTAIL return jmp_table_int[k](thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef);)
+#define NEXT_FLOAT(tos) int k = insns[1].kind; \
+  WITH_UNDEF(MUSTTAIL return jmp_table_float[k](thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef);)
+#define NEXT_DOUBLE(tos) int k = insns[1].kind; \
+  WITH_UNDEF(MUSTTAIL return jmp_table_double[k](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos);)
 
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
@@ -165,13 +165,13 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 #define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
   switch (insn->tos_after) {                                                                                           \
   case TOS_VOID:                                                                                                       \
-    NEXT_VOID                                                                                                          \
+    { NEXT_VOID      }                                                                                                    \
   case TOS_INT:                                                                                                        \
-    NEXT_INT((tos).l)                                                                                                      \
+    { NEXT_INT((tos).l)          }                                                                                             \
   case TOS_FLOAT:                                                                                                      \
-    NEXT_FLOAT((tos).f)                                                                                                      \
+    { NEXT_FLOAT((tos).f)    }                                                                                                  \
   case TOS_DOUBLE:                                                                                                     \
-    NEXT_DOUBLE((tos).d)                                                                                                      \
+    { NEXT_DOUBLE((tos).d)    }                                                                                                  \
   default:                                                                                                             \
     __builtin_unreachable();                                                                                           \
   }
@@ -181,13 +181,13 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
   switch (insn->tos_before) {                                                                                          \
   case TOS_VOID:                                                                                                       \
-    JMP_VOID                                                                                                           \
+    { JMP_VOID    }                                                                                                       \
   case TOS_INT:                                                                                                        \
-    JMP_INT((tos).l)                                                                                                       \
+    { JMP_INT((tos).l)   }                                                                                                    \
   case TOS_FLOAT:                                                                                                      \
-    JMP_FLOAT((tos).f)                                                                                                       \
+    { JMP_FLOAT((tos).f)   }                                                                                                    \
   case TOS_DOUBLE:                                                                                                     \
-    JMP_DOUBLE((tos).d)                                                                                                       \
+    { JMP_DOUBLE((tos).d)   }                                                                                                    \
   default:                                                                                                             \
     __builtin_unreachable();                                                                                           \
   }
@@ -2088,9 +2088,9 @@ static int64_t ldc_impl_void(ARGS_VOID) {
   bjvm_cp_entry *ent = insn->cp;
   switch (ent->kind) {
   case BJVM_CP_KIND_INTEGER:
-    NEXT_INT((int64_t)ent->integral.value);
+    { NEXT_INT((int64_t)ent->integral.value); }
   case BJVM_CP_KIND_FLOAT:
-    NEXT_FLOAT((float)ent->floating.value);
+    { NEXT_FLOAT((float)ent->floating.value); }
   case BJVM_CP_KIND_CLASS: {
     // Initialize the class, then get its Java mirror
     SPILL_VOID
@@ -2124,9 +2124,9 @@ static int64_t ldc2_w_impl_void(ARGS_VOID) {
   bjvm_cp_entry *ent = insn->cp;
   switch (ent->kind) {
   case BJVM_CP_KIND_DOUBLE:
-    NEXT_DOUBLE(ent->floating.value);
+    { NEXT_DOUBLE(ent->floating.value); }
   case BJVM_CP_KIND_LONG:
-    NEXT_INT(ent->integral.value);
+    { NEXT_INT(ent->integral.value); }
   default:
     UNREACHABLE();
   }
