@@ -6,7 +6,7 @@ bool frame_mentions_object(bjvm_stack_frame *raw_frame,
                            const bjvm_obj_header *obj) {
   if (bjvm_is_frame_native(raw_frame))
     return false;
-  bjvm_plain_frame *frame = bjvm_get_plain_frame_data(raw_frame);
+  bjvm_plain_frame *frame = bjvm_get_plain_frame(raw_frame);
   for (int i = 0; i < stack_depth(raw_frame); ++i) {
     if (frame->stack[i].obj == obj) {
       bjvm_compressed_bitset refs =

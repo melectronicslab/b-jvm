@@ -69,6 +69,12 @@ void enumerate_reflection_roots(bjvm_gc_ctx *ctx, bjvm_classdesc *desc) {
     bjvm_bytecode_insn *insn = desc->indy_insns[i];
     PUSH_ROOT(&insn->ic);
   }
+
+  // Push all ICed method type objects
+  for (int i = 0; i < arrlen(desc->sigpoly_insns); ++i) {
+    bjvm_bytecode_insn *insn = desc->sigpoly_insns[i];
+    PUSH_ROOT(&insn->ic2);
+  }
 }
 
 void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
@@ -86,7 +92,7 @@ void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
     bjvm_stack_frame *raw_frame = thr->frames[frame_i];
     if (bjvm_is_frame_native(raw_frame))
       continue;
-    bjvm_plain_frame *frame = bjvm_get_plain_frame_data(raw_frame);
+    bjvm_plain_frame *frame = bjvm_get_plain_frame(raw_frame);
     bjvm_code_analysis *analy = raw_frame->method->code_analysis;
     bjvm_compressed_bitset refs =
         analy->insn_index_to_references[frame->program_counter];
@@ -109,10 +115,10 @@ void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
 
     // Scan the locals
     for (; i < bs_list_len; ++i) {
-      PUSH_ROOT(&bjvm_get_plain_locals(raw_frame)[bitset_list[i] - max_stack].obj);
+      PUSH_ROOT(&frame_locals(raw_frame)[bitset_list[i] - max_stack].obj);
     }
 
-    min_frame_addr_scanned = (uintptr_t)bjvm_get_plain_locals(raw_frame);
+    min_frame_addr_scanned = (uintptr_t)frame_locals(raw_frame);
   }
 
   // Non-null local handles
