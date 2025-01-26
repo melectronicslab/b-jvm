@@ -823,6 +823,7 @@ bjvm_thread_options bjvm_default_thread_options() {
   return options;
 }
 
+__attribute__((noinline))
 bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 const name, bjvm_utf8 const descriptor) {
   for (int i = 0; i < classdesc->fields_count; ++i) {
     bjvm_cp_field *field = classdesc->fields + i;
@@ -846,8 +847,7 @@ bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 const name
 }
 
 bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const bjvm_utf8 name, const bjvm_utf8 descriptor) {
-  bjvm_cp_field *result = bjvm_field_lookup(classdesc, name, descriptor);
-  return result;
+  return bjvm_field_lookup(classdesc, name, descriptor);
 }
 
 bjvm_obj_header *get_main_thread_group(bjvm_thread *thread);
@@ -4401,3 +4401,24 @@ bjvm_obj_header *get_main_thread_group(bjvm_thread *thread) {
   }
   return vm->main_thread_group;
 }
+
+#ifdef EMSCRIPTEN
+__attribute__((constructor))
+static void nodejs_bootloader() {
+  MAIN_THREAD_EM_ASM_INT({
+    if (ENVIRONMENT_IS_NODE) {
+      FS.init();
+      const fs = require('fs');
+      const needed = ([ 'jdk23.jar', 'jdk23/lib/modules' ]);
+
+      // Read each of these from disk and put them in the filesystem
+      for (let i = 0; i < needed.length; ++i) {
+        const path = needed[i];
+        const data = fs.readFileSync("./" + path, "binary");
+        FS.createPath('/', path.substring(0, path.lastIndexOf('/')));
+        FS.createDataFile('/', path, data, true, true, true);
+      }
+    }
+  });
+}
+#endif

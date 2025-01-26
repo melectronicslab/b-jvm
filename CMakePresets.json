@@ -14,6 +14,9 @@
       "toolchainFile": "/Users/cowpox/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
       "cacheVariables": {
         "CMAKE_CROSSCOMPILING_EMULATOR": "/opt/homebrew/bin/node"
+      },
+      "environment": {
+        "EM_LLVM_ROOT": "/Users/cowpox/Documents/Projects/llvm-project/build/bin"
       }
     }
   ],
