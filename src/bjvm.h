@@ -145,13 +145,11 @@ DECLARE_ASYNC_VOID(bjvm_invokevirtual_signature_polymorphic,
                   locals(
                     bjvm_interpret_t *interpreter_ctx;
                     bjvm_cp_method * method;
-                    int argc;
                     bjvm_stack_frame * frame;
                   ),
                   arguments(
                     bjvm_thread *thread;
-                    bjvm_plain_frame *frame;
-                    uint16_t *sd_;
+                    bjvm_stack_value *sp_;
                     bjvm_cp_method *method;
                     struct bjvm_native_MethodType *provider_mt;
                     bjvm_obj_header *target;
@@ -310,12 +308,13 @@ typedef struct {
 // │ metadata │ max_stack x bjvm_stack_value  │ (values_count - max_stack) x
 // bjvm_stack_value │
 // └──────────┴───────────────────────────────┴───────────────────────────────────────────────┘
-//                      stack values                            local values
+//                      stack values                              local values
 //
 // The stack depth should be inferred from the program counter: In particular,
 // the method contains an analysis of the stack depth at each instruction.
 typedef struct bjvm_plain_frame {
-  uint16_t is_native; // always 0
+  uint8_t is_native; // always 0
+  uint8_t is_async_suspended;
   uint16_t values_count;
   uint16_t program_counter; // in instruction indices
   uint16_t max_stack;
@@ -331,7 +330,8 @@ typedef struct bjvm_plain_frame {
 // data necessary for correct stack trace recovery and resumption after
 // interrupts.
 typedef struct bjvm_native_frame {
-  uint16_t is_native;    // always 1
+  uint8_t is_native;    // always 1
+  uint8_t is_async_suspended;
   uint16_t values_count; // number of args passed into the native method
 
   // Used by async native methods for their state machines
@@ -367,7 +367,7 @@ typedef struct bjvm_stack_frame {
 uint16_t stack_depth(const bjvm_plain_frame *frame);
 
 bool bjvm_is_frame_native(const bjvm_stack_frame *frame);
-bjvm_stack_value bjvm_interpret_2(bjvm_thread *thread, bjvm_stack_frame *frame);
+bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame);
 
 bjvm_native_frame *bjvm_get_native_frame(bjvm_stack_frame *frame);
 bjvm_plain_frame *bjvm_get_plain_frame(bjvm_stack_frame *frame);
@@ -379,6 +379,9 @@ EMSCRIPTEN_KEEPALIVE
 int bjvm_make_js_handle(bjvm_vm *vm, bjvm_obj_header *obj);
 EMSCRIPTEN_KEEPALIVE
 void bjvm_drop_js_handle(bjvm_vm *vm, int index);
+
+struct async_stack;
+typedef struct async_stack async_stack_t;
 
 typedef struct bjvm_thread {
   // Global VM corresponding to this thread
@@ -428,9 +431,7 @@ typedef struct bjvm_thread {
   bool must_unwind;
 
   /// Secondary stack for async calls from the interpreter
-  uint8_t *async_stack;
-  uint16_t async_stack_used;
-  uint16_t async_stack_capacity;
+  async_stack_t *async_stack;
 
   // Thread-local allocation buffer (objects are first created here)
 } bjvm_thread;

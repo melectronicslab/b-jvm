@@ -204,6 +204,7 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
   frame->native.method = method;
   frame->native.method_shape = descriptor;
   frame->native.state = 0;
+  frame->native.is_async_suspended = false;
 
   // Now wrap arguments in handles and copy them into the frame
   make_handles_array(thread, descriptor, method->access_flags & BJVM_ACCESS_STATIC, args, frame->native.values);
@@ -241,6 +242,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   frame->plain.program_counter = 0;
   frame->plain.max_stack = code->max_stack;
   frame->plain.method = method;
+  frame->plain.is_async_suspended = false;
 
   // Copy in the arguments
   if (likely(argc)) {
@@ -880,9 +882,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   thr->handles_capacity = HANDLES_CAPACITY;
   thr->lang_exception_frame = -1;
 
-  thr->async_stack = malloc(4096);
-  thr->async_stack_used = 0;
-  thr->async_stack_capacity = 4096;
+  thr->async_stack = calloc(1, 0x20);
 
   bjvm_vm_init_primitive_classes(thr);
   init_unsafe_constants(thr);
@@ -2209,7 +2209,6 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
 #define target (args->target)
 #define provider_mt (args->provider_mt)
 #define thread (args->thread)
-#define sd (args->sd_)
 
   struct bjvm_native_MethodHandle *mh = (void *)target;
   struct bjvm_native_MethodType *targ = (void *)mh->type;
@@ -2278,19 +2277,16 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
   case BJVM_MH_KIND_INVOKE_STATIC: {
     self->method = name->vmtarget;
     assert(self->method);
-    self->argc = self->method->descriptor->args_count;
-    self->frame = bjvm_push_frame(thread, self->method, args->frame->values + *sd - self->argc, self->argc);
+    self->frame = bjvm_push_frame(thread, self->method, args->sp_, self->method->descriptor->args_count);
     self->frame->plain.values[self->frame->plain.max_stack].obj = (void*) mh;
     // TODO arena allocate this in the VM so that it gets freed appropriately
     // if the VM is deleted
     self->interpreter_ctx = calloc(1, sizeof(bjvm_interpret_t));
     AWAIT_INNER(self->interpreter_ctx, bjvm_interpret, thread, self->frame);
-    // This many arguments were consumed
-    *sd -= self->argc;
+
     if (self->method->descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID) {
-      // Store the result in the frame and increment the stack pointer
-      args->frame->values[*sd] = self->interpreter_ctx->_result;
-      (*sd)++;
+      // Store the result in the frame
+      *args->sp_ = self->interpreter_ctx->_result;
     }
     free(self->interpreter_ctx);
     break;
@@ -2312,7 +2308,6 @@ DEFINE_ASYNC_SL(bjvm_invokevirtual_signature_polymorphic, 100) {
 #undef target
 #undef provider_mt
 #undef thread
-#undef sd
 }
 
 DEFINE_ASYNC(resolve_methodref) {
@@ -2330,7 +2325,7 @@ DEFINE_ASYNC(resolve_methodref) {
   }
 
   AWAIT(bjvm_initialize_class, thread, self->klass->classdesc);
-  if (self->initializer_ctx._result != 0) {
+  if (thread->current_exception) {
     ASYNC_RETURN(1);
   }
 
@@ -2547,37 +2542,24 @@ void make_invokeitable_polymorphic(bjvm_bytecode_insn *insn) {
   insn->ic2 = (void *)insn->cp->methodref.resolved->itable_index;
 }
 
-static int32_t async_stack_push(bjvm_thread *thread, size_t size) {
-  if (unlikely(thread->async_stack_used + size > thread->async_stack_capacity)) {
-    size_t new_capacity = thread->async_stack_used + size;
-    uint8_t *new_stack = realloc(thread->async_stack, thread->async_stack_capacity);
-    if (unlikely(!new_stack)) {
-      thread->current_exception = thread->stack_overflow_error;
-      return -1;
-    }
-
-    thread->async_stack = new_stack;
-    thread->async_stack_capacity = new_capacity;
-  }
-
-  uint16_t result = thread->async_stack_used;
-  thread->async_stack_used += size;
-  return result;
-}
-
-static void async_stack_pop(bjvm_thread *thread, size_t size) {
-  assert(thread->async_stack_used >= size);
-  thread->async_stack_used -= size;
-}
-
 // Main interpreter
 DEFINE_ASYNC(bjvm_interpret) {
 #define thread args->thread
 #define raw_frame args->raw_frame
   assert(*(thread->frames + thread->frames_count - 1) == raw_frame && "Frame is not last frame on stack");
 
-  bjvm_stack_value the_result = bjvm_interpret_2(thread, raw_frame);
-  ASYNC_END(the_result);
+  for (;;) {
+    future_t f;
+    bjvm_stack_value the_result = bjvm_interpret_2(&f, thread, raw_frame);
+    if (f.status == FUTURE_READY) {
+      ASYNC_RETURN(the_result);
+    } else {
+      ASYNC_YIELD(f.wakeup);
+    }
+  }
+
+  UNREACHABLE();
+  ASYNC_END_VOID();
 
 #if 0
 
