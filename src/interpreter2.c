@@ -1813,11 +1813,8 @@ __attribute__((always_inline)) static int64_t invokesigpoly_impl_void(ARGS_VOID)
   }
 
   bjvm_invokevirtual_signature_polymorphic_t ctx = {
-      .args = {.thread = thread,
-               .method = insn->ic,
-               .provider_mt = insn->ic2,
-               .sp_ = sp - insn->args,
-               .target = target}};
+      .args = {
+          .thread = thread, .method = insn->ic, .provider_mt = insn->ic2, .sp_ = sp - insn->args, .target = target}};
 
   future_t fut = bjvm_invokevirtual_signature_polymorphic(&ctx);
   if (unlikely(fut.status == FUTURE_NOT_READY)) {
