@@ -225,6 +225,8 @@ const char *bjvm_insn_code_name(bjvm_insn_code_kind code) {
     CASE(putstatic_F)
     CASE(putstatic_D)
     CASE(putstatic_L)
+    CASE(invokesigpoly)
+    CASE(dsqrt)
   }
   printf("Unknown code: %d\n", code);
   UNREACHABLE();
@@ -368,20 +370,20 @@ heap_string insn_to_string(const bjvm_bytecode_insn *insn, int insn_index) {
     write = build_str(&result, write, "%.15g", insn->f_imm);
   } else if (insn->kind == bjvm_insn_tableswitch) {
     write = build_str(&result, write, "[ default -> %d",
-                      insn->tableswitch.default_target);
-    for (int i = 0, j = insn->tableswitch.low;
-         i < insn->tableswitch.targets_count; ++i, ++j) {
+                      insn->tableswitch->default_target);
+    for (int i = 0, j = insn->tableswitch->low;
+         i < insn->tableswitch->targets_count; ++i, ++j) {
       write = build_str(&result, write, ", %d -> %d", j,
-                        insn->tableswitch.targets[i]);
+                        insn->tableswitch->targets[i]);
     }
     write = build_str(&result, write, " ]");
   } else if (insn->kind == bjvm_insn_lookupswitch) {
     write = build_str(&result, write, "[ default -> %d",
-                      insn->lookupswitch.default_target);
-    for (int i = 0; i < insn->lookupswitch.targets_count; ++i) {
+                      insn->lookupswitch->default_target);
+    for (int i = 0; i < insn->lookupswitch->targets_count; ++i) {
       write =
-          build_str(&result, write, ", %d -> %d", insn->lookupswitch.keys[i],
-                    insn->lookupswitch.targets[i]);
+          build_str(&result, write, ", %d -> %d", insn->lookupswitch->keys[i],
+                    insn->lookupswitch->targets[i]);
     }
     write = build_str(&result, write, " ]");
   } else {
@@ -577,6 +579,7 @@ struct method_analysis_ctx {
   char *insn_error;
   heap_string *error;
   struct edge *edges;
+  bool *is_branch_target;  // if 1, this insn is the target of a branch
   int edges_count;
   int edges_cap;
 };
@@ -645,6 +648,7 @@ int push_branch_target(struct method_analysis_ctx *ctx, uint32_t curr,
 
     *VECTOR_PUSH(ctx->edges, ctx->edges_count, ctx->edges_cap) =
         (struct edge){.start = curr, .end = target};
+    ctx->is_branch_target[target] = true;
   }
   return 0;
 }
@@ -1177,7 +1181,7 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
     SWIZZLE_LOCAL(insn->iinc.index);
     break;
   case bjvm_insn_multianewarray: {
-    for (int i = 0; i < insn->multianewarray.dimensions; ++i)
+    for (int i = 0; i < insn->multianewarray->dimensions; ++i)
       POP(INT)
     PUSH(REFERENCE)
     break;
@@ -1187,20 +1191,20 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
   }
   case bjvm_insn_tableswitch: {
     POP(INT)
-    if (push_branch_target(ctx, insn_index, insn->tableswitch.default_target))
+    if (push_branch_target(ctx, insn_index, insn->tableswitch->default_target))
       return -1;
-    for (int i = 0; i < insn->tableswitch.targets_count; ++i)
-      if (push_branch_target(ctx, insn_index, insn->tableswitch.targets[i]))
+    for (int i = 0; i < insn->tableswitch->targets_count; ++i)
+      if (push_branch_target(ctx, insn_index, insn->tableswitch->targets[i]))
         return -1;
     ctx->stack_terminated = true;
     break;
   }
   case bjvm_insn_lookupswitch: {
     POP(INT)
-    if (push_branch_target(ctx, insn_index, insn->lookupswitch.default_target))
+    if (push_branch_target(ctx, insn_index, insn->lookupswitch->default_target))
       return -1;
-    for (int i = 0; i < insn->lookupswitch.targets_count; ++i)
-      if (push_branch_target(ctx, insn_index, insn->lookupswitch.targets[i]))
+    for (int i = 0; i < insn->lookupswitch->targets_count; ++i)
+      if (push_branch_target(ctx, insn_index, insn->lookupswitch->targets[i]))
         return -1;
     ctx->stack_terminated = true;
     break;
@@ -1302,7 +1306,7 @@ bool gross_quadratic_algorithm_to_refine_local_references(
   bool stack_terminated = true;
   for (int i = 0; i < ctx->code->insn_count; ++i) {
     bjvm_bytecode_insn *insn = ctx->code->code + i;
-    if (stack_terminated) {
+    if (stack_terminated || ctx->is_branch_target[i]) {
       copy_analy_stack_state(ctx->inferred_locals[i], &ctx->locals);
       stack_terminated = false;
     } else {
@@ -1414,6 +1418,7 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
   int result = 0;
   ctx.stack.entries =
       calloc(code->max_stack + 1, sizeof(bjvm_analy_stack_entry));
+  ctx.is_branch_target = calloc(code->insn_count, sizeof(bool));
 
   // After jumps, we can infer the stack and locals at these points
   bjvm_analy_stack_state *inferred_stacks = ctx.inferred_stacks =
@@ -1639,6 +1644,7 @@ done:
   free(ctx.stack_before.entries);
   free(ctx.locals_swizzle);
   free(ctx.edges);
+  free(ctx.is_branch_target);
   free(inferred_stacks);
   free(inferred_locals);
 
@@ -1710,7 +1716,7 @@ int bjvm_scan_basic_blocks(const bjvm_attribute_code *code,
         ts[tc++] = i + 1; // fallthrough
     } else if (insn->kind == bjvm_insn_tableswitch ||
                insn->kind == bjvm_insn_lookupswitch) {
-      const struct bjvm_bc_tableswitch_data *tsd = &insn->tableswitch;
+      const struct bjvm_bc_tableswitch_data *tsd = insn->tableswitch;
       // Layout is the same between tableswitch and lookupswitch, so ok
       ts[tc++] = tsd->default_target;
       memcpy(ts + tc, tsd->targets, tsd->targets_count * sizeof(int));
@@ -1742,7 +1748,7 @@ int bjvm_scan_basic_blocks(const bjvm_attribute_code *code,
         continue;
     } else if (last->kind == bjvm_insn_tableswitch ||
                last->kind == bjvm_insn_lookupswitch) {
-      const struct bjvm_bc_tableswitch_data *tsd = &last->tableswitch;
+      const struct bjvm_bc_tableswitch_data *tsd = last->tableswitch;
       push_bb_branch(b, FIND_TARGET_BLOCK(tsd->default_target));
       for (int i = 0; i < tsd->targets_count; ++i)
         push_bb_branch(b, FIND_TARGET_BLOCK(tsd->targets[i]));
