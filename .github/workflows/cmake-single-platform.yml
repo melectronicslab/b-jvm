@@ -21,6 +21,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Set up GCC
+      uses: egor-tensin/setup-gcc@v1
 
     - name: Download JDK23
       run: curl -o ${{github.workspace}}/jdk-23_linux-x64_bin.tar.gz https://download.oracle.com/java/23/latest/jdk-23_linux-x64_bin.tar.gz
