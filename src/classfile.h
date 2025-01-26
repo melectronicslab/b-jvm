@@ -791,6 +791,7 @@ typedef struct bjvm_classdesc {
   bjvm_type_kind primitive_component; // primitives and array types only
 
   bjvm_bytecode_insn **indy_insns; // used to get GC roots to CallSites
+  bjvm_bytecode_insn **sigpoly_insns; // used to get GC roots to MethodTypes
 
   void (*dtor)(bjvm_classdesc *); // apoptosis
 

@@ -58,6 +58,7 @@ void bjvm_free_classfile(bjvm_classdesc cf) {
     free_method(&cf.methods[i]);
   free(cf.static_fields);
   arrfree(cf.indy_insns);
+  arrfree(cf.sigpoly_insns);
   bjvm_free_compressed_bitset(cf.static_references);
   bjvm_free_compressed_bitset(cf.instance_references);
   arena_uninit(&cf.arena);
@@ -2087,6 +2088,7 @@ parse_result_t bjvm_parse_classfile(const uint8_t *bytes, size_t len,
 
   cf->bootstrap_methods = nullptr;
   cf->indy_insns = nullptr;
+  cf->sigpoly_insns = nullptr;
 
   bool in_MethodHandle =
       utf8_equals(hslc(cf->name), "java/lang/invoke/MethodHandle") ||

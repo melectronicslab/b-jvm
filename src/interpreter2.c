@@ -1574,7 +1574,6 @@ __attribute__((noinline)) static int64_t invokevirtual_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
   int argc = insn->args = method_info->descriptor->args_count + 1;
-  assert(argc <= sp);
   bjvm_obj_header *target = (sp - argc)->obj;
 
   SPILL_VOID
@@ -1598,6 +1597,8 @@ __attribute__((noinline)) static int64_t invokevirtual_impl_void(ARGS_VOID) {
     insn->kind = bjvm_insn_invokesigpoly;
     insn->ic = method_info->resolved;
     insn->ic2 = bjvm_resolve_method_type(thread, method_info->descriptor);
+
+    arrput(frame->method->my_class->sigpoly_insns, insn);  // so GC can move around ic2
 
     if (unlikely(!insn->ic)) {
       // todo: linkage error
@@ -1624,7 +1625,6 @@ __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
   int argc = insn->args = method_info->descriptor->args_count + 1;
-  assert(argc <= sp);
   bjvm_obj_header *target = (sp - argc)->obj;
   SPILL_VOID
   if (!target) {
@@ -1726,7 +1726,6 @@ __attribute__((noinline)) static int64_t invokeinterface_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
   int argc = insn->args = method_info->descriptor->args_count + 1;
-  assert(argc <= sp);
   bjvm_obj_header *target = (sp - argc)->obj;
   SPILL_VOID
   if (!target) {
