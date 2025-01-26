@@ -2378,7 +2378,7 @@ static int64_t instanceof_resolved_impl_int(ARGS_INT) {
 
 static int64_t sqrt_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK
-  NEXT_DOUBLE(__builtin_sqrt(tos))
+  NEXT_DOUBLE(sqrt(tos))
 }
 
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
