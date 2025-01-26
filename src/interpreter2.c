@@ -1234,12 +1234,12 @@ static int64_t tableswitch_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   int32_t index = (int32_t)tos;
-  int32_t low = insn->tableswitch.low;
-  int32_t high = insn->tableswitch.high;
-  int32_t *offsets = insn->tableswitch.targets;
+  int32_t low = insn->tableswitch->low;
+  int32_t high = insn->tableswitch->high;
+  int32_t *offsets = insn->tableswitch->targets;
   if (index < low || index > high) {
-    int delta = (insn->tableswitch.default_target - 1) - pc;
-    pc = insn->tableswitch.default_target - 1;
+    int delta = (insn->tableswitch->default_target - 1) - pc;
+    pc = insn->tableswitch->default_target - 1;
     insns += delta;
   } else {
     int delta = (offsets[index - low] - 1) - pc;
@@ -1253,7 +1253,7 @@ static int64_t tableswitch_impl_int(ARGS_INT) {
 static int64_t lookupswitch_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  struct bjvm_bc_lookupswitch_data data = insn->lookupswitch;
+  struct bjvm_bc_lookupswitch_data data = *insn->lookupswitch;
 
   int32_t key = (int32_t)tos;
   int32_t *keys = data.keys;
@@ -1462,7 +1462,7 @@ static int64_t multianewarray_impl_int(ARGS_INT) {
   DEBUG_CHECK
   SPILL(tos)
   uint16_t temp_sp = sp - frame->values;
-  if (bjvm_multianewarray(thread, frame, &insn->multianewarray, &temp_sp))
+  if (bjvm_multianewarray(thread, frame, insn->multianewarray, &temp_sp))
     return 0;
 
   sp = frame->values + temp_sp;

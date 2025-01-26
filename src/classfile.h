@@ -32,7 +32,7 @@ bjvm_cp_entry *bjvm_check_cp_entry(bjvm_cp_entry *entry, int expected_kinds,
  * sipush, iconst_<n>, iconst_<n> -> iconst, dconst_<d> -> dconst, fconst_<f> ->
  * fconst
  */
-typedef enum {
+typedef enum : uint8_t {
   /** No operands */
   bjvm_insn_nop, // stack polymorphic
 
@@ -565,16 +565,12 @@ struct bjvm_bc_iinc_data {
   int16_t const_;
 };
 
-struct bjvm_bc_invokeinterface_data {
-  uint16_t index;
-  uint8_t count;
-};
-
 typedef struct bjvm_bytecode_insn {
   bjvm_insn_code_kind kind;
+  uint8_t args;
   bjvm_reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
   bjvm_reduced_tos_kind tos_after;  // the (reduced) top-of-stack type after this instruction executes
-  int original_pc;
+  uint16_t original_pc;
 
   union {
     // for newarray
@@ -589,24 +585,22 @@ typedef struct bjvm_bytecode_insn {
     // Double immediate
     double d_imm;
     // lookupswitch
-    struct bjvm_bc_lookupswitch_data lookupswitch;
+    struct bjvm_bc_lookupswitch_data *lookupswitch;
     // tableswitch
-    struct bjvm_bc_tableswitch_data tableswitch;
+    struct bjvm_bc_tableswitch_data *tableswitch;
     // iinc
     struct bjvm_bc_iinc_data iinc;
-    // invoke interface
-    struct bjvm_bc_invokeinterface_data invokeinterface;
     // multianewarray
-    struct bjvm_multianewarray_data multianewarray;
+    struct bjvm_multianewarray_data *multianewarray;
     // non-owned pointer into the constant pool
     bjvm_cp_entry *cp;
     // anewarray_resolved, checkcast_resolved
     bjvm_classdesc *classdesc;
   };
+
   // Per-instruction inline cache data
   void *ic;
   void *ic2;
-  int args;
 } bjvm_bytecode_insn;
 
 typedef struct {
