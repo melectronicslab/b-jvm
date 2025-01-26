@@ -92,27 +92,6 @@ static int64_t (*jmp_table_float[MAX_INSN_KIND])(ARGS_FLOAT);
 static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 
 #if DO_TAILS
-// Given a TOS type, select (at compile time) the table that we ought to use for the next instruction
-#define SELECT_TABLE(tos)                                                                                              \
-  _Generic(tos,                                                                                                        \
-      bjvm_obj_header *: jmp_table_int,                                                                                \
-      int8_t: jmp_table_int,                                                                                           \
-      int16_t: jmp_table_int,                                                                                          \
-      uint16_t: jmp_table_int,                                                                                         \
-      int: jmp_table_int,                                                                                              \
-      int64_t: jmp_table_int,                                                                                          \
-      float: jmp_table_float,                                                                                          \
-      double: jmp_table_double)
-
-#define TOS_TYPE(tos) (_Generic(tos, float: TOS_FLOAT, double: TOS_DOUBLE, default: TOS_INT))
-
-// Convert the particular representation of the TOS to the general representation.
-#define CONVERT_TOS(tos) _Generic(tos, bjvm_obj_header *: (int64_t)tos, default: tos)
-
-// Shepherd the TOS to the correct argument based on its type.
-#define SHEPHERD_TOS(tos)                                                                                              \
-  TOS_TYPE(tos) == TOS_INT ? CONVERT_TOS(tos) : a_undef, TOS_TYPE(tos) == TOS_FLOAT ? CONVERT_TOS(tos) : b_undef,      \
-      TOS_TYPE(tos) == TOS_DOUBLE ? CONVERT_TOS(tos) : c_undef
 
 #ifdef EMSCRIPTEN
 // Sad :(
@@ -134,12 +113,20 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   }
 #endif
 
-// Jump to the instruction at pc, using the given top-of-stack value
-#define JMP(tos)                                                                                                       \
-  WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[0].kind](thread, frame, insns, pc, sp, SHEPHERD_TOS(tos));)
-// Jump to the instruction at pc + 1, using the given top-of-stack value
-#define NEXT(tos)                                                                                                      \
-  WITH_UNDEF(MUSTTAIL return SELECT_TABLE(tos)[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, SHEPHERD_TOS(tos));)
+#define JMP_INT(tos)                                                                                                   \
+  WITH_UNDEF(MUSTTAIL return jmp_table_int[insns[0].kind](thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
+#define JMP_FLOAT(tos)                                                                                                 \
+  WITH_UNDEF(MUSTTAIL return jmp_table_float[insns[0].kind](thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
+#define JMP_DOUBLE(tos)                                                                                                \
+  WITH_UNDEF(MUSTTAIL return jmp_table_double[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
+
+#define NEXT_INT(tos) \
+  WITH_UNDEF(MUSTTAIL return jmp_table_int[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef);)
+#define NEXT_FLOAT(tos) \
+  WITH_UNDEF(MUSTTAIL return jmp_table_float[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef);)
+#define NEXT_DOUBLE(tos) \
+  WITH_UNDEF(MUSTTAIL return jmp_table_double[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos);)
+
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
 // all stack values are in memory (rather than in a register)
@@ -180,11 +167,11 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   case TOS_VOID:                                                                                                       \
     NEXT_VOID                                                                                                          \
   case TOS_INT:                                                                                                        \
-    NEXT((tos).l)                                                                                                      \
+    NEXT_INT((tos).l)                                                                                                      \
   case TOS_FLOAT:                                                                                                      \
-    NEXT((tos).f)                                                                                                      \
+    NEXT_FLOAT((tos).f)                                                                                                      \
   case TOS_DOUBLE:                                                                                                     \
-    NEXT((tos).d)                                                                                                      \
+    NEXT_DOUBLE((tos).d)                                                                                                      \
   default:                                                                                                             \
     __builtin_unreachable();                                                                                           \
   }
@@ -196,11 +183,11 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   case TOS_VOID:                                                                                                       \
     JMP_VOID                                                                                                           \
   case TOS_INT:                                                                                                        \
-    JMP((tos).l)                                                                                                       \
+    JMP_INT((tos).l)                                                                                                       \
   case TOS_FLOAT:                                                                                                      \
-    JMP((tos).f)                                                                                                       \
+    JMP_FLOAT((tos).f)                                                                                                       \
   case TOS_DOUBLE:                                                                                                     \
-    JMP((tos).d)                                                                                                       \
+    JMP_DOUBLE((tos).d)                                                                                                       \
   default:                                                                                                             \
     __builtin_unreachable();                                                                                           \
   }
@@ -498,7 +485,7 @@ static int64_t getstatic_L_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT(*(bjvm_obj_header **)insn->ic)
+  NEXT_INT(*(bjvm_obj_header **)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_L)
 
@@ -507,7 +494,7 @@ static int64_t getstatic_F_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT(*(float *)insn->ic)
+  NEXT_FLOAT(*(float *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_F)
 
@@ -516,7 +503,7 @@ static int64_t getstatic_D_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT(*(double *)insn->ic)
+  NEXT_DOUBLE(*(double *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_D)
 
@@ -525,7 +512,7 @@ static int64_t getstatic_J_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT(*(int64_t *)insn->ic)
+  NEXT_INT(*(int64_t *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_J)
 
@@ -534,7 +521,7 @@ static int64_t getstatic_I_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT(*(int *)insn->ic)
+  NEXT_INT(*(int *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_I)
 
@@ -543,7 +530,7 @@ static int64_t getstatic_S_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT((int64_t)*(int16_t *)insn->ic)
+  NEXT_INT((int64_t)*(int16_t *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_S)
 
@@ -552,7 +539,7 @@ static int64_t getstatic_C_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT((int64_t)*(uint16_t *)insn->ic)
+  NEXT_INT((int64_t)*(uint16_t *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_C)
 
@@ -561,7 +548,7 @@ static int64_t getstatic_B_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT((int64_t)*(int8_t *)insn->ic)
+  NEXT_INT((int64_t)*(int8_t *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_B)
 
@@ -570,7 +557,7 @@ static int64_t getstatic_Z_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   assert(insn->ic && "Static field location not found");
   sp++;
-  NEXT((int64_t)*(int8_t *)insn->ic)
+  NEXT_INT((int64_t)*(int8_t *)insn->ic)
 }
 FORWARD_TO_NULLARY(getstatic_Z)
 
@@ -726,7 +713,7 @@ static int64_t getfield_impl_int(ARGS_INT) {
   }
   RELOAD(tos)
   assert(fut.status == FUTURE_READY); // for now
-  JMP(tos)
+  JMP_INT(tos)
 }
 
 static int64_t putfield_impl_void(ARGS_VOID) {
@@ -751,63 +738,63 @@ static int64_t getfield_B_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   int8_t *field = (int8_t *)((char *)tos + (int)insn->ic2);
-  NEXT((int64_t)*field)
+  NEXT_INT((int64_t)*field)
 }
 
 static int64_t getfield_C_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   uint16_t *field = (uint16_t *)((char *)tos + (int)insn->ic2);
-  NEXT((int64_t)*field)
+  NEXT_INT((int64_t)*field)
 }
 
 static int64_t getfield_S_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   int16_t *field = (int16_t *)((char *)tos + (int)insn->ic2);
-  NEXT((int64_t)*field)
+  NEXT_INT((int64_t)*field)
 }
 
 static int64_t getfield_I_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   int *field = (int *)((char *)tos + (int)insn->ic2);
-  NEXT((int64_t)*field)
+  NEXT_INT((int64_t)*field)
 }
 
 static int64_t getfield_J_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   int64_t *field = (int64_t *)((char *)tos + (int)insn->ic2);
-  NEXT(*field)
+  NEXT_INT(*field)
 }
 
 static int64_t getfield_F_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   float *field = (float *)((char *)tos + (int)insn->ic2);
-  NEXT(*field)
+  NEXT_FLOAT(*field)
 }
 
 static int64_t getfield_D_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   double *field = (double *)((char *)tos + (int)insn->ic2);
-  NEXT(*field)
+  NEXT_DOUBLE(*field)
 }
 
 static int64_t getfield_L_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   bjvm_obj_header **field = (bjvm_obj_header **)((char *)tos + (int)insn->ic2);
-  NEXT(*field)
+  NEXT_INT(*field)
 }
 
 static int64_t getfield_Z_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
   int8_t *field = (int8_t *)((char *)tos + (int)insn->ic2);
-  NEXT((int64_t)*field)
+  NEXT_INT((int64_t)*field)
 }
 
 static int64_t putfield_B_impl_int(ARGS_INT) {
@@ -900,7 +887,7 @@ static int64_t putfield_D_impl_double(ARGS_DOUBLE) {
     int64_t a = (sp - 2)->l, b = tos;                                                                                  \
     int64_t result = eval;                                                                                             \
     sp--;                                                                                                              \
-    NEXT(result)                                                                                                       \
+    NEXT_INT(result)                                                                                                       \
   }
 
 INTEGER_BIN_OP(iadd, ((uint32_t)a + (uint32_t)b))
@@ -922,42 +909,42 @@ INTEGER_BIN_OP(lshr, a >> (b & 0x3f))
 INTEGER_BIN_OP(iushr, (uint32_t)a >> (b & 0x1f))
 INTEGER_BIN_OP(lushr, (uint64_t)a >> (b & 0x3f))
 
-#define INTEGER_UN_OP(which, eval)                                                                                     \
+#define INTEGER_UN_OP(which, eval, NEXT)                                                                                     \
   static int64_t which##_impl_int(ARGS_INT) {                                                                          \
     DEBUG_CHECK                                                                                                        \
     int64_t a = tos;                                                                                                   \
     NEXT(eval)                                                                                                         \
   }
 
-INTEGER_UN_OP(ineg, (int)(-(uint32_t)a))
-INTEGER_UN_OP(lneg, (int64_t)(-(uint64_t)a))
-INTEGER_UN_OP(i2l, (int64_t)a)
-INTEGER_UN_OP(i2s, (int64_t)(int16_t)a)
-INTEGER_UN_OP(i2b, (int64_t)(int8_t)a)
-INTEGER_UN_OP(i2c, (int64_t)(uint16_t)a)
-INTEGER_UN_OP(i2f, (float)a)
-INTEGER_UN_OP(i2d, (double)a)
-INTEGER_UN_OP(l2i, (int)a)
-INTEGER_UN_OP(l2f, (float)a)
-INTEGER_UN_OP(l2d, (double)a)
+INTEGER_UN_OP(ineg, (int)(-(uint32_t)a), NEXT_INT)
+INTEGER_UN_OP(lneg, (int64_t)(-(uint64_t)a), NEXT_INT)
+INTEGER_UN_OP(i2l, (int64_t)a, NEXT_INT)
+INTEGER_UN_OP(i2s, (int64_t)(int16_t)a, NEXT_INT)
+INTEGER_UN_OP(i2b, (int64_t)(int8_t)a, NEXT_INT)
+INTEGER_UN_OP(i2c, (int64_t)(uint16_t)a, NEXT_INT)
+INTEGER_UN_OP(i2f, (float)a, NEXT_FLOAT)
+INTEGER_UN_OP(i2d, (double)a, NEXT_DOUBLE)
+INTEGER_UN_OP(l2i, (int)a, NEXT_INT)
+INTEGER_UN_OP(l2f, (float)a, NEXT_FLOAT)
+INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 
-#define FLOAT_BIN_OP(which, eval, out_float, out_double)                                                               \
+#define FLOAT_BIN_OP(which, eval, out_float, out_double, NEXT1, NEXT2)                                                               \
   static int64_t f##which##_impl_float(ARGS_FLOAT) {                                                                   \
     DEBUG_CHECK                                                                                                        \
     float a = (sp - 2)->f, b = tos;                                                                                    \
     out_float result = eval;                                                                                           \
     sp--;                                                                                                              \
-    NEXT(result)                                                                                                       \
+    NEXT1(result)                                                                                                       \
   }                                                                                                                    \
   static int64_t d##which##_impl_double(ARGS_DOUBLE) {                                                                 \
     DEBUG_CHECK                                                                                                        \
     double a = (sp - 2)->d, b = tos;                                                                                   \
     out_double result = eval;                                                                                          \
     sp--;                                                                                                              \
-    NEXT(result)                                                                                                       \
+    NEXT2(result)                                                                                                       \
   }
 
-#define FLOAT_UN_OP(which, eval, out)                                                                                  \
+#define FLOAT_UN_OP(which, eval, out, NEXT)                                                                                  \
   static int64_t which##_impl_float(ARGS_FLOAT) {                                                                      \
     DEBUG_CHECK                                                                                                        \
     float a = tos;                                                                                                     \
@@ -965,7 +952,7 @@ INTEGER_UN_OP(l2d, (double)a)
     NEXT(result)                                                                                                       \
   }
 
-#define DOUBLE_UN_OP(which, eval, out)                                                                                 \
+#define DOUBLE_UN_OP(which, eval, out, NEXT)                                                                                 \
   static int64_t which##_impl_double(ARGS_DOUBLE) {                                                                    \
     DEBUG_CHECK                                                                                                        \
     double a = tos;                                                                                                    \
@@ -973,22 +960,22 @@ INTEGER_UN_OP(l2d, (double)a)
     NEXT(result)                                                                                                       \
   }
 
-FLOAT_BIN_OP(add, a + b, float, double)
-FLOAT_BIN_OP(sub, a - b, float, double)
-FLOAT_BIN_OP(mul, a *b, float, double)
-FLOAT_BIN_OP(div, a / b, float, double)
-FLOAT_BIN_OP(cmpg, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : 1)), int, int)
-FLOAT_BIN_OP(cmpl, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : -1)), int, int)
+FLOAT_BIN_OP(add, a + b, float, double, NEXT_FLOAT, NEXT_DOUBLE)
+FLOAT_BIN_OP(sub, a - b, float, double, NEXT_FLOAT, NEXT_DOUBLE)
+FLOAT_BIN_OP(mul, a *b, float, double, NEXT_FLOAT, NEXT_DOUBLE)
+FLOAT_BIN_OP(div, a / b, float, double, NEXT_FLOAT, NEXT_DOUBLE)
+FLOAT_BIN_OP(cmpg, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : 1)), int, int, NEXT_INT, NEXT_INT)
+FLOAT_BIN_OP(cmpl, a > b ? 1 : (a < b ? -1 : (a == b ? 0 : -1)), int, int, NEXT_INT, NEXT_INT)
 
-FLOAT_UN_OP(fneg, -a, float)
-FLOAT_UN_OP(f2i, double_to_int(a), int)
-FLOAT_UN_OP(f2l, double_to_long(a), int64_t)
-FLOAT_UN_OP(f2d, (double)a, double)
+FLOAT_UN_OP(fneg, -a, float, NEXT_FLOAT)
+FLOAT_UN_OP(f2i, double_to_int(a), int, NEXT_INT)
+FLOAT_UN_OP(f2l, double_to_long(a), int64_t, NEXT_INT)
+FLOAT_UN_OP(f2d, (double)a, double, NEXT_DOUBLE)
 
-DOUBLE_UN_OP(dneg, -a, double)
-DOUBLE_UN_OP(d2i, double_to_int(a), int)
-DOUBLE_UN_OP(d2l, double_to_long(a), int64_t)
-DOUBLE_UN_OP(d2f, (float)a, float)
+DOUBLE_UN_OP(dneg, -a, double, NEXT_DOUBLE)
+DOUBLE_UN_OP(d2i, double_to_int(a), int, NEXT_INT)
+DOUBLE_UN_OP(d2l, double_to_long(a), int64_t, NEXT_INT)
+DOUBLE_UN_OP(d2f, (float)a, float, NEXT_FLOAT)
 
 static int64_t idiv_impl_int(ARGS_INT) {
 
@@ -1000,7 +987,7 @@ static int64_t idiv_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT(java_idiv_(a, b));
+  NEXT_INT(java_idiv_(a, b));
 }
 
 static int64_t ldiv_impl_int(ARGS_INT) {
@@ -1013,7 +1000,7 @@ static int64_t ldiv_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT(java_ldiv_(a, b));
+  NEXT_INT(java_ldiv_(a, b));
 }
 
 static int64_t lcmp_impl_int(ARGS_INT) {
@@ -1021,7 +1008,7 @@ static int64_t lcmp_impl_int(ARGS_INT) {
   DEBUG_CHECK
   int64_t a = (sp - 2)->l, b = tos;
   sp--;
-  NEXT(a > b ? 1 : (a < b ? -1 : 0));
+  NEXT_INT(a > b ? 1 : (a < b ? -1 : 0));
 }
 
 static int64_t irem_impl_int(ARGS_INT) {
@@ -1034,7 +1021,7 @@ static int64_t irem_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT(java_irem_(a, b));
+  NEXT_INT(java_irem_(a, b));
 }
 
 static int64_t lrem_impl_int(ARGS_INT) {
@@ -1047,7 +1034,7 @@ static int64_t lrem_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT(java_lrem_(a, b));
+  NEXT_INT(java_lrem_(a, b));
 }
 
 /** Array instructions (arraylength, array loads, array stores) */
@@ -1060,10 +1047,10 @@ static int64_t arraylength_impl_int(ARGS_INT) {
     bjvm_null_pointer_exception(thread);
     return 0;
   }
-  NEXT(*ArrayLength(array))
+  NEXT_INT(*ArrayLength(array))
 }
 
-#define ARRAY_LOAD(which, load, type)                                                                                  \
+#define ARRAY_LOAD(which, load, type, NEXT)                                                                                  \
   static int64_t which##_impl_int(ARGS_INT) {                                                                          \
     DEBUG_CHECK                                                                                                        \
     bjvm_obj_header *array = (bjvm_obj_header *)(sp - 2)->obj;                                                         \
@@ -1084,14 +1071,14 @@ static int64_t arraylength_impl_int(ARGS_INT) {
     NEXT(cow)                                                                                                          \
   }
 
-ARRAY_LOAD(iaload, IntArrayLoad, int)
-ARRAY_LOAD(laload, LongArrayLoad, int64_t)
-ARRAY_LOAD(faload, FloatArrayLoad, float)
-ARRAY_LOAD(daload, DoubleArrayLoad, double)
-ARRAY_LOAD(aaload, ReferenceArrayLoad, bjvm_obj_header *)
-ARRAY_LOAD(baload, ByteArrayLoad, int64_t)
-ARRAY_LOAD(saload, ShortArrayLoad, int64_t)
-ARRAY_LOAD(caload, CharArrayLoad, int64_t)
+ARRAY_LOAD(iaload, IntArrayLoad, int, NEXT_INT)
+ARRAY_LOAD(laload, LongArrayLoad, int64_t, NEXT_INT)
+ARRAY_LOAD(faload, FloatArrayLoad, float, NEXT_FLOAT)
+ARRAY_LOAD(daload, DoubleArrayLoad, double, NEXT_DOUBLE)
+ARRAY_LOAD(aaload, ReferenceArrayLoad, bjvm_obj_header *, NEXT_INT)
+ARRAY_LOAD(baload, ByteArrayLoad, int64_t, NEXT_INT)
+ARRAY_LOAD(saload, ShortArrayLoad, int64_t, NEXT_INT)
+ARRAY_LOAD(caload, CharArrayLoad, int64_t, NEXT_INT)
 
 #define ARRAY_STORE(which, tt1, args, tt3, store)                                                                      \
   static int64_t which##_impl_##tt1(args) {                                                                            \
@@ -1209,7 +1196,7 @@ static int64_t goto_impl_double(ARGS_DOUBLE) {
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
-  JMP(tos)
+  JMP_DOUBLE(tos)
 }
 
 static int64_t goto_impl_float(ARGS_FLOAT) {
@@ -1218,7 +1205,7 @@ static int64_t goto_impl_float(ARGS_FLOAT) {
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
-  JMP(tos)
+  JMP_FLOAT(tos)
 }
 
 static int64_t goto_impl_int(ARGS_INT) {
@@ -1227,7 +1214,7 @@ static int64_t goto_impl_int(ARGS_INT) {
   int delta = insn->index - pc;
   pc = insn->index;
   insns += delta;
-  JMP(tos)
+  JMP_INT(tos)
 }
 
 static int64_t tableswitch_impl_int(ARGS_INT) {
@@ -1404,7 +1391,7 @@ static int64_t new_resolved_impl_void(ARGS_VOID) {
     return 0;
 
   sp++;
-  NEXT(obj)
+  NEXT_INT(obj)
 }
 FORWARD_TO_NULLARY(new_resolved)
 
@@ -1421,7 +1408,7 @@ static int64_t newarray_impl_int(ARGS_INT) {
   if (unlikely(!array)) {
     return 0; // oom
   }
-  NEXT(array)
+  NEXT_INT(array)
 }
 
 static int64_t anewarray_impl_int(ARGS_INT) {
@@ -1438,7 +1425,7 @@ static int64_t anewarray_impl_int(ARGS_INT) {
   }
   insn->classdesc = info->classdesc;
   insn->kind = bjvm_insn_anewarray_resolved;
-  JMP(tos)
+  JMP_INT(tos)
 }
 
 // <length> -> <object>
@@ -1453,7 +1440,7 @@ static int64_t anewarray_resolved_impl_int(ARGS_INT) {
   }
   bjvm_obj_header *array = CreateObjectArray1D(thread, insn->classdesc, count);
   if (array) {
-    NEXT(array)
+    NEXT_INT(array)
   }
   return 0; // oom
 }
@@ -1466,7 +1453,7 @@ static int64_t multianewarray_impl_int(ARGS_INT) {
     return 0;
 
   sp = frame->values + temp_sp;
-  NEXT(frame->values[temp_sp - 1].obj)
+  NEXT_INT(frame->values[temp_sp - 1].obj)
 }
 
 /** Method invocations */
@@ -1979,14 +1966,14 @@ FORWARD_TO_NULLARY(invokecallsite)
 __attribute__((always_inline)) static int64_t iload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].i)
+  NEXT_INT(frame->values[frame->max_stack + insn->index].i)
 }
 FORWARD_TO_NULLARY(iload)
 
 __attribute__((always_inline)) static int64_t fload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].f)
+  NEXT_FLOAT(frame->values[frame->max_stack + insn->index].f)
 }
 FORWARD_TO_NULLARY(fload)
 
@@ -1994,7 +1981,7 @@ __attribute__((always_inline)) static int64_t dload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].d)
+  NEXT_DOUBLE(frame->values[frame->max_stack + insn->index].d)
 }
 FORWARD_TO_NULLARY(dload)
 
@@ -2002,7 +1989,7 @@ __attribute__((always_inline)) static int64_t lload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].l)
+  NEXT_INT(frame->values[frame->max_stack + insn->index].l)
 }
 FORWARD_TO_NULLARY(lload)
 
@@ -2010,7 +1997,7 @@ __attribute__((always_inline)) static int64_t aload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(frame->values[frame->max_stack + insn->index].obj)
+  NEXT_INT(frame->values[frame->max_stack + insn->index].obj)
 }
 FORWARD_TO_NULLARY(aload)
 
@@ -2065,7 +2052,7 @@ static int64_t iinc_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK
   int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
-  NEXT(tos)
+  NEXT_DOUBLE(tos)
 }
 
 static int64_t iinc_impl_float(ARGS_FLOAT) {
@@ -2073,7 +2060,7 @@ static int64_t iinc_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK
   int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
-  NEXT(tos)
+  NEXT_FLOAT(tos)
 }
 
 static int64_t iinc_impl_int(ARGS_INT) {
@@ -2081,7 +2068,7 @@ static int64_t iinc_impl_int(ARGS_INT) {
   DEBUG_CHECK
   int *a = &frame->values[frame->max_stack + insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
-  NEXT(tos)
+  NEXT_INT(tos)
 }
 
 /** Constant-pushing instructions */
@@ -2090,7 +2077,7 @@ static int64_t aconst_null_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT((int64_t)0)
+  NEXT_INT((int64_t)0)
 }
 FORWARD_TO_NULLARY(aconst_null)
 
@@ -2101,9 +2088,9 @@ static int64_t ldc_impl_void(ARGS_VOID) {
   bjvm_cp_entry *ent = insn->cp;
   switch (ent->kind) {
   case BJVM_CP_KIND_INTEGER:
-    NEXT((int64_t)ent->integral.value);
+    NEXT_INT((int64_t)ent->integral.value);
   case BJVM_CP_KIND_FLOAT:
-    NEXT((float)ent->floating.value);
+    NEXT_FLOAT((float)ent->floating.value);
   case BJVM_CP_KIND_CLASS: {
     // Initialize the class, then get its Java mirror
     SPILL_VOID
@@ -2113,7 +2100,7 @@ static int64_t ldc_impl_void(ARGS_VOID) {
       return 0;
 
     bjvm_obj_header *obj = (void *)bjvm_get_class_mirror(thread, ent->class_info.classdesc);
-    NEXT(obj);
+    NEXT_INT(obj);
   }
   case BJVM_CP_KIND_STRING: {
     bjvm_utf8 s = ent->string.chars;
@@ -2122,7 +2109,7 @@ static int64_t ldc_impl_void(ARGS_VOID) {
     if (!obj) // oom
       return 0;
 
-    NEXT(obj);
+    NEXT_INT(obj);
   }
   default:
     UNREACHABLE();
@@ -2137,9 +2124,9 @@ static int64_t ldc2_w_impl_void(ARGS_VOID) {
   bjvm_cp_entry *ent = insn->cp;
   switch (ent->kind) {
   case BJVM_CP_KIND_DOUBLE:
-    NEXT(ent->floating.value);
+    NEXT_DOUBLE(ent->floating.value);
   case BJVM_CP_KIND_LONG:
-    NEXT(ent->integral.value);
+    NEXT_INT(ent->integral.value);
   default:
     UNREACHABLE();
   }
@@ -2150,7 +2137,7 @@ static int64_t iconst_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(insn->integer_imm)
+  NEXT_INT(insn->integer_imm)
 }
 FORWARD_TO_NULLARY(iconst)
 
@@ -2158,7 +2145,7 @@ static int64_t fconst_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(insn->f_imm);
+  NEXT_FLOAT(insn->f_imm);
 }
 FORWARD_TO_NULLARY(fconst)
 
@@ -2166,7 +2153,7 @@ static int64_t dconst_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(insn->d_imm);
+  NEXT_DOUBLE(insn->d_imm);
 }
 FORWARD_TO_NULLARY(dconst)
 
@@ -2174,7 +2161,7 @@ static int64_t lconst_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
-  NEXT(insn->integer_imm);
+  NEXT_INT(insn->integer_imm);
 }
 FORWARD_TO_NULLARY(lconst)
 
@@ -2216,37 +2203,36 @@ static int64_t nop_impl_void(ARGS_VOID) {
 static int64_t nop_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  NEXT(tos)
+  NEXT_DOUBLE(tos)
 }
 
 static int64_t nop_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  NEXT(tos)
+  NEXT_FLOAT(tos)
 }
 
 static int64_t nop_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  NEXT(tos)
+  NEXT_INT(tos)
 }
 
 static int64_t dup_impl_int(ARGS_INT) {
-
   DEBUG_CHECK(sp++ - 1)->l = tos;
-  NEXT(tos)
+  NEXT_INT(tos)
 }
 
 static int64_t dup_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK(sp++ - 1)->f = tos;
-  NEXT(tos)
+  NEXT_FLOAT(tos)
 }
 
 static int64_t dup_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK(sp++ - 1)->d = tos;
-  NEXT(tos)
+  NEXT_DOUBLE(tos)
 }
 
 // Rare enough (especially after analysis phase) that we might as well just have the one implementation and forward
@@ -2344,7 +2330,7 @@ static int64_t checkcast_impl_int(ARGS_INT) {
   RELOAD(tos)
   insn->classdesc = info->classdesc;
   insn->kind = bjvm_insn_checkcast_resolved;
-  JMP(tos)
+  JMP_INT(tos)
 }
 
 static int64_t checkcast_resolved_impl_int(ARGS_INT) {
@@ -2360,7 +2346,7 @@ static int64_t checkcast_resolved_impl_int(ARGS_INT) {
     bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
     return 0;
   }
-  NEXT(tos)
+  NEXT_INT(tos)
 }
 
 static int64_t instanceof_impl_int(ARGS_INT) {
@@ -2375,7 +2361,7 @@ static int64_t instanceof_impl_int(ARGS_INT) {
   RELOAD(tos)
   insn->classdesc = info->classdesc;
   insn->kind = bjvm_insn_instanceof_resolved;
-  JMP(tos)
+  JMP_INT(tos)
 }
 
 static int64_t instanceof_resolved_impl_int(ARGS_INT) {
@@ -2383,7 +2369,7 @@ static int64_t instanceof_resolved_impl_int(ARGS_INT) {
   DEBUG_CHECK
   bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   int result = obj ? bjvm_instanceof(obj->descriptor, insn->classdesc) : 0;
-  NEXT(result)
+  NEXT_INT(result)
 }
 
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
