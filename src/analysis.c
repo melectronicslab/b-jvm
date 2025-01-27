@@ -1567,7 +1567,6 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
     case bjvm_insn_lstore:
     case bjvm_insn_fstore:
     case bjvm_insn_dstore:
-      insn->args = (int)insn->index - code->max_locals;
       break;
     case bjvm_insn_putfield:
     case bjvm_insn_aaload:
@@ -2129,14 +2128,14 @@ static int extended_npe_phase2(const bjvm_cp_method *method,
 
 // If a NullPointerException is thrown by the given instruction, generate a message like "Cannot load from char array
 // because the return value of "charAt" is null".
-int get_extended_npe_message(bjvm_cp_method *method, int pc, heap_string *result) {
+int get_extended_npe_message(bjvm_cp_method *method, uint16_t pc, heap_string *result) {
   // See https://openjdk.org/jeps/358 for more information on how this works, but there are basically two phases: One
   // which depends on the particular instruction that failed (e.g. caload -> cannot load from char array) and the other
   // which uses the instruction's sources to produce a more informative message.
   int err = 0;
   bjvm_code_analysis *analy = method->code_analysis;
   bjvm_attribute_code *code = method->code;
-  if (!analy || !code || (unsigned)pc >= code->insn_count)
+  if (!analy || !code || pc >= code->insn_count)
     return -1;
 
   bjvm_bytecode_insn *faulting_insn = method->code->code + pc;
