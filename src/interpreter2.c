@@ -317,6 +317,7 @@ typedef enum {
   CONT_RESOLVE,
   CONT_INVOKE,
   CONT_INVOKESIGPOLY, // tos must be reloaded
+  CONT_RUN_NATIVE,
 } continuation_point;
 
 typedef struct {
@@ -326,6 +327,7 @@ typedef struct {
   union {
     resolve_insn_t resolve_insn;
     bjvm_invokevirtual_signature_polymorphic_t sigpoly;
+    bjvm_run_native_t run_native;
     struct {
       bjvm_stack_frame *frame;
       uint8_t argc;
@@ -910,7 +912,7 @@ static int64_t putfield_D_impl_double(ARGS_DOUBLE) {
 
 // Binary operation on two integers (ints or longs)
 #define INTEGER_BIN_OP(which, eval)                                                                                    \
-  static int64_t which##_impl_int(ARGS_INT) {                                                           \
+  static int64_t which##_impl_int(ARGS_INT) {                                                                          \
     DEBUG_CHECK                                                                                                        \
     int64_t a = (sp - 2)->l, b = tos;                                                                                  \
     int64_t result = eval;                                                                                             \
@@ -940,7 +942,7 @@ INTEGER_BIN_OP(lushr, (int64_t)((uint64_t)a >> (b & 0x3f)))
 #undef INTEGER_BIN_OP
 
 #define INTEGER_UN_OP(which, eval, NEXT)                                                                               \
-  static int64_t which##_impl_int(ARGS_INT) {                                                           \
+  static int64_t which##_impl_int(ARGS_INT) {                                                                          \
     DEBUG_CHECK                                                                                                        \
     int64_t a = tos;                                                                                                   \
     NEXT(eval)                                                                                                         \
@@ -959,7 +961,6 @@ INTEGER_UN_OP(l2f, (float)a, NEXT_FLOAT)
 INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 
 #undef INTEGER_UN_OP
-
 
 #define FLOAT_BIN_OP(which, eval, out_float, out_double, NEXT1, NEXT2)                                                 \
   static int64_t f##which##_impl_float(ARGS_FLOAT) {                                                                   \
@@ -2503,19 +2504,38 @@ static int64_t async_resume(ARGS_VOID) {
   }
 }
 
+static bjvm_stack_value interpret_native_frame(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
+  bjvm_run_native_t ctx;
+
+  if (!frame_->is_async_suspended) {
+    ctx = (bjvm_run_native_t){.args = {.thread = thread, .frame = frame_}};
+  } else {
+    continuation_frame *cont = async_stack_pop(thread);
+    assert(cont->pnt == CONT_RUN_NATIVE);
+    ctx = cont->ctx.run_native;
+  }
+
+  *fut = bjvm_run_native(&ctx);
+
+  if (likely(fut->status == FUTURE_READY)) {
+    frame_->is_async_suspended = false;
+    bjvm_pop_frame(thread, frame_);
+    return ctx._result;
+  } else {
+    continuation_frame *cont = async_stack_push(thread);
+    *cont = (continuation_frame){.pnt = CONT_RUN_NATIVE, .ctx.run_native = ctx};
+    frame_->is_async_suspended = true;
+    return (bjvm_stack_value){0};
+  }
+}
+
 // NOLINTNEXTLINE(misc-no-recursion)
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
   bjvm_stack_value result;
 
   // Handle native frames
-  if (bjvm_is_frame_native(frame_)) {
-    bjvm_run_native_t ctx = {};
-    ctx.args.thread = thread;
-    ctx.args.frame = frame_;
-    *fut = bjvm_run_native(&ctx);
-    assert(fut->status == FUTURE_READY); // todo: fix
-    bjvm_pop_frame(thread, frame_);
-    return ctx._result;
+  if (unlikely(bjvm_is_frame_native(frame_))) {
+    MUSTTAIL return interpret_native_frame(fut, thread, frame_);
   }
 
   do {

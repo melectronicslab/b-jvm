@@ -13,7 +13,6 @@ extern "C" {
 #include <assert.h>
 #include <stdint.h>
 #include <util.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 #define maybe_extern_begin extern "C" {
@@ -100,13 +99,13 @@ template <typename T> using pick_or_zero_sized_t = typename pick_or_zero_sized<T
     invoked_async_methods_;                                                                                            \
   };                                                                                                                   \
   POP_EXTERN_C;                                                                                                        \
-  future_t name(name##_t *self);                                                                                       \
+  future_t name(void *self_);                                                                                       \
   struct name##_s {                                                                                                    \
     FixTypeSize(struct name##_args) args;                                                                              \
     uint32_t _state;                                                                                                   \
     locals;                                                                                                            \
     FixTypeSize(union name##_invoked_async_methods) invoked_async_methods;                                             \
-  }; \
+  };                                                                                                                   \
   maybe_extern_end;
 
 // deal with the fallout of FixTypeSize
@@ -135,7 +134,8 @@ template <typename T> T ZeroInternalState_(T t) {
 
 #define DEFINE_ASYNC_SL_(prelude, name, start_idx)                                                                     \
   maybe_extern_begin;                                                                                                  \
-  future_t name(name##_t *self) {                                                                                      \
+  future_t name(void *self_) {                                                                                      \
+    name##_t *self = (name##_t *)self_;                                                                                \
     assert(self);                                                                                                      \
     prelude(name);                                                                                                     \
     start_counter(label_counter, (start_idx) + 1);                                                                     \

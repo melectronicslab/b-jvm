@@ -13,7 +13,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "tests-common.h"
-#include <async.h>
 
 struct async_wakeup_info {
   int index;
@@ -48,7 +47,8 @@ TEST_CASE("Async natives") {
 
   bjvm_stack_value args[1] = {{.obj = nullptr}};
 
-  bjvm_cp_method *method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
+  bjvm_cp_method *method = bjvm_method_lookup(desc, STR("asyncNativeMethod"), STR("(I)I"), false, false);
+  REQUIRE(method != nullptr);
 
   run_thread_t ctx = {.args = {.thread = thread, .method = method, .args = args}};
   future_t fut = {};

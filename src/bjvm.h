@@ -93,7 +93,7 @@ typedef struct {
 } async_natives_args;
 
 typedef bjvm_stack_value (*sync_native_callback)(bjvm_thread *vm, bjvm_handle *obj, bjvm_value *args, uint8_t argc);
-typedef future_t (*async_native_callback)(async_natives_args *args);
+typedef future_t (*async_native_callback)(void *args);
 
 typedef struct {
   // Number of bytes needed for the context struct allocation (0 if sync)
@@ -387,7 +387,7 @@ typedef struct bjvm_stack_frame {
 // counter.
 uint16_t stack_depth(const bjvm_stack_frame *frame);
 
-bool bjvm_is_frame_native(const bjvm_stack_frame *frame);
+static inline bool bjvm_is_frame_native(const bjvm_stack_frame *frame) { return frame->is_native != 0; }
 bjvm_stack_value *frame_locals(const bjvm_stack_frame *frame);
 bjvm_value *bjvm_get_native_args(const bjvm_stack_frame *frame); // same as locals, just called args for native
 
