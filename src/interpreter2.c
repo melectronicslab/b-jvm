@@ -2116,11 +2116,9 @@ static int64_t ldc_impl_void(ARGS_VOID) {
   sp++;
   bjvm_cp_entry *ent = insn->cp;
   switch (ent->kind) {
-  case BJVM_CP_KIND_INTEGER: {
-    NEXT_INT((int64_t)ent->integral.value);
-  }
+  case BJVM_CP_KIND_INTEGER:
   case BJVM_CP_KIND_FLOAT: {
-    NEXT_FLOAT((float)ent->floating.value);
+    UNREACHABLE();
   }
   case BJVM_CP_KIND_CLASS: {
     // Initialize the class, then get its Java mirror
