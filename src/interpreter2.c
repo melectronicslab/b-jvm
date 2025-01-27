@@ -718,6 +718,11 @@ FORWARD_TO_NULLARY(putfield)
 static int64_t getfield_B_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   int8_t *field = (int8_t *)((char *)tos + (int)insn->ic2);
   NEXT_INT((int64_t)*field)
 }
@@ -725,6 +730,11 @@ static int64_t getfield_B_impl_int(ARGS_INT) {
 static int64_t getfield_C_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   uint16_t *field = (uint16_t *)((char *)tos + (int)insn->ic2);
   NEXT_INT((int64_t)*field)
 }
@@ -732,6 +742,11 @@ static int64_t getfield_C_impl_int(ARGS_INT) {
 static int64_t getfield_S_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   int16_t *field = (int16_t *)((char *)tos + (int)insn->ic2);
   NEXT_INT((int64_t)*field)
 }
@@ -739,6 +754,11 @@ static int64_t getfield_S_impl_int(ARGS_INT) {
 static int64_t getfield_I_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   int *field = (int *)((char *)tos + (int)insn->ic2);
   NEXT_INT((int64_t)*field)
 }
@@ -746,6 +766,11 @@ static int64_t getfield_I_impl_int(ARGS_INT) {
 static int64_t getfield_J_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   int64_t *field = (int64_t *)((char *)tos + (int)insn->ic2);
   NEXT_INT(*field)
 }
@@ -753,6 +778,11 @@ static int64_t getfield_J_impl_int(ARGS_INT) {
 static int64_t getfield_F_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   float *field = (float *)((char *)tos + (int)insn->ic2);
   NEXT_FLOAT(*field)
 }
@@ -760,6 +790,11 @@ static int64_t getfield_F_impl_int(ARGS_INT) {
 static int64_t getfield_D_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   double *field = (double *)((char *)tos + (int)insn->ic2);
   NEXT_DOUBLE(*field)
 }
@@ -767,6 +802,11 @@ static int64_t getfield_D_impl_int(ARGS_INT) {
 static int64_t getfield_L_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   bjvm_obj_header **field = (bjvm_obj_header **)((char *)tos + (int)insn->ic2);
   NEXT_INT(*field)
 }
@@ -774,6 +814,11 @@ static int64_t getfield_L_impl_int(ARGS_INT) {
 static int64_t getfield_Z_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
+  if (unlikely(!tos)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
   int8_t *field = (int8_t *)((char *)tos + (int)insn->ic2);
   NEXT_INT((int64_t)*field)
 }
@@ -781,7 +826,13 @@ static int64_t getfield_Z_impl_int(ARGS_INT) {
 static int64_t putfield_B_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int8_t *field = (int8_t *)((char *)(*(sp - 2)).obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  int8_t *field = (int8_t *)((char *)obj + (int)insn->ic2);
   *field = (int8_t)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -790,7 +841,13 @@ static int64_t putfield_B_impl_int(ARGS_INT) {
 static int64_t putfield_C_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  uint16_t *field = (uint16_t *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  uint16_t *field = (uint16_t *)((char *)obj + (int)insn->ic2);
   *field = (uint16_t)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -799,7 +856,13 @@ static int64_t putfield_C_impl_int(ARGS_INT) {
 static int64_t putfield_S_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int16_t *field = (int16_t *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  int16_t *field = (int16_t *)((char *)obj + (int)insn->ic2);
   *field = (int16_t)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -808,7 +871,13 @@ static int64_t putfield_S_impl_int(ARGS_INT) {
 static int64_t putfield_I_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int *field = (int *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  int *field = (int *)((char *)obj + (int)insn->ic2);
   *field = (int)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -817,7 +886,13 @@ static int64_t putfield_I_impl_int(ARGS_INT) {
 static int64_t putfield_J_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int64_t *field = (int64_t *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  int64_t *field = (int64_t *)((char *)obj + (int)insn->ic2);
   *field = tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -826,7 +901,13 @@ static int64_t putfield_J_impl_int(ARGS_INT) {
 static int64_t putfield_L_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  bjvm_obj_header **field = (bjvm_obj_header **)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  bjvm_obj_header **field = (bjvm_obj_header **)((char *)obj + (int)insn->ic2);
   *field = (bjvm_obj_header *)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -835,7 +916,13 @@ static int64_t putfield_L_impl_int(ARGS_INT) {
 static int64_t putfield_Z_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int8_t *field = (int8_t *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  int8_t *field = (int8_t *)((char *)obj + (int)insn->ic2);
   *field = (int8_t)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -844,7 +931,13 @@ static int64_t putfield_Z_impl_int(ARGS_INT) {
 static int64_t putfield_F_impl_float(ARGS_FLOAT) {
 
   DEBUG_CHECK
-  float *field = (float *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  float *field = (float *)((char *)obj + (int)insn->ic2);
   *field = tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -853,7 +946,13 @@ static int64_t putfield_F_impl_float(ARGS_FLOAT) {
 static int64_t putfield_D_impl_double(ARGS_DOUBLE) {
 
   DEBUG_CHECK
-  double *field = (double *)((char *)(sp - 2)->obj + (int)insn->ic2);
+  bjvm_obj_header *obj = (sp - 2)->obj;
+  if (unlikely(!obj)) {
+    SPILL_VOID
+    bjvm_null_pointer_exception(thread);
+    return 0;
+  }
+  double *field = (double *)((char *)obj + (int)insn->ic2);
   *field = tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
