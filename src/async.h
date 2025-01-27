@@ -122,7 +122,7 @@ template <typename T> T ZeroInternalState_(T t) {
 #define DoArgsDecl(name) auto args = &self->args;
 #define ZeroInternalState(thing) thing = ZeroInternalState_(thing);
 #else
-#define DoArgsDecl(name) struct name##_args *args = &self->args;
+#define DoArgsDecl(name) [[maybe_unused]] struct name##_args *args = &self->args;
 #define ZeroInternalState(thing) thing = (typeof(thing)){.args = (thing).args, ._state = (thing)._state};
 #endif
 
