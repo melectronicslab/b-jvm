@@ -36,7 +36,7 @@ public class Main {
         long longVal;
         float floatVal;
         double doubleVal;
-        char charVal;
+        char charVal = 'e';
         boolean boolVal;
         Object objVal;
     }

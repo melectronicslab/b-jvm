@@ -1065,25 +1065,25 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
   }
   case bjvm_insn_dload: {
     SWIZZLE_LOCAL(insn->index)
-    PUSH_ENTRY(local_source(BJVM_TYPE_KIND_DOUBLE,  insn_index))
+    PUSH_ENTRY(ctx->locals.entries[insn->index])
     CHECK_LOCAL(insn->index, DOUBLE)
     break;
   }
   case bjvm_insn_fload: {
     SWIZZLE_LOCAL(insn->index)
-    PUSH_ENTRY(local_source(BJVM_TYPE_KIND_FLOAT, insn_index))
+    PUSH_ENTRY(ctx->locals.entries[insn->index])
     CHECK_LOCAL(insn->index, FLOAT)
     break;
   }
   case bjvm_insn_iload: {
     SWIZZLE_LOCAL(insn->index)
-    PUSH_ENTRY(local_source(BJVM_TYPE_KIND_INT, insn_index))
+    PUSH_ENTRY(ctx->locals.entries[insn->index])
     CHECK_LOCAL(insn->index, INT)
     break;
   }
   case bjvm_insn_lload: {
     SWIZZLE_LOCAL(insn->index)
-    PUSH_ENTRY(local_source(BJVM_TYPE_KIND_LONG, insn_index))
+    PUSH_ENTRY(ctx->locals.entries[insn->index])
     CHECK_LOCAL(insn->index, LONG)
     break;
   }
@@ -1113,7 +1113,7 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
   }
   case bjvm_insn_aload: {
     SWIZZLE_LOCAL(insn->index)
-    PUSH_ENTRY(local_source(BJVM_TYPE_KIND_REFERENCE, insn_index))
+    PUSH_ENTRY(ctx->locals.entries[insn->index])
     CHECK_LOCAL(insn->index, REFERENCE)
     break;
   }
@@ -2019,8 +2019,8 @@ static int extended_npe_phase2(const bjvm_cp_method *method,
 
   switch (source->kind) {
   case BJVM_VARIABLE_SRC_KIND_PARAMETER:
-    if (source->index == 0) {
-      bjvm_string_builder_append(builder, "\"this\"");
+    if (source->index == 0 && !(method->access_flags & BJVM_ACCESS_STATIC)) {
+      bjvm_string_builder_append(builder, "this");
     } else {
       if (lvt && ((ent = bjvm_lvt_lookup(source->index, original_pc, lvt)))) {
         bjvm_string_builder_append(builder, "%.*s", fmt_slice(*ent));

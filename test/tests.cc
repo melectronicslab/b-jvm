@@ -348,7 +348,7 @@ int: 0
 long: 0
 float: 0.0
 double: 0.0
-char:
+char: e
 bool: false
 obj: null
 result int val: 0
