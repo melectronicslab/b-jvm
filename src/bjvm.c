@@ -1919,12 +1919,17 @@ DEFINE_ASYNC(run_thread) {
 #define method args->method
 #define thread args->thread
 
-  int nonstatic = !(method->access_flags & BJVM_ACCESS_STATIC);
-  uint8_t argc = method->descriptor->args_count + nonstatic;
+  self->ctx = create_run_ctx(thread, method, args->args, args->result);
+  if (!self->ctx)
+    ASYNC_RETURN((bjvm_stack_value){.l = 0});
 
-  AWAIT(bjvm_interpret, thread, bjvm_push_frame(thread, method, args->args, argc));
+  self->ctx->interpreter_state.args = (struct bjvm_interpret_args){thread, self->ctx->frame};
+  AWAIT_FUTURE_EXPR(bjvm_interpret(&self->ctx->interpreter_state));
 
-  ASYNC_END(get_async_result(bjvm_interpret));
+  bjvm_stack_value result = self->ctx->interpreter_state._result;
+  bjvm_free_async_run_ctx(self->ctx);
+
+  ASYNC_END(result);
 #undef method
 #undef thread
 }
@@ -2536,7 +2541,7 @@ DEFINE_ASYNC(bjvm_run_native) {
 
   self->native_struct = malloc(handle->async_ctx_bytes);
   *self->native_struct = (async_natives_args){thread, target_handle, native_args, argc, 0};
-  AWAIT_FUTURE_EXPR(handle->async(self->native_struct));
+  AWAIT_FUTURE_EXPR(((bjvm_native_callback*)frame->method->native_handle)->async(self->native_struct));
   // We've laid out the context struct so that the result is always at offset 0
   bjvm_stack_value result = *(bjvm_stack_value *)self->native_struct;
   free(self->native_struct);

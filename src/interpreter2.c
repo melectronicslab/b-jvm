@@ -350,7 +350,7 @@ static int32_t grow_async_stack(bjvm_thread *thread) {
   if (new_capacity == 0)
     new_capacity = 4;
 
-  stk = realloc(thread->async_stack, sizeof(struct async_stack) + new_capacity * sizeof(continuation_frame));
+  thread->async_stack = stk = realloc(thread->async_stack, sizeof(struct async_stack) + new_capacity * sizeof(continuation_frame));
   ;
   if (unlikely(!stk)) {
     thread->current_exception = thread->stack_overflow_error;
@@ -362,16 +362,18 @@ static int32_t grow_async_stack(bjvm_thread *thread) {
 }
 
 static continuation_frame *async_stack_push(bjvm_thread *thread) {
-  struct async_stack *stk = thread->async_stack;
+#define stk thread->async_stack
 
   if (unlikely(stk->height == stk->max_height)) {
-    if (grow_async_stack(thread) < 0) {
+    if ((grow_async_stack(thread)) < 0) {
       thread->current_exception = thread->stack_overflow_error;
       return nullptr;
     }
   }
 
   return &thread->async_stack->frames[thread->async_stack->height++];
+
+#undef stk
 }
 
 static continuation_frame *async_stack_pop(bjvm_thread *thread) {
