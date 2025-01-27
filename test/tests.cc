@@ -309,6 +309,53 @@ Hello, world.
 )");
 }
 
+TEST_CASE("Null getfield putfield") {
+  auto result = run_test_case("test_files/null_getfield_putfield/", true);
+  REQUIRE(result.stdout_ == R"(src is:
+byte: 1
+short: 1
+int: 2
+long: 1
+float: 1.0
+double: 1.0
+char: a
+bool: true
+obj: hello
+original int val: 2
+copied int val: 2
+Cannot assign field "byteVal" because "<parameter2>" is null
+Cannot assign field "shortVal" because "<parameter2>" is null
+Cannot assign field "intVal" because "<parameter2>" is null
+Cannot assign field "longVal" because "<parameter2>" is null
+Cannot assign field "floatVal" because "<parameter2>" is null
+Cannot assign field "doubleVal" because "<parameter2>" is null
+Cannot assign field "charVal" because "<parameter2>" is null
+Cannot assign field "boolVal" because "<parameter2>" is null
+Cannot assign field "objVal" because "<parameter2>" is null
+Cannot read field "byteVal" because "<parameter1>" is null
+Cannot read field "shortVal" because "<parameter1>" is null
+Cannot read field "intVal" because "<parameter1>" is null
+Cannot read field "longVal" because "<parameter1>" is null
+Cannot read field "floatVal" because "<parameter1>" is null
+Cannot read field "doubleVal" because "<parameter1>" is null
+Cannot read field "charVal" because "<parameter1>" is null
+Cannot read field "boolVal" because "<parameter1>" is null
+Cannot read field "objVal" because "<parameter1>" is null
+result is:
+byte: 0
+short: 0
+int: 0
+long: 0
+float: 0.0
+double: 0.0
+char:
+bool: false
+obj: null
+result int val: 0
+result obj val: null
+)");
+}
+
 TEST_CASE("N-body problem") {
   auto result = run_test_case("test_files/n_body_problem/", false, "NBodyProblem");
 
