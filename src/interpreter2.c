@@ -2122,23 +2122,32 @@ static int64_t ldc_impl_void(ARGS_VOID) {
   }
   case BJVM_CP_KIND_CLASS: {
     // Initialize the class, then get its Java mirror
-    SPILL_VOID
-    if (bjvm_resolve_class(thread, &ent->class_info))
-      return 0;
-    if (bjvm_link_class(thread, ent->class_info.classdesc))
-      return 0;
-
-    bjvm_obj_header *obj = (void *)bjvm_get_class_mirror(thread, ent->class_info.classdesc);
-    NEXT_INT(obj);
+    if (!ent->class_info.vm_object) {
+      SPILL_VOID
+      if (bjvm_resolve_class(thread, &ent->class_info))
+        return 0;
+      if (bjvm_link_class(thread, ent->class_info.classdesc))
+        return 0;
+      bjvm_obj_header *obj = (void *)bjvm_get_class_mirror(thread, ent->class_info.classdesc);
+      ent->class_info.vm_object = obj;
+    }
+    NEXT_INT(ent->class_info.vm_object);
   }
   case BJVM_CP_KIND_STRING: {
+    if (likely(ent->string.interned)) {
+      bjvm_obj_header *s = ent->string.interned;
+      NEXT_INT(s);
+    }
     bjvm_utf8 s = ent->string.chars;
     SPILL_VOID
     bjvm_obj_header *obj = bjvm_intern_string(thread, s);
     if (!obj) // oom
       return 0;
-
+    ent->string.interned = obj;
     NEXT_INT(obj);
+  }
+  case BJVM_CP_KIND_DYNAMIC_CONSTANT: {
+    UNREACHABLE("unimplemented");
   }
   default:
     UNREACHABLE();
