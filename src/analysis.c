@@ -1997,7 +1997,9 @@ void stringify_type(bjvm_string_builder *B, const bjvm_field_descriptor *F) {
 }
 
 void stringify_method(bjvm_string_builder *B, const bjvm_cp_method_info *M) {
-  bjvm_string_builder_append(B, "%.*s.%.*s(", fmt_slice(M->class_info->name),
+  INIT_STACK_STRING(no_slashes, 1024);
+  exchange_slashes_and_dots(&no_slashes, M->class_info->name);
+  bjvm_string_builder_append(B, "%.*s.%.*s(", fmt_slice(no_slashes),
                              fmt_slice(M->nat->name));
   for (int i = 0; i < M->descriptor->args_count; ++i) {
     if (i > 0)
