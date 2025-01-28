@@ -441,7 +441,6 @@ DEFINE_ASYNC_SL(resolve_getstatic_putstatic, 100) {
 #define inst self->args.inst
 #define thread self->args.thread
 
-  bool putstatic = inst->kind == bjvm_insn_putstatic;
   self->field_info = &inst->cp->field;
   self->class = self->field_info->class_info;
 
@@ -469,6 +468,7 @@ DEFINE_ASYNC_SL(resolve_getstatic_putstatic, 100) {
   }
 
   // Select the appropriate resolved instruction kind.
+  bool putstatic = inst->kind == bjvm_insn_putstatic;
   inst->kind = getstatic_putstatic_resolved_kind(putstatic, field_to_kind(self->field_info->parsed_descriptor));
 
   // Store the static address of the field in the instruction.
@@ -2352,7 +2352,7 @@ static int64_t dup2_x2_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(dup2_x2)
 
-__attribute__((always_inline)) static int64_t entry(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
+force_inline static int64_t entry(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
 
 /** Misc. */
 static int64_t athrow_impl_int(ARGS_INT) {
