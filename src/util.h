@@ -155,7 +155,7 @@ static inline void heap_str_truncate(heap_string str, uint32_t len) {
 static inline void exchange_slashes_and_dots(bjvm_utf8 *dst, bjvm_utf8 src) {
   assert(dst->len >= src.len);
   memcpy(dst->chars, src.chars, src.len);
-  for (int i = 0; i < src.len; ++i) {
+  for (size_t i = 0; i < src.len; ++i) {
     if (dst->chars[i] == '/') {
       dst->chars[i] = '.';
     } else if (dst->chars[i] == '.') {

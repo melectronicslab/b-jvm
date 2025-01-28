@@ -221,7 +221,6 @@ DECLARE_ASYNC(int, resolve_methodref,
 // popped off, the result of that frame (if any) is placed in "result", and
 // either INTERP_RESULT_OK or INTERP_RESULT_EXC is returned, depending on
 // whether the frame completed abruptly.
-EMSCRIPTEN_KEEPALIVE
 DECLARE_ASYNC(
     bjvm_stack_value, bjvm_interpret,
     locals(
@@ -233,6 +232,11 @@ DECLARE_ASYNC(
       bjvm_stack_frame *raw_frame;
     ),
 );
+
+typedef struct {
+  void *ptr;
+  size_t len;
+} mmap_allocation;
 
 struct bjvm_cached_classdescs;
 typedef struct bjvm_vm {
@@ -297,6 +301,9 @@ typedef struct bjvm_vm {
   // Vector of allocations done via Unsafe.allocateMemory0, to be freed in case
   // the finalizers aren't run
   void **unsafe_allocations;
+
+  // Vector of allocations done via mmap, to be unmapped
+  mmap_allocation *mmap_allocations;
 } bjvm_vm;
 
 // Java Module

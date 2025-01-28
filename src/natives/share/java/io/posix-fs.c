@@ -10,7 +10,7 @@
 
 #ifdef POSIX_SUPPORTED
 #include <stdio.h>
-#include <sys/errno.h>
+#include <errno.h>
 #include <sys/stat.h>
 
 typedef struct {
