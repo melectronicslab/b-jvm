@@ -65,13 +65,13 @@ static inline void *__vector_push(size_t element_size, void **vector, int *vecto
 
 typedef struct {
   char *chars;
-  uint16_t len;
+  uint32_t len;
 } bjvm_utf8;
 
 typedef struct {
   char *chars;
-  uint16_t len;
-  uint16_t cap; // including null byte
+  uint32_t len;
+  uint32_t cap; // including null byte
 } heap_string;
 
 #define INIT_STACK_STRING(name, buffer_size)                                                                           \
@@ -80,15 +80,15 @@ typedef struct {
 #define null_str() ((bjvm_utf8){.chars = nullptr, .len = 0})
 
 /// Slices the given string from the given start index to the end.
-static inline bjvm_utf8 slice(bjvm_utf8 str, uint16_t start) {
+static inline bjvm_utf8 slice(bjvm_utf8 str, uint32_t start) {
   assert(str.len >= start);
-  return (bjvm_utf8){.chars = str.chars + start, .len = (uint16_t)(str.len - start)};
+  return (bjvm_utf8){.chars = str.chars + start, .len = (uint32_t)(str.len - start)};
 }
 
 /// Slices the given string from the given start index to the given end index.
-static inline bjvm_utf8 slice_to(bjvm_utf8 str, uint16_t start, uint16_t end) {
+static inline bjvm_utf8 slice_to(bjvm_utf8 str, uint32_t start, uint32_t end) {
   assert(end >= start);
-  return (bjvm_utf8){.chars = str.chars + start, .len = (uint16_t)(end - start)};
+  return (bjvm_utf8){.chars = str.chars + start, .len = (uint32_t)(end - start)};
 }
 
 /// Uses the given format string and arguments to print a string into the given
@@ -98,16 +98,20 @@ static inline bjvm_utf8 bprintf(bjvm_utf8 buffer, const char *format, ...) {
   va_start(args, format);
   int len = vsnprintf(buffer.chars, buffer.len + 1, format, args);
   va_end(args);
-  assert(len >= 0 && len <= UINT16_MAX);
+  assert(len >= 0);
 
-  return (bjvm_utf8){.chars = buffer.chars, .len = (uint16_t)len};
+  return (bjvm_utf8){.chars = buffer.chars, .len = (uint32_t)len};
 }
 
 /// Used to safely (?) build up a string in a heap-allocated buffer.
 static inline int build_str(heap_string *str, int write, const char *format, ...) {
   va_list args;
   va_start(args, format);
-  int len = vsnprintf(str->chars + write, str->len - write + 1, format, args);
+
+  int len_ = vsnprintf(str->chars + write, str->len - write + 1, format, args);
+  assert(len_ > 0);
+  uint32_t len = (uint32_t)len_;
+
   va_end(args);
   if (len > str->len - write) {
     str->len = write + len;
@@ -129,9 +133,9 @@ static inline int build_str(heap_string *str, int write, const char *format, ...
 }
 
 /// Mallocates a new heap string with the given length.
-static inline heap_string make_heap_str(uint16_t len) {
-  assert(len < UINT16_MAX);
-  return (heap_string){.chars = (char *)calloc(len + 1, 1), .len = len, .cap = (uint16_t)(len + 1)};
+static inline heap_string make_heap_str(uint32_t len) {
+  assert(len < UINT32_MAX); // because we like to add a null terminator
+  return (heap_string){.chars = (char *)calloc(len + 1, 1), .len = len, .cap = (uint32_t)(len + 1)};
 }
 
 /// Creates a heap string from the given slice.
@@ -142,7 +146,7 @@ static inline heap_string make_heap_str_from(bjvm_utf8 slice) {
 }
 
 /// Truncates the given heap string to the given length.
-static inline void heap_str_truncate(heap_string str, uint16_t len) {
+static inline void heap_str_truncate(heap_string str, uint32_t len) {
   assert(len <= str.len);
   str.len = len;
 }
@@ -176,8 +180,8 @@ static inline bjvm_utf8 hslc(heap_string str) { return (bjvm_utf8){.chars = str.
 /// Converts the given null-terminated string to a slice. Use the STR macro for literals.
 static inline bjvm_utf8 str_to_utf8(const char *str) {
   size_t len = strlen(str);
-  assert(len <= UINT16_MAX);
-  return (bjvm_utf8){.chars = (char *)str, .len = (uint16_t)len};
+  assert(len <= UINT32_MAX);
+  return (bjvm_utf8){.chars = (char *)str, .len = (uint32_t)len};
 }
 
 #define fmt_slice(slice) (int)(slice).len, (slice).chars

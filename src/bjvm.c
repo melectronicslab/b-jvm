@@ -1611,7 +1611,7 @@ void bjvm_out_of_memory(bjvm_thread *thread) {
 
 void *bump_allocate(bjvm_thread *thread, size_t bytes) {
   // round up to multiple of 8
-  bytes = (bytes + 7) & ~(size_t)7;
+  bytes = (bytes + 7) & (~(size_t)7);
   bjvm_vm *vm = thread->vm;
 #if AGGRESSIVE_DEBUG
   printf("Allocating %zu bytes, %zu used, %zu capacity\n", bytes, vm->heap_used, vm->heap_capacity);
