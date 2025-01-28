@@ -9,7 +9,10 @@
 #include "analysis.h"
 #include "classfile.h"
 #include "util.h"
+
+#ifdef EMSCRIPTEN
 #include "wasm_jit.h"
+#endif
 
 static const char *cp_kind_to_string(bjvm_cp_kind kind) {
   switch (kind) {
@@ -50,7 +53,10 @@ static const char *cp_kind_to_string(bjvm_cp_kind kind) {
 
 void free_method(bjvm_cp_method *method) {
   free_code_analysis(method->code_analysis);
+
+#ifdef EMSCRIPTEN
   free_wasm_compiled_method(method->compiled_method);
+#endif
 }
 
 void bjvm_free_classfile(bjvm_classdesc cf) {

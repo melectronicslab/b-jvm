@@ -17,11 +17,14 @@
 #include "../src/analysis.h"
 #include "../src/bjvm.h"
 #include "../src/util.h"
-#include "../src/wasm_jit.h"
 #include "catch2/matchers/catch_matchers_container_properties.hpp"
 #include "catch2/matchers/catch_matchers_string.hpp"
 #include "catch2/matchers/catch_matchers_vector.hpp"
 #include "tests-common.h"
+
+#ifdef EMSCRIPTEN
+#include <wasm/wasm_jit.h>
+#endif
 
 #include <numeric>
 

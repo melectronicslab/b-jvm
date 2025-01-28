@@ -1,5 +1,4 @@
 // Java bytecode to WebAssembly translator
-
 #include "wasm_jit.h"
 #include "analysis.h"
 #include "arrays.h"
@@ -7,6 +6,8 @@
 #include "wasm_utils.h"
 
 #include <limits.h>
+
+#ifdef EMSCRIPTEN
 
 #define expression bjvm_wasm_expression *
 
@@ -52,26 +53,6 @@ typedef struct {
 } compile_ctx;
 
 #define WASM_TYPES_COUNT 4
-
-bjvm_wasm_type bjvm_jvm_type_to_wasm(bjvm_type_kind kind) {
-  switch (kind) {
-  case BJVM_TYPE_KIND_BOOLEAN:
-  case BJVM_TYPE_KIND_CHAR:
-  case BJVM_TYPE_KIND_BYTE:
-  case BJVM_TYPE_KIND_SHORT:
-  case BJVM_TYPE_KIND_INT:
-  case BJVM_TYPE_KIND_REFERENCE:
-    return bjvm_wasm_int32();
-  case BJVM_TYPE_KIND_FLOAT:
-    return bjvm_wasm_float32();
-  case BJVM_TYPE_KIND_DOUBLE:
-    return bjvm_wasm_float64();
-  case BJVM_TYPE_KIND_LONG:
-    return bjvm_wasm_int64();
-  case BJVM_TYPE_KIND_VOID:
-    UNREACHABLE();
-  }
-}
 
 static int local_kind(bjvm_wasm_type ty) {
   int result = ty.val - BJVM_WASM_TYPE_KIND_FLOAT64;
@@ -878,7 +859,7 @@ bjvm_wasm_expression *wasm_lower_new(compile_ctx *ctx,
   expression store_classdesc =
       bjvm_wasm_store(ctx->module, BJVM_WASM_OP_KIND_I32_STORE,
                       get_stack_value(ctx, sd, BJVM_TYPE_KIND_REFERENCE),
-                      bjvm_wasm_i32_const(ctx->module, (int)class), 0,
+                      bjvm_wasm_i32_const(ctx->module, (int32_t)class), 0,
                       offsetof(bjvm_obj_header, descriptor));
 
   expression sequence = bjvm_wasm_block(
@@ -1736,3 +1717,5 @@ void free_wasm_compiled_method(void *p) {
   free(compiled_method->exports);
   free(compiled_method);
 }
+
+#endif

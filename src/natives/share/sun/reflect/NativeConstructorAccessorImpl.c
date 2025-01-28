@@ -1,7 +1,7 @@
 #include <natives-dsl.h>
 
-CreateJavaMethodBinding(init_ite, jobject, "java/lang/reflect/InvocationTargetException", "<init>",
-                        "(Ljava/lang/Throwable;)V", 1, jobject throwable);
+CreateJavaMethodBinding(init_ite, object, "java/lang/reflect/InvocationTargetException", "<init>",
+                        "(Ljava/lang/Throwable;)V", 1, object throwable);
 
 DECLARE_ASYNC_NATIVE("sun/reflect", NativeConstructorAccessorImpl, newInstance0,
                      "(Ljava/lang/reflect/Constructor;[Ljava/lang/Object;)Ljava/lang/Object;", locals(),
@@ -25,14 +25,16 @@ DECLARE_ASYNC_NATIVE("sun/reflect", NativeConstructorAccessorImpl, newInstance0,
 
   if (thread->current_exception) {
     bjvm_classdesc *classdesc = bootstrap_lookup_class(thread, STR("java/lang/reflect/InvocationTargetException"));
-    bjvm_obj_header *obj = new_object(thread, classdesc);
 
-#define reset_except() self->args.thread->current_exception = nullptr;
-    AWAIT_INNER_(reset_except, &self->invoked_async_methods.init_ite, init_ite, thread, obj, thread->current_exception);
+    object wrapper = new_object(thread, classdesc);
+    object exception = thread->current_exception;
+
+    thread->current_exception = nullptr;
+    AWAIT(init_ite, thread, wrapper, exception);
     assert(thread->current_exception == nullptr);
 #undef reset_except
 
-    thread->current_exception = obj;
+    thread->current_exception = obj->obj;
   }
 
   ASYNC_END((bjvm_stack_value){.obj = instance});

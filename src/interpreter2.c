@@ -1926,6 +1926,8 @@ __attribute__((noinline)) static int64_t invokedynamic_impl_void(ARGS_VOID) {
       insn;
   ctx.args.indy = indy;
   future_t fut = indy_resolve(&ctx);
+  assert(fut.status == FUTURE_READY);
+
   if (thread->current_exception) {
     return 0;
   }
@@ -1935,7 +1937,6 @@ __attribute__((noinline)) static int64_t invokedynamic_impl_void(ARGS_VOID) {
   struct bjvm_native_CallSite *cs = insn->ic;
   struct bjvm_native_MethodHandle *mh = (void *)cs->target;
   struct bjvm_native_LambdaForm *form = (void *)mh->form;
-  struct bjvm_native_MemberName *name = (void *)form->vmentry;
   insn->args = form->arity;
   JMP_VOID
 }

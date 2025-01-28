@@ -33,6 +33,9 @@ DECLARE_ASYNC_NATIVE("", AsyncNative, asyncNativeMethod, "(I)I", locals(),
   ASYNC_END((bjvm_stack_value){.i = get_async_result(_nt_test_yield) * 2});
 }
 
+#undef _DECLARE_CACHED_STATE
+#undef _RELOAD_CACHED_STATE
+
 #define _DECLARE_CACHED_STATE(_)
 #define _RELOAD_CACHED_STATE()
 

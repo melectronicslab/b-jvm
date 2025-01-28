@@ -259,9 +259,6 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   bjvm_free_vm(vm);
 
   return result;
-
-  on_oom:
-  UNREACHABLE();
 }
 
 } // namespace Bjvm::Tests

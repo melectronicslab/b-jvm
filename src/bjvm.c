@@ -500,7 +500,7 @@ int primitive_order(bjvm_type_kind kind) {
 
 // https://github.com/openjdk/jdk11u-dev/blob/be6956b15653f0d870efae89fc1b5df657cca45f/src/java.base/share/classes/java/lang/StringLatin1.java#L52
 static bool do_latin1(const uint16_t *chars, size_t len) {
-  for (int i = 0; i < len; ++i) {
+  for (size_t i = 0; i < len; ++i) {
     if (chars[i] >> 8 != 0)
       return false;
   }
@@ -1997,10 +1997,11 @@ void store_stack_value(void *field_location, bjvm_stack_value value, bjvm_type_k
   switch (kind) {
   case BJVM_TYPE_KIND_BOOLEAN:
     assert((value.i == 0) || (value.i == 1));
+    [[fallthrough]];
   case BJVM_TYPE_KIND_BYTE:
     *(jbyte *)field_location = (jbyte)value.i;
     break;
-  case BJVM_TYPE_KIND_CHAR:
+  case BJVM_TYPE_KIND_CHAR: [[fallthrough]];
   case BJVM_TYPE_KIND_SHORT:
     *(jshort *)field_location = (int16_t)value.i;
     break;
@@ -2017,7 +2018,7 @@ void store_stack_value(void *field_location, bjvm_stack_value value, bjvm_type_k
     *(jlong *)field_location = value.l;
     break;
   case BJVM_TYPE_KIND_REFERENCE:
-    *(jobject *)field_location = value.obj;
+    *(object *)field_location = value.obj;
     break;
   case BJVM_TYPE_KIND_VOID:
   default:
@@ -2197,7 +2198,7 @@ bool method_types_compatible(struct bjvm_native_MethodType *provider_mt, struct 
 }
 
 // Dump the contents of the method type to the specified stream.
-static void dump_method_type(FILE *stream, struct bjvm_native_MethodType *type) {
+[[maybe_unused]] static void dump_method_type(FILE *stream, struct bjvm_native_MethodType *type) {
   fprintf(stream, "(");
   for (int i = 0; i < *ArrayLength(type->ptypes); ++i) {
     bjvm_classdesc *desc = bjvm_unmirror_class(((bjvm_obj_header **)ArrayData(type->ptypes))[i]);
@@ -2208,7 +2209,7 @@ static void dump_method_type(FILE *stream, struct bjvm_native_MethodType *type) 
   fprintf(stream, ") -> %.*s\n", fmt_slice(bjvm_unmirror_class(type->rtype)->name));
 }
 
-heap_string debug_dump_string(bjvm_thread *thread, bjvm_obj_header *header) {
+[[maybe_unused]] static heap_string debug_dump_string(bjvm_thread *thread, bjvm_obj_header *header) {
   bjvm_cp_method *toString =
       bjvm_method_lookup(header->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, true);
   bjvm_stack_value result;
@@ -2219,13 +2220,10 @@ heap_string debug_dump_string(bjvm_thread *thread, bjvm_obj_header *header) {
     UNREACHABLE();
   }
   return str;
-
-on_oom:
-  UNREACHABLE();
 }
 
-void bjvm_wrong_method_type_error(bjvm_thread *thread, struct bjvm_native_MethodType *provider_mt,
-                                  struct bjvm_native_MethodType *targ) {
+void bjvm_wrong_method_type_error([[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] struct bjvm_native_MethodType *provider_mt,
+                                  [[maybe_unused]] struct bjvm_native_MethodType *targ) {
   UNREACHABLE(); // TODO
 }
 
@@ -2455,8 +2453,7 @@ DEFINE_ASYNC(indy_resolve) {
   if (thread->current_exception) {
     ASYNC_RETURN(1);
   }
-  bjvm_handle *bootstrap_handle = self->bootstrap_handle =
-      bjvm_make_handle(thread, (void *)get_async_result(bjvm_resolve_method_handle));
+  self->bootstrap_handle = bjvm_make_handle(thread, (void *)get_async_result(bjvm_resolve_method_handle));
 
   bjvm_stack_value lookup_obj;
   // MethodHandles class
@@ -2540,7 +2537,7 @@ DEFINE_ASYNC(bjvm_run_native) {
   }
 
   self->native_struct = malloc(handle->async_ctx_bytes);
-  *self->native_struct = (async_natives_args){thread, target_handle, native_args, argc, 0};
+  *self->native_struct = (async_natives_args){{thread, target_handle, native_args, argc}, 0};
   AWAIT_FUTURE_EXPR(((bjvm_native_callback*)frame->method->native_handle)->async(self->native_struct));
   // We've laid out the context struct so that the result is always at offset 0
   bjvm_stack_value result = *(bjvm_stack_value *)self->native_struct;

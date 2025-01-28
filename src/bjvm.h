@@ -9,10 +9,8 @@
 #include <stdint.h>
 #include <wchar.h>
 
-#include "adt.h"
 #include "classfile.h"
 #include "classpath.h"
-#include "util.h"
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
@@ -40,7 +38,7 @@ typedef bool jboolean;
 typedef int8_t jbyte;
 typedef int16_t jshort;
 typedef uint16_t jchar;
-typedef bjvm_obj_header *jobject;
+typedef bjvm_obj_header *object;
 
 /**
  * For simplicity, we always store local variables/stack variables as 64 bits,
@@ -52,7 +50,7 @@ typedef union {
   jint i; // used for all integer types except long, plus boolean
   jfloat f;
   jdouble d;
-  jobject obj; // reference type
+  object obj; // reference type
 } bjvm_stack_value;
 
 // A thread-local handle to an underlying object. Used in case the object is
@@ -83,12 +81,14 @@ static inline bjvm_stack_value value_null() { return (bjvm_stack_value){.obj = n
 bool bjvm_instanceof(const bjvm_classdesc *o, const bjvm_classdesc *target);
 
 typedef struct {
-  struct {
-    bjvm_thread *thread;
-    bjvm_handle *obj;
-    bjvm_value *args;
-    uint8_t argc;
-  };
+  bjvm_thread *thread;
+  bjvm_handle *obj;
+  bjvm_value *args;
+  uint8_t argc;
+} async_natives_args_inner;
+
+typedef struct {
+  async_natives_args_inner args;
   uint32_t stage;
 } async_natives_args;
 
@@ -471,9 +471,11 @@ void bjvm_drop_handle(bjvm_thread *thread, bjvm_handle *handle);
  */
 bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc);
 
-bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc);
+bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
+                                        uint8_t argc);
 bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *method,
-                                       const bjvm_method_descriptor *descriptor, bjvm_stack_value *args, uint8_t argc);
+                                         const bjvm_method_descriptor *descriptor, bjvm_stack_value *args,
+                                         uint8_t argc);
 struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjvm_method_descriptor *method);
 
 /**
@@ -561,7 +563,7 @@ int bjvm_thread_run_leaf(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack
 // bjvm_async_run_step() until it returns true.
 EMSCRIPTEN_KEEPALIVE
 bjvm_async_run_ctx *create_run_ctx(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
-                                          bjvm_stack_value *result);
+                                   bjvm_stack_value *result);
 
 EMSCRIPTEN_KEEPALIVE
 bool bjvm_async_run_step(bjvm_async_run_ctx *ctx);
@@ -597,7 +599,7 @@ void bjvm_unsatisfied_link_error(bjvm_thread *thread, const bjvm_cp_method *meth
 void bjvm_abstract_method_error(bjvm_thread *thread, const bjvm_cp_method *method);
 void bjvm_arithmetic_exception(bjvm_thread *thread, const bjvm_utf8 complaint);
 int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjvm_multianewarray_data *multianewarray,
-                      uint16_t *sd);
+                        uint16_t *sd);
 void dump_frame(FILE *stream, const bjvm_stack_frame *frame);
 
 // e.g. int.class

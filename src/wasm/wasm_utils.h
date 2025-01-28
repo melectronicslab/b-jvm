@@ -3,12 +3,13 @@
 #ifndef WASM_UTILS_H
 #define WASM_UTILS_H
 
+#include "classfile.h"
+#include "util.h"
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "util.h"
-#include <stdint.h>
 
 typedef enum {
   BJVM_WASM_TYPE_KIND_VOID,
@@ -434,7 +435,7 @@ typedef struct {
   char **arenas;
   int arenas_count;
   int arenas_cap;
-  int last_arena_used;
+  size_t last_arena_used;
 } bjvm_wasm_module;
 
 // Used when writing out the WASM to a series of bytes.
@@ -552,6 +553,8 @@ bjvm_wasm_expression *bjvm_wasm_return(bjvm_wasm_module *module,
   uint32_t bjvm_register_function_type(bjvm_wasm_module *module,
                                        bjvm_wasm_type params,
                                        bjvm_wasm_type results);
+
+bjvm_wasm_type bjvm_jvm_type_to_wasm(bjvm_type_kind kind);
 
 typedef enum {
   BJVM_WASM_INSTANTIATION_SUCCESS,

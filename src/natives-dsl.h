@@ -52,11 +52,11 @@ static inline bjvm_obj_header *check_is_object(bjvm_obj_header *thing) { return 
     __hstr;                                                                                                            \
   })
 
-static inline jobject __LoadFieldObject(bjvm_obj_header *thing, bjvm_utf8 desc, bjvm_utf8 name) {
+static inline object __LoadFieldObject(bjvm_obj_header *thing, bjvm_utf8 desc, bjvm_utf8 name) {
   return __obj_load_field(thing, name, desc).obj;
 }
 
-static inline void __StoreFieldObject(bjvm_obj_header *thing, bjvm_utf8 desc, bjvm_utf8 name, jobject value) {
+static inline void __StoreFieldObject(bjvm_obj_header *thing, bjvm_utf8 desc, bjvm_utf8 name, object value) {
   __obj_store_field(thing, name, (bjvm_stack_value){.obj = value}, desc);
 }
 
@@ -160,10 +160,10 @@ extern bjvm_native_t *bjvm_natives;
   /* the arguments struct for this needs to be compatible with the async_natives_args struct */                        \
   /* todo: maybe just reuse the async_natives_args struct, rather than making a separate (but equivalent) struct for   \
    * each native */                                                                                                    \
-  check_field_offset(name, args.thread, thread);                                                                       \
-  check_field_offset(name, args.obj, obj);                                                                             \
-  check_field_offset(name, args.args, args);                                                                           \
-  check_field_offset(name, args.argc, argc);                                                                           \
+  check_field_offset(name, args.thread, args.thread);                                                                       \
+  check_field_offset(name, args.obj, args.obj);                                                                             \
+  check_field_offset(name, args.args, args.args);                                                                           \
+  check_field_offset(name, args.argc, args.argc);                                                                           \
   check_field_offset(name, _state, stage);
 
 #undef _DECLARE_CACHED_STATE
@@ -204,7 +204,7 @@ extern bjvm_native_t *bjvm_natives;
 #define CreateJavaMethodBinding(binding_name, return_type, class_name, method_name, method_descriptor, argc_, args_)   \
   DECLARE_ASYNC(return_type, binding_name, \
     locals(), \
-    bjvm_thread *thread; jobject receiver; args_;, \
+    bjvm_thread *thread; object receiver; args_;, \
     invoked_methods(invoked_method(run_thread)) \
   );                                                         \
                                                                                                                        \

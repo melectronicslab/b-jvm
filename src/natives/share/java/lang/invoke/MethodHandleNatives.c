@@ -182,7 +182,6 @@ DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, resolve,
                "invoke/MemberName;") {
   assert(argc == 4);
 
-  struct bjvm_native_Class *caller = (void *)args[1].handle->obj;
   bjvm_handle *mn = (void *)args[0].handle;
 
   method_resolve_result found = resolve_mn(thread, mn);

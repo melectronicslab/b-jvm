@@ -7,9 +7,9 @@ extern "C" {
 
 #include <assert.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 #include <wchar.h>
 
@@ -31,6 +31,7 @@ extern "C" {
   do {                                                                                                                 \
     fprintf(stderr, "Unreachable code reached at %s:%d. \n" optional_msg, __FILE__, __LINE__);                         \
     abort();                                                                                                           \
+    __builtin_unreachable();                                                                                           \
   } while (0)
 
 static inline void *__vector_push(size_t element_size, void **vector, int *vector_count, int *vector_cap) {

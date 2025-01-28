@@ -18,7 +18,7 @@ enum {
 #include <emscripten/emscripten.h>
 #endif
 
-static void *module_malloc(bjvm_wasm_module *module, int size) {
+static void *module_malloc(bjvm_wasm_module *module, size_t size) {
   if (size > MODULE_ALLOCATION_SIZE_BYTES) {
     // Too big for an arena allocation, just make a new mf
     if (module->arenas_count) {
@@ -974,4 +974,25 @@ bjvm_wasm_expression *bjvm_wasm_unop(bjvm_wasm_module *module,
       .arg = expr,
   };
   return result;
+}
+
+bjvm_wasm_type bjvm_jvm_type_to_wasm(bjvm_type_kind kind) {
+  switch (kind) {
+  case BJVM_TYPE_KIND_BOOLEAN:
+  case BJVM_TYPE_KIND_CHAR:
+  case BJVM_TYPE_KIND_BYTE:
+  case BJVM_TYPE_KIND_SHORT:
+  case BJVM_TYPE_KIND_INT:
+  case BJVM_TYPE_KIND_REFERENCE:
+    return bjvm_wasm_int32();
+  case BJVM_TYPE_KIND_FLOAT:
+    return bjvm_wasm_float32();
+  case BJVM_TYPE_KIND_DOUBLE:
+    return bjvm_wasm_float64();
+  case BJVM_TYPE_KIND_LONG:
+    return bjvm_wasm_int64();
+  case BJVM_TYPE_KIND_VOID: [[fallthrough]];
+  default:
+    UNREACHABLE();
+  }
 }

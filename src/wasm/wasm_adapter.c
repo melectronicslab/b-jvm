@@ -7,7 +7,7 @@
 #include "wasm_jit.h"
 #include "wasm_utils.h"
 
-static bjvm_stack_frame *wasm_runtime_push_empty_frame(bjvm_thread *thread, bjvm_cp_method *method) {
+bjvm_stack_frame *wasm_runtime_push_empty_frame(bjvm_thread *thread, bjvm_cp_method *method) {
   return bjvm_push_plain_frame(thread, method, nullptr, 0);
 }
 
@@ -43,10 +43,10 @@ bjvm_wasm_expression **generate_writes(bjvm_wasm_module *module, bjvm_type_kind 
   return result;
 }
 
-static void *create_adapter_to_interpreter_frame(bjvm_type_kind *kinds,
+void *create_adapter_to_interpreter_frame(bjvm_type_kind *kinds,
                                                  int kinds_len, bool is_native) {
   // bjvm_interpreter_result_t (*compiled)(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *result, ... args)
-  static bjvm_stack_value scratch_space[256];
+  // static bjvm_stack_value scratch_space[256];
 
   enum {
     THREAD_PARAM,
@@ -64,11 +64,11 @@ static void *create_adapter_to_interpreter_frame(bjvm_type_kind *kinds,
     //components[i] = bjvm_jvm_type_to_wasm(kinds[j]);
   }
 
-  bjvm_wasm_type fn_args = bjvm_wasm_make_tuple(module, components, kinds_len + 3);
+  // bjvm_wasm_type fn_args = bjvm_wasm_make_tuple(module, components, kinds_len + 3);
   if (is_native) {
     // Write arguments to scratch space, then call bjvm_push_frame followed by
     // bjvm_interpret.
-    bjvm_wasm_expression *write_args[kinds_len];
+    // bjvm_wasm_expression *write_args[kinds_len];
   } else {
     // Call wasm_runtime_push_empty_frame to get a frame pointer. If it's null, return
     // EXC. Otherwise, write the arguments to the frame, then tail call
@@ -100,6 +100,7 @@ static void *create_adapter_to_interpreter_frame(bjvm_type_kind *kinds,
     }
     sequence[j] = call_interpret;
 
+    [[maybe_unused]]
     bjvm_wasm_expression *boi = bjvm_wasm_block(module, sequence, j, bjvm_wasm_void(), false);
 
     arrfree(spill);
@@ -180,10 +181,10 @@ compiled_method_adapter_t create_adapter_to_compiled_method(bjvm_type_kind *kind
     bjvm_wasm_local_get(module, FN_PARAM, bjvm_wasm_int32()), args, kinds_len + 2, type);
   call->call_indirect.tail_call = true;
 
-  bjvm_wasm_type locals; // = bjvm_wasm_make_tuple(module, (bjvm_wasm_type[]){bjvm_wasm_int32()}, 1);
+  // bjvm_wasm_type locals = bjvm_wasm_make_tuple(module, (bjvm_wasm_type[]){bjvm_wasm_int32()}, 1);
 
   // Now create and export a function called "run"
-  bjvm_wasm_function *fn; // = bjvm_wasm_add_function(module, bjvm_wasm_make_tuple(module, (bjvm_wasm_type[]){bjvm_wasm_int32(), bjvm_wasm_int32(), bjvm_wasm_int32(), bjvm_wasm_int32()}, 4), bjvm_wasm_int32(), locals, call, "run");
+  bjvm_wasm_function *fn = nullptr; // = bjvm_wasm_add_function(module, bjvm_wasm_make_tuple(module, (bjvm_wasm_type[]){bjvm_wasm_int32(), bjvm_wasm_int32(), bjvm_wasm_int32(), bjvm_wasm_int32()}, 4), bjvm_wasm_int32(), locals, call, "run");
   bjvm_wasm_export_function(module, fn);
 
   // Now instantiate it

@@ -710,9 +710,9 @@ typedef struct bjvm_cp_method {
   bjvm_classdesc *my_class;
 
   // Index in the vtable, if applicable. Only set at class link time.
-  int vtable_index;
+  size_t vtable_index;
   // Index in the itable, if applicable.
-  int itable_index;
+  size_t itable_index;
   void *native_handle; // bjvm_native_callback
 
   struct bjvm_native_Constructor *reflection_ctor;
