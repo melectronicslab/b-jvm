@@ -96,7 +96,7 @@ const static bytecode_handler_t *bytecode_tables[4] = {
     int64_t a_undef;                                                                                                   \
     float b_undef;                                                                                                     \
     double c_undef;                                                                                                    \
-    expr                                                                                                               \
+    expr;                                                                                                               \
   }
 #else
 #define WITH_UNDEF(expr)                                                                                               \
@@ -905,7 +905,7 @@ static int64_t putfield_C_impl_int(ARGS_INT) {
     bjvm_null_pointer_exception(thread);
     return 0;
   }
-  uint16_t *field = (uint16_t *)((char *)obj + (int)insn->ic2);
+  uint16_t *field = (uint16_t *)((char *)obj + (size_t)insn->ic2);
   *field = (uint16_t)tos;
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
