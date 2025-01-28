@@ -12,6 +12,7 @@ extern "C" {
 #include "util.h"
 #include <assert.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <util.h>
 
 #ifdef __cplusplus
