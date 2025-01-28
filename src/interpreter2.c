@@ -100,13 +100,13 @@ const static bytecode_handler_t *bytecode_tables[4] = {
   }
 #else
 #define WITH_UNDEF(expr)                                                                                               \
-  {                                                                                                                    \
+  do {                                                                                                                    \
     int64_t a_undef;                                                                                                   \
     float b_undef;                                                                                                     \
     double c_undef;                                                                                                    \
     asm("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef));                                                             \
     expr                                                                                                               \
-  }
+  } while (0)
 #endif
 
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
@@ -119,11 +119,11 @@ const static bytecode_handler_t *bytecode_tables[4] = {
   float __tos = (tos);                                                                                                 \
   WITH_UNDEF(MUSTTAIL return jmp_table_float[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, __tos,    \
                                                 c_undef);)
-#define ADVANCE_DOUBLE_(tos, insn_off)                                                                                 \
+#define ADVANCE_DOUBLE_(tos, insn_off) do {                                                                                 \
   int k = insns[insn_off].kind;                                                                                        \
   double __tos = (tos);                                                                                                \
   WITH_UNDEF(MUSTTAIL return jmp_table_double[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, b_undef, \
-                                                 __tos);)
+                                                 __tos);) } while (0)
 
 #define JMP_INT(tos) ADVANCE_INT_(tos, 0)
 #define JMP_FLOAT(tos) ADVANCE_FLOAT_(tos, 0)
