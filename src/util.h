@@ -177,6 +177,13 @@ static inline void free_heap_str(heap_string str) {
 /// Creates a slice of the given heap string.
 static inline bjvm_utf8 hslc(heap_string str) { return (bjvm_utf8){.chars = str.chars, .len = str.len}; }
 
+/// Aligns the given value up to the given alignment.
+/// alignment must be a power of 2.
+static inline size_t align_up(size_t value, size_t alignment) {
+  assert(alignment && (alignment & (alignment - 1)) == 0);
+  return (value + alignment - 1) & ~(alignment - 1);
+}
+
 /// Converts the given null-terminated string to a slice. Use the STR macro for literals.
 static inline bjvm_utf8 str_to_utf8(const char *str) {
   size_t len = strlen(str);
