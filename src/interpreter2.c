@@ -95,25 +95,29 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
   }
 #endif
 
-#define JMP_INT(tos)                                                                                                   \
-  int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return jmp_table_int[k](thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
-#define JMP_FLOAT(tos)                                                                                                 \
-  int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return jmp_table_float[k](thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
-#define JMP_DOUBLE(tos)                                                                                                \
-  int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return jmp_table_double[k](thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
+#define ADVANCE_INT_(tos, insn_off)                                                                                    \
+  int k = insns[insn_off].kind;                                                                                        \
+  int64_t __tos = (int64_t)(tos);                                                                                      \
+  WITH_UNDEF(MUSTTAIL return jmp_table_int[k](thread, frame, insns + insn_off, pc + insn_off, sp, (int64_t)__tos,      \
+                                              b_undef, c_undef);)
+#define ADVANCE_FLOAT_(tos, insn_off)                                                                                  \
+  int k = insns[insn_off].kind;                                                                                        \
+  float __tos = (tos);                                                                                                 \
+  WITH_UNDEF(MUSTTAIL return jmp_table_float[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, __tos,    \
+                                                c_undef);)
+#define ADVANCE_DOUBLE_(tos, insn_off)                                                                                 \
+  int k = insns[insn_off].kind;                                                                                        \
+  double __tos = (tos);                                                                                                \
+  WITH_UNDEF(MUSTTAIL return jmp_table_double[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, b_undef, \
+                                                 __tos);)
 
-#define NEXT_INT(tos)                                                                                                  \
-  int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return jmp_table_int[k](thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef);)
-#define NEXT_FLOAT(tos)                                                                                                \
-  int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return jmp_table_float[k](thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef);)
-#define NEXT_DOUBLE(tos)                                                                                               \
-  int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return jmp_table_double[k](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos);)
+#define JMP_INT(tos) ADVANCE_INT_(tos, 0)
+#define JMP_FLOAT(tos) ADVANCE_FLOAT_(tos, 0)
+#define JMP_DOUBLE(tos) ADVANCE_DOUBLE_(tos, 0)
+
+#define NEXT_INT(tos) ADVANCE_INT_(tos, 1)
+#define NEXT_FLOAT(tos) ADVANCE_FLOAT_(tos, 1)
+#define NEXT_DOUBLE(tos) ADVANCE_DOUBLE_(tos, 1)
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
 // all stack values are in memory (rather than in a register)
@@ -189,20 +193,22 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 
 // For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsptions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
-#define FORWARD_TO_NULLARY(which)                                                                                      \
+#define FORWARD_TO_NULLARY(which) FORWARD_TO_NULLARY_(MUSTTAIL, which)
+#define FORWARD_TO_NULLARY_NOTAIL(which) FORWARD_TO_NULLARY_(, which)
+#define FORWARD_TO_NULLARY_(tail, which)                                                                               \
   static int64_t which##_impl_int(ARGS_INT) {                                                                          \
     *(sp - 1) = (bjvm_stack_value){.l = tos};                                                                          \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3);                                \
+    tail return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3);                                    \
   }                                                                                                                    \
                                                                                                                        \
   static int64_t which##_impl_float(ARGS_FLOAT) {                                                                      \
     *(sp - 1) = (bjvm_stack_value){.f = tos};                                                                          \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3);                                \
+    tail return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3);                                    \
   }                                                                                                                    \
                                                                                                                        \
   static int64_t which##_impl_double(ARGS_DOUBLE) {                                                                    \
     *(sp - 1) = (bjvm_stack_value){.d = tos};                                                                          \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos);                                \
+    tail return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos);                                    \
   }
 
 /** Helper functions */
@@ -945,7 +951,7 @@ INTEGER_BIN_OP(lushr, (int64_t)((uint64_t)a >> (b & 0x3f)))
 #undef INTEGER_BIN_OP
 
 #define INTEGER_UN_OP(which, eval, NEXT)                                                                               \
-  force_inline static int64_t which##_impl_int(ARGS_INT) {                                                                          \
+  force_inline static int64_t which##_impl_int(ARGS_INT) {                                                             \
     DEBUG_CHECK                                                                                                        \
     int64_t a = tos;                                                                                                   \
     NEXT(eval)                                                                                                         \
@@ -966,14 +972,14 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 #undef INTEGER_UN_OP
 
 #define FLOAT_BIN_OP(which, eval, out_float, out_double, NEXT1, NEXT2)                                                 \
-  force_inline static int64_t f##which##_impl_float(ARGS_FLOAT) {                                                                   \
+  force_inline static int64_t f##which##_impl_float(ARGS_FLOAT) {                                                      \
     DEBUG_CHECK                                                                                                        \
     float a = (sp - 2)->f, b = tos;                                                                                    \
     out_float result = eval;                                                                                           \
     sp--;                                                                                                              \
     NEXT1(result)                                                                                                      \
   }                                                                                                                    \
-  force_inline static int64_t d##which##_impl_double(ARGS_DOUBLE) {                                                                 \
+  force_inline static int64_t d##which##_impl_double(ARGS_DOUBLE) {                                                    \
     DEBUG_CHECK                                                                                                        \
     double a = (sp - 2)->d, b = tos;                                                                                   \
     out_double result = eval;                                                                                          \
@@ -982,7 +988,7 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
   }
 
 #define FLOAT_UN_OP(which, eval, out, NEXT)                                                                            \
-  force_inline static int64_t which##_impl_float(ARGS_FLOAT) {                                                                      \
+  force_inline static int64_t which##_impl_float(ARGS_FLOAT) {                                                         \
     DEBUG_CHECK                                                                                                        \
     float a = tos;                                                                                                     \
     out result = eval;                                                                                                 \
@@ -990,7 +996,7 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
   }
 
 #define DOUBLE_UN_OP(which, eval, out, NEXT)                                                                           \
-  force_inline static int64_t which##_impl_double(ARGS_DOUBLE) {                                                                    \
+  force_inline static int64_t which##_impl_double(ARGS_DOUBLE) {                                                       \
     DEBUG_CHECK                                                                                                        \
     double a = tos;                                                                                                    \
     out result = eval;                                                                                                 \
@@ -1529,7 +1535,7 @@ __attribute__((noinline)) static int64_t invokestatic_impl_void(ARGS_VOID) {
 
   JMP_VOID
 }
-FORWARD_TO_NULLARY(invokestatic)
+FORWARD_TO_NULLARY_NOTAIL(invokestatic)
 
 static inline uint8_t attempt_invoke(bjvm_thread *thread, bjvm_stack_frame *invoked_frame,
                                      bjvm_stack_frame *outer_frame, uint8_t argc, bool returns,
@@ -1639,7 +1645,7 @@ __attribute__((noinline)) static int64_t invokevirtual_impl_void(ARGS_VOID) {
   insn->ic2 = target->descriptor;
   JMP_VOID
 }
-FORWARD_TO_NULLARY(invokevirtual)
+FORWARD_TO_NULLARY_NOTAIL(invokevirtual)
 
 __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
   DEBUG_CHECK
@@ -1703,7 +1709,7 @@ __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
   }
   JMP_VOID
 }
-FORWARD_TO_NULLARY(invokespecial)
+FORWARD_TO_NULLARY_NOTAIL(invokespecial)
 
 force_inline static int64_t invokespecial_resolved_impl_void(ARGS_VOID) {
 
@@ -1770,7 +1776,7 @@ __attribute__((noinline)) static int64_t invokeinterface_impl_void(ARGS_VOID) {
   insn->kind = bjvm_insn_invokeitable_monomorphic;
   JMP_VOID
 }
-FORWARD_TO_NULLARY(invokeinterface)
+FORWARD_TO_NULLARY_NOTAIL(invokeinterface)
 
 __attribute__((noinline)) void make_invokevtable_polymorphic_(bjvm_bytecode_insn *inst) {
   assert(inst->kind == bjvm_insn_invokevtable_monomorphic);
@@ -1941,7 +1947,7 @@ __attribute__((noinline)) static int64_t invokedynamic_impl_void(ARGS_VOID) {
   insn->args = form->arity;
   JMP_VOID
 }
-FORWARD_TO_NULLARY(invokedynamic)
+FORWARD_TO_NULLARY_NOTAIL(invokedynamic)
 
 static int64_t invokecallsite_impl_void(ARGS_VOID) {
   DEBUG_CHECK
@@ -1992,7 +1998,7 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
   }
   STACK_POLYMORPHIC_NEXT(*(sp - 1))
 }
-FORWARD_TO_NULLARY(invokecallsite)
+FORWARD_TO_NULLARY_NOTAIL(invokecallsite)
 
 force_inline bjvm_stack_value *get_local(bjvm_stack_frame *frame, bjvm_bytecode_insn *inst) {
   return frame_locals(frame) + inst->index;
