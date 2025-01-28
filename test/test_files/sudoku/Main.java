@@ -4,8 +4,7 @@ public class Main {
 	public static void main(String[] args) throws Exception {
 		Solver solver = new Solver();
 
-		try (BufferedReader reader = new BufferedReader(new FileReader("sudoku.txt"))) {
-// 		try (BufferedReader reader = new BufferedReader(null)) {
+		try (BufferedReader reader = new BufferedReader(new FileReader("test_files/sudoku/sudoku.txt"))) {
 			String l;
 			while ((l = reader.readLine()) != null) {
 				if (l.length() >= 81) {
