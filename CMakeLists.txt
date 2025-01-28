@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(zlib)
 endif()
 
 # If doing emscripten
-set(BASE_C_FLAGS "-g -O2 -fms-extensions -Wno-pragmas -Wall -Wno-pragmas -Wno-unused-parameter -Werror -fno-strict-aliasing -Wno-missing-field-initializers")
+set(BASE_C_FLAGS "-foptimize-sibling-calls -g -O2 -fms-extensions -Wno-pragmas -Wall -Wno-pragmas -Wno-unused-parameter -Werror -fno-strict-aliasing -Wno-missing-field-initializers")
 set(BASE_CXX_FLAGS "-g -O2 -Wall -Wno-c99-extensions -Wno-extra-semi")
 
 if (EMSCRIPTEN)

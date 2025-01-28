@@ -60,7 +60,12 @@
 
 // Indicates that the following return must be a tail call. Supported by modern clang and GCC (but GCC support seems
 // somewhat buggy...)
+#ifdef __clang__
 #define MUSTTAIL [[clang::musttail]]
+#else
+#define MUSTTAIL __attribute__((musttail))
+#endif
+
 #define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
 
 typedef int64_t (*bytecode_handler_t)(ARGS_VOID);
@@ -621,7 +626,6 @@ static int64_t putstatic_S_impl_int(ARGS_INT) {
 }
 
 static int64_t putstatic_I_impl_int(ARGS_INT) {
-
   DEBUG_CHECK
   *(int *)insn->ic = (int)tos;
   --sp;
