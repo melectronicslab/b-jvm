@@ -34,12 +34,16 @@ extern "C" {
 #define nullptr ((void *)0)
 #endif
 
+#ifdef NDEBUG
+#define UNREACHABLE(_) __builtin_unreachable()
+#else
 #define UNREACHABLE(optional_msg)                                                                                      \
   do {                                                                                                                 \
     fprintf(stderr, "Unreachable code reached at %s:%d. \n" optional_msg, __FILE__, __LINE__);                         \
     abort();                                                                                                           \
     __builtin_unreachable();                                                                                           \
   } while (0)
+#endif
 
 static inline void *__vector_push(size_t element_size, void **vector, int *vector_count, int *vector_cap) {
   if (__builtin_expect((*vector_count) >= (*vector_cap), 0)) {

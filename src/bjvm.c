@@ -26,8 +26,8 @@
 
 DECLARE_ASYNC(int, init_cached_classdescs,
   locals(
-    bjvm_initialize_class_t ic;
     bjvm_classdesc * *cached_classdescs;
+    uint16_t i;
   ),
   arguments(bjvm_thread *thread),
   invoked_methods(
@@ -46,15 +46,16 @@ DEFINE_ASYNC(init_cached_classdescs) {
     ASYNC_RETURN(-1);
   }
 
-  for (int i = 0; i < cached_classdesc_count; i++) {
-    char const *name = cached_classdesc_paths[i];
-    self->cached_classdescs[i] = bootstrap_lookup_class(args->thread, str_to_utf8(name));
+  for (self->i = 0; self->i < cached_classdesc_count; self->i++) {
+    char const *name = cached_classdesc_paths[self->i];
+    self->cached_classdescs[self->i] = bootstrap_lookup_class(args->thread, str_to_utf8(name));
 
-    AWAIT(bjvm_initialize_class, args->thread, self->cached_classdescs[i]);
+    AWAIT(bjvm_initialize_class, args->thread, self->cached_classdescs[self->i]);
+    int result = get_async_result(bjvm_initialize_class);
 
-    if (self->ic._result != 0) {
+    if (result != 0) {
       free(self->cached_classdescs);
-      ASYNC_RETURN(self->ic._result);
+      ASYNC_RETURN(result);
     }
   }
   ASYNC_END(0);
@@ -1012,51 +1013,54 @@ struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjv
   return (void *)result.obj;
 }
 
+static bool mh_handle_supported(bjvm_method_handle_kind kind) {
+  switch (kind) {
+  case BJVM_MH_KIND_GET_FIELD:
+  case BJVM_MH_KIND_INVOKE_STATIC:
+  case BJVM_MH_KIND_INVOKE_VIRTUAL:
+  case BJVM_MH_KIND_INVOKE_SPECIAL:
+  case BJVM_MH_KIND_INVOKE_INTERFACE:
+  case BJVM_MH_KIND_NEW_INVOKE_SPECIAL:
+    return true;
+  default:
+    return false;
+  }
+}
+
 DEFINE_ASYNC_SL(resolve_mh_mt, BJVM_MH_KIND_LAST + 1) {
+  assert(mh_handle_supported(args->info->handle_kind) && "Unsupported method handle kind");
+
+  bjvm_cp_class_info *required_type = args->info->handle_kind == BJVM_MH_KIND_GET_FIELD
+                                          ? args->info->reference->field.class_info
+                                          : args->info->reference->methodref.class_info;
+
+  bjvm_resolve_class(args->thread, required_type);
+  AWAIT(bjvm_initialize_class, args->thread, required_type->classdesc);
+
   bjvm_classdesc *rtype = nullptr;
   bjvm_classdesc **ptypes = nullptr;
   int ptypes_count = 0;
   int ptypes_capacity = 0;
 
   switch (args->info->handle_kind) {
-  case BJVM_MH_KIND_GET_FIELD:
+  case BJVM_MH_KIND_GET_FIELD: {
     // MT should be of the form (C)T, where C is the class the field is found on
     bjvm_cp_field_info *field = &args->info->reference->field;
-    bjvm_resolve_class(args->thread, field->class_info);
-    AWAIT(bjvm_initialize_class, args->thread, field->class_info->classdesc);
-    // reload these because we awaited
-    rtype = nullptr;
-    ptypes = nullptr;
-    ptypes_count = 0;
-    ptypes_capacity = 0;
     *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = field->class_info->classdesc;
     rtype = load_class_of_field(args->thread, field->parsed_descriptor);
     break;
-  case BJVM_MH_KIND_GET_STATIC:
-    UNREACHABLE();
-    break;
-  case BJVM_MH_KIND_PUT_FIELD:
-    UNREACHABLE();
-    break;
-  case BJVM_MH_KIND_PUT_STATIC:
-    UNREACHABLE();
-    break;
+  }
+
   case BJVM_MH_KIND_INVOKE_STATIC:
     [[fallthrough]];
   case BJVM_MH_KIND_INVOKE_VIRTUAL:
+    [[fallthrough]];
   case BJVM_MH_KIND_INVOKE_SPECIAL:
+    [[fallthrough]];
   case BJVM_MH_KIND_INVOKE_INTERFACE: {
     // MT should be of the form (C,A*)T, where C is the class the method is
     // found on, A* is the list of argument types, and T is the return type
     bjvm_cp_method_info *method = &args->info->reference->methodref;
-    bjvm_resolve_class(args->thread, method->class_info);
-    AWAIT(bjvm_initialize_class, args->thread, method->class_info->classdesc);
-
-    // reload these because we awaited
-    rtype = nullptr;
-    ptypes = nullptr;
-    ptypes_count = 0;
-    ptypes_capacity = 0;
 
     if (args->info->handle_kind != BJVM_MH_KIND_INVOKE_STATIC) {
       *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = method->class_info->classdesc;
@@ -1073,14 +1077,6 @@ DEFINE_ASYNC_SL(resolve_mh_mt, BJVM_MH_KIND_LAST + 1) {
   case BJVM_MH_KIND_NEW_INVOKE_SPECIAL: {
     // MT should be of the form (A*)T, where A* is the list of argument types,
     bjvm_cp_method_info *method = &args->info->reference->methodref;
-    bjvm_resolve_class(args->thread, method->class_info);
-    AWAIT(bjvm_initialize_class, args->thread, method->class_info->classdesc);
-
-    // reload these because we awaited
-    rtype = nullptr;
-    ptypes = nullptr;
-    ptypes_count = 0;
-    ptypes_capacity = 0;
 
     for (int i = 0; i < method->descriptor->args_count; ++i) {
       bjvm_field_descriptor *arg = method->descriptor->args + i;
@@ -1090,6 +1086,9 @@ DEFINE_ASYNC_SL(resolve_mh_mt, BJVM_MH_KIND_LAST + 1) {
     rtype = method->class_info->classdesc;
     break;
   }
+
+  default:
+    UNREACHABLE();
   }
 
   // Call MethodType.makeImpl(rtype, ptypes, true)
@@ -1484,7 +1483,8 @@ int allocate_field(int *current, bjvm_type_kind kind) {
     *current += 8;
     break;
 
-    case BJVM_TYPE_KIND_VOID: [[fallthrough]];
+  case BJVM_TYPE_KIND_VOID:
+    [[fallthrough]];
   default:
     UNREACHABLE();
   }
@@ -2003,7 +2003,8 @@ void store_stack_value(void *field_location, bjvm_stack_value value, bjvm_type_k
   case BJVM_TYPE_KIND_BYTE:
     *(jbyte *)field_location = (jbyte)value.i;
     break;
-  case BJVM_TYPE_KIND_CHAR: [[fallthrough]];
+  case BJVM_TYPE_KIND_CHAR:
+    [[fallthrough]];
   case BJVM_TYPE_KIND_SHORT:
     *(jshort *)field_location = (int16_t)value.i;
     break;
@@ -2224,7 +2225,8 @@ bool method_types_compatible(struct bjvm_native_MethodType *provider_mt, struct 
   return str;
 }
 
-void bjvm_wrong_method_type_error([[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] struct bjvm_native_MethodType *provider_mt,
+void bjvm_wrong_method_type_error([[maybe_unused]] bjvm_thread *thread,
+                                  [[maybe_unused]] struct bjvm_native_MethodType *provider_mt,
                                   [[maybe_unused]] struct bjvm_native_MethodType *targ) {
   UNREACHABLE(); // TODO
 }
@@ -2540,7 +2542,7 @@ DEFINE_ASYNC(bjvm_run_native) {
 
   self->native_struct = malloc(handle->async_ctx_bytes);
   *self->native_struct = (async_natives_args){{thread, target_handle, native_args, argc}, 0};
-  AWAIT_FUTURE_EXPR(((bjvm_native_callback*)frame->method->native_handle)->async(self->native_struct));
+  AWAIT_FUTURE_EXPR(((bjvm_native_callback *)frame->method->native_handle)->async(self->native_struct));
   // We've laid out the context struct so that the result is always at offset 0
   bjvm_stack_value result = *(bjvm_stack_value *)self->native_struct;
   free(self->native_struct);
