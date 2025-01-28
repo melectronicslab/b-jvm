@@ -45,6 +45,7 @@ void print_field(const bjvm_cp_field *field) {
   case BJVM_TYPE_KIND_SHORT:
     name = "_Alignas(4) int16_t ";
     break;
+  default:
   case BJVM_TYPE_KIND_VOID:
     UNREACHABLE();
   }
