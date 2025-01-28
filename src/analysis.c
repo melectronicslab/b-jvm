@@ -201,6 +201,7 @@ const char *bjvm_insn_code_name(bjvm_insn_code_kind code) {
     CASE(getfield_F)
     CASE(getfield_D)
     CASE(getfield_L)
+    CASE(getfield_Z)
     CASE(putfield_B)
     CASE(putfield_C)
     CASE(putfield_S)
@@ -209,6 +210,7 @@ const char *bjvm_insn_code_name(bjvm_insn_code_kind code) {
     CASE(putfield_F)
     CASE(putfield_D)
     CASE(putfield_L)
+    CASE(putfield_Z)
     CASE(getstatic_B)
     CASE(getstatic_C)
     CASE(getstatic_S)
@@ -217,6 +219,7 @@ const char *bjvm_insn_code_name(bjvm_insn_code_kind code) {
     CASE(getstatic_F)
     CASE(getstatic_D)
     CASE(getstatic_L)
+    CASE(getstatic_Z)
     CASE(putstatic_B)
     CASE(putstatic_C)
     CASE(putstatic_S)
@@ -225,6 +228,7 @@ const char *bjvm_insn_code_name(bjvm_insn_code_kind code) {
     CASE(putstatic_F)
     CASE(putstatic_D)
     CASE(putstatic_L)
+    CASE(putstatic_Z)
     CASE(invokesigpoly)
     CASE(dsqrt)
   }
@@ -258,9 +262,23 @@ const char *bjvm_type_kind_to_string(bjvm_type_kind kind) {
   UNREACHABLE();
 }
 
-char *class_info_entry_to_string(const bjvm_cp_class_info *ent) {
+char *class_info_entry_to_string(bjvm_cp_kind kind, const bjvm_cp_class_info *ent) {
+  char const* start;
+  switch (kind) {
+  case BJVM_CP_KIND_CLASS:
+    start = "Class: ";
+    break;
+  case BJVM_CP_KIND_MODULE:
+    start = "Module: ";
+    break;
+  case BJVM_CP_KIND_PACKAGE:
+    start = "Package: ";
+    break;
+  default: UNREACHABLE();
+  }
+
   char result[1000];
-  snprintf(result, sizeof(result), "Class: %.*s", ent->name.len,
+  snprintf(result, sizeof(result), "%s%.*s", start, ent->name.len,
            ent->name.chars);
   return strdup(result);
 }
@@ -302,15 +320,17 @@ char *constant_pool_entry_to_string(const bjvm_cp_entry *ent) {
   case BJVM_CP_KIND_DOUBLE:
     snprintf(result, sizeof(result), "%.15gd", (float)ent->floating.value);
     break;
+  case BJVM_CP_KIND_MODULE: [[fallthrough]];
+  case BJVM_CP_KIND_PACKAGE: [[fallthrough]];
   case BJVM_CP_KIND_CLASS:
-    return class_info_entry_to_string(&ent->class_info);
+    return class_info_entry_to_string(ent->kind, &ent->class_info);
   case BJVM_CP_KIND_STRING: {
     snprintf(result, sizeof(result), "String: '%.*s'", ent->string.chars.len,
              ent->string.chars.chars);
     break;
   }
   case BJVM_CP_KIND_FIELD_REF: {
-    char *class_name = class_info_entry_to_string(ent->field.class_info);
+    char *class_name = class_info_entry_to_string(BJVM_CP_KIND_CLASS, ent->field.class_info);
     char *field_name = name_and_type_entry_to_string(ent->field.nat);
 
     snprintf(result, sizeof(result), "FieldRef: %s.%s", class_name, field_name);
@@ -320,7 +340,7 @@ char *constant_pool_entry_to_string(const bjvm_cp_entry *ent) {
   }
   case BJVM_CP_KIND_METHOD_REF:
   case BJVM_CP_KIND_INTERFACE_METHOD_REF: {
-    char *class_name = class_info_entry_to_string(ent->field.class_info);
+    char *class_name = class_info_entry_to_string(BJVM_CP_KIND_CLASS, ent->field.class_info);
     char *field_name = name_and_type_entry_to_string(ent->field.nat);
     snprintf(result, sizeof(result), "%s: %s; %s",
              ent->kind == BJVM_CP_KIND_METHOD_REF ? "MethodRef"
@@ -340,6 +360,8 @@ char *constant_pool_entry_to_string(const bjvm_cp_entry *ent) {
     return strdup("<method type>"); // TODO
   }
   case BJVM_CP_KIND_INVOKE_DYNAMIC:
+    return indy_entry_to_string(&ent->indy_info);
+  case BJVM_CP_KIND_DYNAMIC_CONSTANT:
     return indy_entry_to_string(&ent->indy_info);
   }
   return strdup(result);
@@ -1453,7 +1475,7 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
       bjvm_attribute_lvt_entry *ent = &code->local_variable_table->entries[i];
       if (ent->index >= code->max_locals) {
         result = -1;
-        goto done;
+        goto invalid_vt;
       }
       ent->index = ctx.locals_swizzle[ent->index];
     }
@@ -1477,8 +1499,7 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
 
   ctx.stack.entries_count = 0;
 
-  bjvm_code_analysis *analy = method->code_analysis =
-      malloc(sizeof(bjvm_code_analysis));
+  bjvm_code_analysis *analy = method->code_analysis = malloc(sizeof(bjvm_code_analysis));
 
   analy->insn_count = code->insn_count;
   analy->dominator_tree_computed = false;
@@ -1651,6 +1672,8 @@ done:
     free(inferred_stacks[i].entries);
     free(inferred_locals[i].entries);
   }
+
+  invalid_vt:
   free(ctx.branch_q);
   free(ctx.stack.entries);
   free(ctx.locals.entries);
