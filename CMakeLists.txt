@@ -35,10 +35,10 @@ if (EMSCRIPTEN)
     set(EmscriptenFlags "-s EXPORTED_FUNCTIONS=\"['_malloc','_free','_main']\" -gsource-map -sSTACK_SIZE=500000 -sWASMFS -sFORCE_FILESYSTEM=1 -sALLOW_MEMORY_GROWTH=1 --emit-tsd bjvm_main.d.ts -s ALLOW_TABLE_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='\"ccall\",\"wasmMemory\",\"cwrap\",\"addFunction\",\"removeFunction\",\"wasmTable\",\"FS\",\"UTF8ToString\",\"getValue\",\"setValue\"'")
 elseif (APPLE)
     set(PLATFORM_C_FLAGS "-Werror")
-    set(PLATFORM_CXX_FLAGS "-Werror -O2 -Wall -Wextra -Wimplicit-fallthrough -g -Werror=incompatible-pointer-types -Wno-missing-field-initializers") # -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
+    set(PLATFORM_CXX_FLAGS "-Werror -O2 -Wall -Wextra -Wimplicit-fallthrough -g -Wno-missing-field-initializers") # -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
 else ()
     set(PLATFORM_C_FLAGS "-Werror -march=native")
-    set(PLATFORM_CXX_FLAGS "-Werror -O2 -fms-extensions -Wall -g -fopenmp -march=native -Werror=incompatible-pointer-types -fno-strict-aliasing")
+    set(PLATFORM_CXX_FLAGS "-Werror -O2 -fms-extensions -Wall -g -fopenmp -march=native -fno-strict-aliasing")
 endif ()
 
 set(CMAKE_C_FLAGS "${BASE_C_FLAGS} ${PLATFORM_C_FLAGS}")
@@ -96,6 +96,9 @@ add_executable(tests test/tests.cc test/arrays-test.cc test/tests-common.cc test
         test/classpath-tests.cc
         test/natives-test.cc
         test/benches.cc)
+if (NOT EMSCRIPTEN)
+    target_sources(tests PRIVATE ${bjvm_wasm_SRC})
+endif()
 target_link_libraries(tests PRIVATE bjvm)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 set_target_properties(tests PROPERTIES LINK_FLAGS "${EmscriptenFlags}")
