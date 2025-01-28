@@ -1558,7 +1558,7 @@ static inline uint8_t attempt_invoke(bjvm_thread *thread, bjvm_stack_frame *invo
     result;                                                                                                            \
   })
 
-__attribute__((always_inline)) static int64_t invokestatic_resolved_impl_void(ARGS_VOID) {
+force_inline static int64_t invokestatic_resolved_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   bjvm_cp_method *method = insn->ic;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1704,7 +1704,7 @@ __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokespecial)
 
-__attribute__((always_inline)) static int64_t invokespecial_resolved_impl_void(ARGS_VOID) {
+force_inline static int64_t invokespecial_resolved_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   bjvm_obj_header *target = (sp - insn->args)->obj;
@@ -1786,7 +1786,7 @@ __attribute__((noinline)) void make_invokeitable_polymorphic_(bjvm_bytecode_insn
   inst->ic2 = (void *)inst->cp->methodref.resolved->itable_index;
 }
 
-__attribute__((always_inline)) static int64_t invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
+force_inline static int64_t invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   bjvm_obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1820,7 +1820,7 @@ __attribute__((always_inline)) static int64_t invokeitable_vtable_monomorphic_im
 }
 FORWARD_TO_NULLARY(invokeitable_vtable_monomorphic)
 
-__attribute__((always_inline)) static int64_t invokesigpoly_impl_void(ARGS_VOID) {
+force_inline static int64_t invokesigpoly_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   bjvm_obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1993,26 +1993,26 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokecallsite)
 
-__attribute__((always_inline)) bjvm_stack_value *get_local(bjvm_stack_frame *frame, bjvm_bytecode_insn *inst) {
+force_inline bjvm_stack_value *get_local(bjvm_stack_frame *frame, bjvm_bytecode_insn *inst) {
   return frame_locals(frame) + inst->index;
 }
 
 /** Local variable accessors */
-__attribute__((always_inline)) static int64_t iload_impl_void(ARGS_VOID) {
+force_inline static int64_t iload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
   NEXT_INT(get_local(frame, insn)->i)
 }
 FORWARD_TO_NULLARY(iload)
 
-__attribute__((always_inline)) static int64_t fload_impl_void(ARGS_VOID) {
+force_inline static int64_t fload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
   NEXT_FLOAT(get_local(frame, insn)->f)
 }
 FORWARD_TO_NULLARY(fload)
 
-__attribute__((always_inline)) static int64_t dload_impl_void(ARGS_VOID) {
+force_inline static int64_t dload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
@@ -2020,7 +2020,7 @@ __attribute__((always_inline)) static int64_t dload_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(dload)
 
-__attribute__((always_inline)) static int64_t lload_impl_void(ARGS_VOID) {
+force_inline static int64_t lload_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
   sp++;
@@ -2028,14 +2028,14 @@ __attribute__((always_inline)) static int64_t lload_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(lload)
 
-__attribute__((always_inline)) static int64_t aload_impl_void(ARGS_VOID) {
+force_inline static int64_t aload_impl_void(ARGS_VOID) {
   DEBUG_CHECK
   sp++;
   NEXT_INT(get_local(frame, insn)->obj)
 }
 FORWARD_TO_NULLARY(aload)
 
-__attribute__((always_inline)) static int64_t astore_impl_int(ARGS_INT) {
+force_inline static int64_t astore_impl_int(ARGS_INT) {
   DEBUG_CHECK
   get_local(frame, insn)->obj = (bjvm_obj_header *)tos;
   sp--;

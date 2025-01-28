@@ -195,6 +195,8 @@ static inline bjvm_utf8 str_to_utf8(const char *str) {
 
 #define STR(literal) ((bjvm_utf8){.chars = (char *)(literal), .len = sizeof(literal) - 1})
 
+#define force_inline __attribute__((always_inline)) inline
+
 bool utf8_equals(const bjvm_utf8 entry, const char *str);
 bool utf8_equals_utf8(const bjvm_utf8 left, const bjvm_utf8 right);
 bool utf8_ends_with(bjvm_utf8 str, bjvm_utf8 ending);
