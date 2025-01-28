@@ -1461,7 +1461,7 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
       bjvm_attribute_lvt_entry *ent = &code->local_variable_table->entries[i];
       if (ent->index >= code->max_locals) {
         result = -1;
-        goto done;
+        goto invalid_vt;
       }
       ent->index = ctx.locals_swizzle[ent->index];
     }
@@ -1485,8 +1485,7 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
 
   ctx.stack.entries_count = 0;
 
-  bjvm_code_analysis *analy = method->code_analysis =
-      malloc(sizeof(bjvm_code_analysis));
+  bjvm_code_analysis *analy = method->code_analysis = malloc(sizeof(bjvm_code_analysis));
 
   analy->insn_count = code->insn_count;
   analy->dominator_tree_computed = false;
@@ -1659,6 +1658,8 @@ done:
     free(inferred_stacks[i].entries);
     free(inferred_locals[i].entries);
   }
+
+  invalid_vt:
   free(ctx.branch_q);
   free(ctx.stack.entries);
   free(ctx.locals.entries);
