@@ -604,6 +604,23 @@ TEST_CASE("Sudoku solver") {
   std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
+TEST_CASE("Autodiff") {
+  int num_derivatives = 1003 * 10;
+  std::cout << "Testing Autodiff" << std::endl;
+  std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
+  auto now = std::chrono::system_clock::now();
+
+  auto result = run_test_case("test_files/autodiff/", true, "Main");
+  // last test
+  REQUIRE(result.stdout_.find("((84.02894029503324*(-(sin((x*y))*x)+1.0))+((84.02894029503324*x)*-(((cos((x*y))*x)*y)+sin((x*y))))) = -3209354.522523045 == -3209354.522523045")
+          != std::string::npos);
+
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
+}
+
 TEST_CASE("Method parameters reflection API") {
   auto result = run_test_case("test_files/method_parameters/", true, "MethodParameters");
   REQUIRE(result.stdout_ == R"(Parameter names for method 'exampleMethod':
