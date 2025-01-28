@@ -63,15 +63,24 @@
 #define MUSTTAIL [[clang::musttail]]
 #define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
 
+typedef int64_t (*bytecode_handler_t)(ARGS_VOID);
+
 // Used when the TOS is int (i.e., the stack is empty)
-static int64_t (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID);
+static bytecode_handler_t jmp_table_void[MAX_INSN_KIND];
 // Used when the TOS is int, long, or a reference (wasm signature: i64). In the int case, the result is sign-extended;
 // in the reference case, the result is zero-extended.
-static int64_t (*jmp_table_int[MAX_INSN_KIND])(ARGS_INT);
+static bytecode_handler_t jmp_table_int[MAX_INSN_KIND];
 // Used when the TOS is float (wasm signature: f32)
-static int64_t (*jmp_table_float[MAX_INSN_KIND])(ARGS_FLOAT);
+static bytecode_handler_t jmp_table_float[MAX_INSN_KIND];
 // Used when the TOS is double (wasm signature: f64)
-static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
+static bytecode_handler_t jmp_table_double[MAX_INSN_KIND];
+
+const static bytecode_handler_t *bytecode_tables[4] = {
+    [TOS_VOID] = jmp_table_void,
+    [TOS_INT] = jmp_table_int,
+    [TOS_FLOAT] = jmp_table_float,
+    [TOS_DOUBLE] = jmp_table_double,
+};
 
 #if DO_TAILS
 
@@ -154,22 +163,9 @@ static int64_t (*jmp_table_double[MAX_INSN_KIND])(ARGS_DOUBLE);
 // Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.
 #define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
-  switch (insn->tos_after) {                                                                                           \
-  case TOS_VOID: {                                                                                                     \
-    NEXT_VOID                                                                                                          \
-  }                                                                                                                    \
-  case TOS_INT: {                                                                                                      \
-    NEXT_INT((tos).l)                                                                                                  \
-  }                                                                                                                    \
-  case TOS_FLOAT: {                                                                                                    \
-    NEXT_FLOAT((tos).f)                                                                                                \
-  }                                                                                                                    \
-  case TOS_DOUBLE: {                                                                                                   \
-    NEXT_DOUBLE((tos).d)                                                                                               \
-  }                                                                                                                    \
-  default:                                                                                                             \
-    __builtin_unreachable();                                                                                           \
-  }
+  bytecode_handler_t handler = bytecode_tables[insn->tos_after][insns[1].kind];                                        \
+  bjvm_stack_value __tos = (tos);                                                                                      \
+  MUSTTAIL return handler(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
 
 // Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.

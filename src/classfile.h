@@ -264,10 +264,10 @@ typedef enum : uint8_t {
 } bjvm_insn_code_kind;
 
 typedef enum : uint8_t {
-  TOS_VOID,
-  TOS_DOUBLE,
-  TOS_INT,
-  TOS_FLOAT,
+  TOS_VOID = 0,
+  TOS_DOUBLE = 1,
+  TOS_INT = 2,
+  TOS_FLOAT = 3,
 } bjvm_reduced_tos_kind;
 
 typedef enum : char {
