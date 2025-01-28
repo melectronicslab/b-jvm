@@ -63,7 +63,7 @@
 #ifdef __clang__
 #define MUSTTAIL [[clang::musttail]]
 #else
-#define MUSTTAIL __attribute__((musttail))
+#define MUSTTAIL
 #endif
 
 #define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
