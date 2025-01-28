@@ -55,14 +55,14 @@ void *create_adapter_to_interpreter_frame(bjvm_type_kind *kinds,
   };
 
   bjvm_wasm_module *module = bjvm_wasm_module_create();
-  bjvm_wasm_value_type components[kinds_len + 3];
-  int i = 0;
-  for (; i < 3; ++i) {
-    components[i] = BJVM_WASM_TYPE_KIND_INT32;  // thread, method, result
-  }
-  for (int j = 0; j < kinds_len; ++j) {
-    //components[i] = bjvm_jvm_type_to_wasm(kinds[j]);
-  }
+  // bjvm_wasm_value_type components[kinds_len + 3];
+  // int i = 0;
+  // for (; i < 3; ++i) {
+  //   components[i] = BJVM_WASM_TYPE_KIND_INT32;  // thread, method, result
+  // }
+  // for (int j = 0; j < kinds_len; ++j) {
+  //   components[i] = bjvm_jvm_type_to_wasm(kinds[j]);
+  // }
 
   // bjvm_wasm_type fn_args = bjvm_wasm_make_tuple(module, components, kinds_len + 3);
   if (is_native) {
