@@ -22,6 +22,13 @@ extern "C" {
 #include <byteswap.h>
 #endif
 
+// These are unlikely (ha!) to actually improve codegen, but are actually kind
+// of nice to indicate what we "think" is going to happen. Long term we might
+// use these macro sites to instrument certain operations and see what "unhappy"
+// cases are more common than we thought.
+#define unlikely(x) __builtin_expect(!!(x), 0)
+#define likely(x) __builtin_expect(!!(x), 1)
+
 #if !defined(__cplusplus) && !defined(nullptr) && (!defined(__STDC_VERSION__) || __STDC_VERSION__ <= 201710)
 /* -Wundef is avoided by using short circuiting in the condition */
 #define nullptr ((void *)0)
@@ -54,13 +61,13 @@ static inline void *__vector_push(size_t element_size, void **vector, int *vecto
 
 typedef struct {
   char *chars;
-  int len;
+  uint16_t len;
 } bjvm_utf8;
 
 typedef struct {
   char *chars;
-  int len;
-  int cap; // including null byte
+  uint16_t len;
+  uint16_t cap; // including null byte
 } heap_string;
 
 #define INIT_STACK_STRING(name, buffer_size)                                                                           \
@@ -69,13 +76,15 @@ typedef struct {
 #define null_str() ((bjvm_utf8){.chars = nullptr, .len = 0})
 
 /// Slices the given string from the given start index to the end.
-static inline bjvm_utf8 slice(bjvm_utf8 str, int start) {
-  return (bjvm_utf8){.chars = str.chars + start, .len = str.len - start};
+static inline bjvm_utf8 slice(bjvm_utf8 str, uint16_t start) {
+  assert(str.len >= start);
+  return (bjvm_utf8){.chars = str.chars + start, .len = (uint16_t)(str.len - start)};
 }
 
 /// Slices the given string from the given start index to the given end index.
-static inline bjvm_utf8 slice_to(bjvm_utf8 str, int start, int end) {
-  return (bjvm_utf8){.chars = str.chars + start, .len = end - start};
+static inline bjvm_utf8 slice_to(bjvm_utf8 str, uint16_t start, uint16_t end) {
+  assert(end >= start);
+  return (bjvm_utf8){.chars = str.chars + start, .len = (uint16_t)(end - start)};
 }
 
 /// Uses the given format string and arguments to print a string into the given
@@ -85,7 +94,9 @@ static inline bjvm_utf8 bprintf(bjvm_utf8 buffer, const char *format, ...) {
   va_start(args, format);
   int len = vsnprintf(buffer.chars, buffer.len + 1, format, args);
   va_end(args);
-  return (bjvm_utf8){.chars = buffer.chars, .len = len};
+  assert(len >= 0 && len <= UINT16_MAX);
+
+  return (bjvm_utf8){.chars = buffer.chars, .len = (uint16_t)len};
 }
 
 /// Used to safely (?) build up a string in a heap-allocated buffer.
@@ -98,7 +109,14 @@ static inline int build_str(heap_string *str, int write, const char *format, ...
     str->len = write + len;
     // will be at least 1 greater than str->len, to accomodate null terminator
     str->cap = 1 << (sizeof(str->cap) * 8 - __builtin_clz(str->len));
-    str->chars = (char *)realloc(str->chars, str->cap);
+
+    char *new_chars = (char *)realloc(str->chars, str->cap);
+    if (unlikely(new_chars == nullptr)) {
+      UNREACHABLE("oom in build_str");
+    }
+
+    str->chars = new_chars;
+
     va_start(args, format);
     len = vsnprintf(str->chars + write, str->len - write + 1, format, args);
     va_end(args);
@@ -107,8 +125,9 @@ static inline int build_str(heap_string *str, int write, const char *format, ...
 }
 
 /// Mallocates a new heap string with the given length.
-static inline heap_string make_heap_str(int len) {
-  return (heap_string){.chars = (char *)calloc(len + 1, 1), .len = len, .cap = len + 1};
+static inline heap_string make_heap_str(uint16_t len) {
+  assert(len < UINT16_MAX);
+  return (heap_string){.chars = (char *)calloc(len + 1, 1), .len = len, .cap = (uint16_t)(len + 1)};
 }
 
 /// Creates a heap string from the given slice.
@@ -119,7 +138,7 @@ static inline heap_string make_heap_str_from(bjvm_utf8 slice) {
 }
 
 /// Truncates the given heap string to the given length.
-static inline void heap_str_truncate(heap_string str, int len) {
+static inline void heap_str_truncate(heap_string str, uint16_t len) {
   assert(len <= str.len);
   str.len = len;
 }
@@ -152,7 +171,9 @@ static inline bjvm_utf8 hslc(heap_string str) { return (bjvm_utf8){.chars = str.
 
 /// Converts the given null-terminated string to a slice. Use the STR macro for literals.
 static inline bjvm_utf8 str_to_utf8(const char *str) {
-  return (bjvm_utf8){.chars = (char *)str, .len = (int)strlen(str)};
+  size_t len = strlen(str);
+  assert(len <= UINT16_MAX);
+  return (bjvm_utf8){.chars = (char *)str, .len = (uint16_t)len};
 }
 
 #define fmt_slice(slice) (int)(slice).len, (slice).chars
@@ -163,13 +184,6 @@ bool utf8_equals(const bjvm_utf8 entry, const char *str);
 bool utf8_equals_utf8(const bjvm_utf8 left, const bjvm_utf8 right);
 bool utf8_ends_with(bjvm_utf8 str, bjvm_utf8 ending);
 int convert_modified_utf8_to_chars(const char *bytes, int len, uint16_t **result, int *result_len, bool sloppy);
-
-// These are unlikely (ha!) to actually improve codegen, but are actually kind
-// of nice to indicate what we "think" is going to happen. Long term we might
-// use these macro sites to instrument certain operations and see what "unhappy"
-// cases are more common than we thought.
-#define unlikely(x) __builtin_expect(!!(x), 0)
-#define likely(x) __builtin_expect(!!(x), 1)
 
 #ifdef __cplusplus
 }

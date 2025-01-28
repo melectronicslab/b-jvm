@@ -198,7 +198,7 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   TestCaseResult result{};
 
   options.classpath = (bjvm_utf8){.chars = (char *)classpath.c_str(),
-                                  .len = (int)classpath.size()};
+                                  .len = static_cast<uint16_t>(classpath.size())};
   options.write_stdout = capture_stdio ? +[](int ch, void *param) {
     auto *result = (TestCaseResult *)param;
     result->stdout_ += (char)ch;
@@ -217,7 +217,7 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   bjvm_thread *thread = bjvm_create_thread(vm, bjvm_default_thread_options());
 
   bjvm_utf8 m{.chars = (char *)main_class.c_str(),
-              .len = (int)main_class.size()};
+              .len = static_cast<uint16_t>(main_class.size())};
 
   bjvm_classdesc *desc = bootstrap_lookup_class(thread, m);
   if (!desc) {
