@@ -589,8 +589,19 @@ TEST_CASE("Random API") {
 }
 
 TEST_CASE("Sudoku solver") {
-  auto result = run_test_case("test_files/sudoku/", false, "Main");
-//  REQUIRE(result.stdout_.find("64938572121867435935729146nu8495127836163948572782536194876452913531869247924713685") != std::string::npos);
+  int num_puzzles = 33761;
+  std::cout << "Starting sudoku solver" << std::endl;
+  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+  auto now = std::chrono::system_clock::now();
+
+  auto result = run_test_case("test_files/sudoku/", true, "Main");
+  // last puzzle
+  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
 TEST_CASE("Method parameters reflection API") {
