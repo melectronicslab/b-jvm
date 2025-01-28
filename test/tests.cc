@@ -588,6 +588,11 @@ TEST_CASE("Random API") {
   REQUIRE(result.stdout_.find("Random Integer (50 to 150)") != std::string::npos);  // Just check that it completes :)
 }
 
+TEST_CASE("Sudoku solver") {
+  auto result = run_test_case("test_files/sudoku/", false, "Main");
+//  REQUIRE(result.stdout_.find("64938572121867435935729146nu8495127836163948572782536194876452913531869247924713685") != std::string::npos);
+}
+
 TEST_CASE("Method parameters reflection API") {
   auto result = run_test_case("test_files/method_parameters/", true, "MethodParameters");
   REQUIRE(result.stdout_ == R"(Parameter names for method 'exampleMethod':
