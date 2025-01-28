@@ -106,24 +106,24 @@ const static bytecode_handler_t *bytecode_tables[4] = {
     double c_undef;                                                                                                    \
     asm("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef));                                                             \
     MUSTTAIL return (expr);                                                                                                               \
-  } while (0)
+  } while (0);
 #endif
 
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
   int64_t __tos = (int64_t)(tos);                                                                                      \
   WITH_UNDEF(jmp_table_int[k](thread, frame, insns + insn_off, pc + insn_off, sp, (int64_t)__tos,      \
-                                              b_undef, c_undef))
+                                              b_undef, c_undef));
 #define ADVANCE_FLOAT_(tos, insn_off)                                                                                  \
   int k = insns[insn_off].kind;                                                                                        \
   float __tos = (tos);                                                                                                 \
   WITH_UNDEF(jmp_table_float[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, __tos,    \
-                                                c_undef))
+                                                c_undef));
 #define ADVANCE_DOUBLE_(tos, insn_off) do {                                                                                 \
   int k = insns[insn_off].kind;                                                                                        \
   double __tos = (tos);                                                                                                \
   WITH_UNDEF(jmp_table_double[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, b_undef, \
-                                                 __tos)) } while (0)
+                                                 __tos)); } while (0);
 
 #define JMP_INT(tos) ADVANCE_INT_(tos, 0)
 #define JMP_FLOAT(tos) ADVANCE_FLOAT_(tos, 0)
@@ -136,11 +136,11 @@ const static bytecode_handler_t *bytecode_tables[4] = {
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
 // all stack values are in memory (rather than in a register)
 #define JMP_VOID                                                                                                       \
-  WITH_UNDEF(jmp_table_void[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, c_undef))
+  WITH_UNDEF(jmp_table_void[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, c_undef));
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
 #define NEXT_VOID                                                                                                      \
   WITH_UNDEF(                                                                                                          \
-      jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef))
+      jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef));
 #else
 #endif
 
