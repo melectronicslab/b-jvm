@@ -83,7 +83,7 @@ public class Main {
         tester.testFunc(-1.0, -2.0, -3.0, -4.0, -5.0);
 
         Random random = new Random(0xC0DE_BEEF);
-        for(int i = 0; i < 1000; i++){
+        for(int i = 0; i < 10000; i++){
             double vx = random.nextDouble() * MAGNITUDE;
             double vy = random.nextDouble() * MAGNITUDE;
             double vq = random.nextDouble() * MAGNITUDE;

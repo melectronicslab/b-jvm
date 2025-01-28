@@ -605,7 +605,7 @@ TEST_CASE("Sudoku solver") {
 }
 
 TEST_CASE("Autodiff") {
-  int num_derivatives = 1003 * 10;
+  int num_derivatives = 10000 * 10 + 3;
   std::cout << "Testing Autodiff" << std::endl;
   std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
   auto now = std::chrono::system_clock::now();
