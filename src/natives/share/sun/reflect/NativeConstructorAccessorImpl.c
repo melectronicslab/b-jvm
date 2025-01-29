@@ -6,7 +6,7 @@ CreateJavaMethodBinding(init_ite, object, "java/lang/reflect/InvocationTargetExc
 DECLARE_ASYNC_NATIVE("sun/reflect", NativeConstructorAccessorImpl, newInstance0,
                      "(Ljava/lang/reflect/Constructor;[Ljava/lang/Object;)Ljava/lang/Object;",
                      locals(bjvm_stack_value *forward_args; bjvm_obj_header * instance),
-                     invoked_methods(invoked_method(run_thread) invoked_method(init_ite)
+                     invoked_methods(invoked_method(call_interpreter) invoked_method(init_ite)
                                          invoked_method(bjvm_initialize_class))) {
   bjvm_cp_method *method = *bjvm_unmirror_ctor(args[0].handle->obj);
 
@@ -24,7 +24,7 @@ DECLARE_ASYNC_NATIVE("sun/reflect", NativeConstructorAccessorImpl, newInstance0,
     }
   }
 
-  AWAIT(run_thread, thread, method, self->forward_args);
+  AWAIT(call_interpreter, thread, method, self->forward_args);
 
   free(self->forward_args);
 

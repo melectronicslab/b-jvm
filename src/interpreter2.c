@@ -436,7 +436,7 @@ bjvm_insn_code_kind getstatic_putstatic_resolved_kind(bool putstatic, bjvm_type_
   }
 }
 
-DEFINE_ASYNC_SL(resolve_getstatic_putstatic, 100) {
+DEFINE_ASYNC(resolve_getstatic_putstatic) {
   // For brevity
 #define inst self->args.inst
 #define thread self->args.thread
@@ -699,7 +699,7 @@ bjvm_insn_code_kind getfield_putfield_resolved_kind(bool putfield, bjvm_type_kin
   }
 }
 
-DEFINE_ASYNC_SL(resolve_getfield_putfield, 100) {
+DEFINE_ASYNC(resolve_getfield_putfield) {
   // For brevity
 #define inst self->args.inst
 #define thread self->args.thread
@@ -741,34 +741,18 @@ static int64_t getfield_impl_int(ARGS_INT) {
 
   SPILL(tos)
   DEBUG_CHECK
-  resolve_getfield_putfield_t ctx = {};
-  ctx.args.thread = thread;
-  ctx.args.inst = insn;
-  ctx.args.frame = &frame->plain;
-  ctx.args.sp = sp;
-  future_t fut = resolve_getfield_putfield(&ctx);
-  if (thread->current_exception) {
-    return 0;
-  }
+
+  TryResolve(thread, insn, &frame->plain, sp);
+
   RELOAD(tos)
-  assert(fut.status == FUTURE_READY); // for now
   JMP_INT(tos)
 }
 
 force_inline static int64_t putfield_impl_void(ARGS_VOID) {
 
   DEBUG_CHECK
-  resolve_getfield_putfield_t ctx = {};
-  ctx.args.thread = thread;
-  ctx.args.inst = insn;
-  ctx.args.frame = &frame->plain;
-  ctx.args.sp = sp;
   SPILL_VOID
-  future_t fut = resolve_getfield_putfield(&ctx);
-  if (thread->current_exception) {
-    return 0;
-  }
-  assert(fut.status == FUTURE_READY); // for now
+  TryResolve(thread, insn, &frame->plain, sp);
   STACK_POLYMORPHIC_JMP(*(sp - 1))
 }
 FORWARD_TO_NULLARY(putfield)
