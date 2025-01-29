@@ -111,11 +111,21 @@ template <typename T> using pick_or_zero_sized_t = typename pick_or_zero_sized<T
 
 // deal with the fallout of FixTypeSize
 #ifdef __cplusplus
-#define DoArgsDecl(name) [[maybe_unused]] auto *args = &self->args;
+extern "C++" {
+  template <typename T> T ZeroInternalState_(T t) {
+    if constexpr (sizeof(t.args) == 0)
+      return (T){._state = t._state};
+    else
+      return (T){.args = t.args, ._state = t._state};
+  }
+}
+
+#define DoArgsDecl(name) [[maybe_unused]] auto args = &self->args;
+#define ZeroInternalState(thing) thing = ZeroInternalState_(thing);
 #else
 #define DoArgsDecl(name) [[maybe_unused]] struct name##_args *args = &self->args;
+#define ZeroInternalState(thing) thing = (typeof(thing)){.args = (thing).args, ._state = (thing)._state};
 #endif
-#define ZeroInternalState(thing) memset(&(thing)._state + 1, 0, sizeof(thing) - offsetof(typeof(thing), _state) - 4);
 
 /// Defines a async function, with a custom starting label idx
 /// for cases. Should be followed by a block containing the code of the async
