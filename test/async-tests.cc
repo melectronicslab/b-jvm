@@ -136,6 +136,7 @@ struct skibidi {
 DECLARE_ASYNC(skibidi, d_test_method, locals(d_test_method_t *callee), arguments(), invoked_methods(invoked_method(test_yield)));
 DEFINE_ASYNC(d_test_method) {
 
+  printf("%zu\n", sizeof(*self) - __builtin_offsetof(typeof(*self), _state) - 4);
   AWAIT(test_yield, 6);
 
   ASYNC_END(((struct skibidi){"abc", "def"}));

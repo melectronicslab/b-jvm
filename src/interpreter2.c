@@ -92,12 +92,12 @@ const static bytecode_handler_t *bytecode_tables[4] = {
 #ifdef EMSCRIPTEN
 // Sad :(
 #define WITH_UNDEF(expr)                                                                                               \
-  {                                                                                                                    \
+  do {                                                                                                                    \
     int64_t a_undef;                                                                                                   \
     float b_undef;                                                                                                     \
     double c_undef;                                                                                                    \
-    expr;                                                                                                               \
-  }
+    MUSTTAIL return (expr);                                                                                                               \
+  } while (0);
 #else
 #define WITH_UNDEF(expr)                                                                                               \
   do {                                                                                                                    \
@@ -194,22 +194,20 @@ const static bytecode_handler_t *bytecode_tables[4] = {
 
 // For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsptions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
-#define FORWARD_TO_NULLARY(which) FORWARD_TO_NULLARY_(MUSTTAIL, which)
-#define FORWARD_TO_NULLARY_NOTAIL(which) FORWARD_TO_NULLARY_(, which)
-#define FORWARD_TO_NULLARY_(tail, which)                                                                               \
+#define FORWARD_TO_NULLARY(which) \
   static int64_t which##_impl_int(ARGS_INT) {                                                                          \
     *(sp - 1) = (bjvm_stack_value){.l = tos};                                                                          \
-    tail return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3);                                    \
+    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3);                                    \
   }                                                                                                                    \
                                                                                                                        \
   static int64_t which##_impl_float(ARGS_FLOAT) {                                                                      \
     *(sp - 1) = (bjvm_stack_value){.f = tos};                                                                          \
-    tail return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3);                                    \
+    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3);                                    \
   }                                                                                                                    \
                                                                                                                        \
   static int64_t which##_impl_double(ARGS_DOUBLE) {                                                                    \
     *(sp - 1) = (bjvm_stack_value){.d = tos};                                                                          \
-    tail return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos);                                    \
+    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos);                                    \
   }
 
 /** Helper functions */
@@ -1444,7 +1442,7 @@ MAKE_INT_BRANCH(if_icmple, <=)
 static int64_t if_acmpeq_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int64_t a = (sp - 2)->l, b = tos;
+  bjvm_obj_header *a = (sp - 2)->obj, *b = (bjvm_obj_header *)tos;
   int old_pc = pc;
   pc = a == b ? (insn->index - 1) : pc;
   insns += pc - old_pc;
@@ -1455,8 +1453,8 @@ static int64_t if_acmpeq_impl_int(ARGS_INT) {
 static int64_t if_acmpne_impl_int(ARGS_INT) {
 
   DEBUG_CHECK
-  int64_t a = (sp - 2)->l, b = tos;
-  uint16_t old_pc = pc;
+  bjvm_obj_header *a = (sp - 2)->obj, *b = (bjvm_obj_header *)tos;
+  int old_pc = pc;
   pc = a != b ? (insn->index - 1) : pc;
   insns += pc - old_pc;
   sp -= 2;
@@ -1634,7 +1632,7 @@ __attribute__((noinline)) static int64_t invokestatic_impl_void(ARGS_VOID) {
 
   JMP_VOID
 }
-FORWARD_TO_NULLARY_NOTAIL(invokestatic)
+FORWARD_TO_NULLARY(invokestatic)
 
 static inline uint8_t attempt_invoke(bjvm_thread *thread, bjvm_stack_frame *invoked_frame,
                                      bjvm_stack_frame *outer_frame, uint8_t argc, bool returns,
@@ -1744,7 +1742,7 @@ __attribute__((noinline)) static int64_t invokevirtual_impl_void(ARGS_VOID) {
   insn->ic2 = target->descriptor;
   JMP_VOID
 }
-FORWARD_TO_NULLARY_NOTAIL(invokevirtual)
+FORWARD_TO_NULLARY(invokevirtual)
 
 __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
   DEBUG_CHECK
@@ -1808,7 +1806,7 @@ __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
   }
   JMP_VOID
 }
-FORWARD_TO_NULLARY_NOTAIL(invokespecial)
+FORWARD_TO_NULLARY(invokespecial)
 
 force_inline static int64_t invokespecial_resolved_impl_void(ARGS_VOID) {
 
@@ -1875,7 +1873,7 @@ __attribute__((noinline)) static int64_t invokeinterface_impl_void(ARGS_VOID) {
   insn->kind = bjvm_insn_invokeitable_monomorphic;
   JMP_VOID
 }
-FORWARD_TO_NULLARY_NOTAIL(invokeinterface)
+FORWARD_TO_NULLARY(invokeinterface)
 
 __attribute__((noinline)) void make_invokevtable_polymorphic_(bjvm_bytecode_insn *inst) {
   assert(inst->kind == bjvm_insn_invokevtable_monomorphic);
@@ -2046,7 +2044,7 @@ __attribute__((noinline)) static int64_t invokedynamic_impl_void(ARGS_VOID) {
   insn->args = form->arity;
   JMP_VOID
 }
-FORWARD_TO_NULLARY_NOTAIL(invokedynamic)
+FORWARD_TO_NULLARY(invokedynamic)
 
 static int64_t invokecallsite_impl_void(ARGS_VOID) {
   DEBUG_CHECK
@@ -2097,7 +2095,7 @@ static int64_t invokecallsite_impl_void(ARGS_VOID) {
   }
   STACK_POLYMORPHIC_NEXT(*(sp - 1))
 }
-FORWARD_TO_NULLARY_NOTAIL(invokecallsite)
+FORWARD_TO_NULLARY(invokecallsite)
 
 force_inline static bjvm_stack_value *get_local(bjvm_stack_frame *frame, bjvm_bytecode_insn *inst) {
   return frame_locals(frame) + inst->index;
