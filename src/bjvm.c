@@ -619,10 +619,10 @@ int bjvm_raise_vm_exception(bjvm_thread *thread, const bjvm_utf8 exception_name,
   if (exception_string.chars) {
     bjvm_obj_header *str = make_string(thread, exception_string);
     bjvm_cp_method *method = bjvm_method_lookup(classdesc, STR("<init>"), STR("(Ljava/lang/String;)V"), true, false);
-    bjvm_thread_run_root(thread, method, (bjvm_stack_value[]){{.obj = obj}, {.obj = str}}, nullptr);
+    call_interpreter_synchronous(thread, method, (bjvm_stack_value[]){{.obj = obj}, {.obj = str}}); // no return val, it's a constructor
   } else {
     bjvm_cp_method *method = bjvm_method_lookup(classdesc, STR("<init>"), STR("()V"), true, false);
-    bjvm_thread_run_root(thread, method, (bjvm_stack_value[]){{.obj = obj}}, nullptr);
+    call_interpreter_synchronous(thread, method, (bjvm_stack_value[]){{.obj = obj}}); // no return val, it's a constructor
   }
 
   thread->lang_exception_frame = -1;
