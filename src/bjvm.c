@@ -608,30 +608,40 @@ void bjvm_raise_exception_object(bjvm_thread *thread, bjvm_obj_header *obj) {
 }
 
 // Helper function to raise VM-generated exceptions
-int bjvm_raise_vm_exception(bjvm_thread *thread, const bjvm_utf8 exception_name, const bjvm_utf8 exception_string) {
-  bjvm_classdesc *classdesc = bootstrap_lookup_class(thread, exception_name);
-  assert(classdesc->state == BJVM_CD_STATE_INITIALIZED && "VM-generated exceptions should be initialised at VM boot");
+DEFINE_ASYNC(bjvm_raise_vm_exception) {
+  self->classdesc = bootstrap_lookup_class(args->thread, args->exception_name);
+  assert(self->classdesc->state == BJVM_CD_STATE_INITIALIZED && "VM-generated exceptions should be initialised at VM boot");
 
-  thread->lang_exception_frame = (int)thread->frames_count - 1;
+  args->thread->lang_exception_frame = (int) args->thread->frames_count - 1;
 
   // Create the exception object
-  bjvm_obj_header *obj = new_object(thread, classdesc);
-  if (exception_string.chars) {
-    bjvm_obj_header *str = make_string(thread, exception_string);
-    bjvm_cp_method *method = bjvm_method_lookup(classdesc, STR("<init>"), STR("(Ljava/lang/String;)V"), true, false);
-    bjvm_thread_run_root(thread, method, (bjvm_stack_value[]){{.obj = obj}, {.obj = str}}, nullptr);
+  self->obj = new_object(args->thread, self->classdesc);
+  if (args->exception_string.chars) {
+    bjvm_obj_header *str = make_string(args->thread, args->exception_string);
+    bjvm_cp_method *method = bjvm_method_lookup(self->classdesc, STR("<init>"), STR("(Ljava/lang/String;)V"), true, false);
+
+    AWAIT(call_interpreter, args->thread, method,
+          (bjvm_stack_value[]) {
+              {.obj = self->obj},
+              {.obj = str}
+          }
+    );
   } else {
-    bjvm_cp_method *method = bjvm_method_lookup(classdesc, STR("<init>"), STR("()V"), true, false);
-    bjvm_thread_run_root(thread, method, (bjvm_stack_value[]){{.obj = obj}}, nullptr);
+    bjvm_cp_method *method = bjvm_method_lookup(self->classdesc, STR("<init>"), STR("()V"), true, false);
+    AWAIT(call_interpreter, args->thread, method,
+          (bjvm_stack_value[]) {
+              {.obj = self->obj},
+          }
+    );
   }
 
-  thread->lang_exception_frame = -1;
-
+  args->thread->lang_exception_frame = -1;
 #ifndef EMSCRIPTEN
   // fprintf(stderr, "Exception: %.*s: %.*s\n", fmt_slice(exception_name), fmt_slice(exception_string));
 #endif
-  bjvm_raise_exception_object(thread, obj);
-  return 0;
+
+  bjvm_raise_exception_object(args->thread, self->obj);
+  ASYNC_END(0);
 }
 
 bjvm_classdesc *bjvm_primitive_classdesc(bjvm_thread *thread, bjvm_type_kind prim_kind) {

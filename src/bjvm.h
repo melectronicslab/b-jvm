@@ -597,7 +597,19 @@ bjvm_stack_value bjvm_get_field(bjvm_obj_header *obj, bjvm_cp_field *field);
 bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, bjvm_utf8 const name, bjvm_utf8 const descriptor);
 bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const bjvm_utf8 name, const bjvm_utf8 descriptor);
 bjvm_type_kind field_to_kind(const bjvm_field_descriptor *field);
-int bjvm_raise_vm_exception(bjvm_thread *thread, const bjvm_utf8 exception_name, const bjvm_utf8 exception_string);
+
+DECLARE_ASYNC(int, bjvm_raise_vm_exception,
+              locals(bjvm_classdesc *classdesc; bjvm_obj_header *obj),
+              arguments(
+                bjvm_thread *thread;
+                bjvm_utf8 exception_name;
+                bjvm_utf8 exception_string;
+              ),
+              invoked_methods(invoked_method(call_interpreter))
+);
+
+//int bjvm_raise_vm_exception(bjvm_thread *thread, const bjvm_utf8 exception_name, const bjvm_utf8 exception_string);
+
 void bjvm_raise_exception_object(bjvm_thread *thread, bjvm_obj_header *obj);
 void bjvm_null_pointer_exception(bjvm_thread *thread);
 void bjvm_array_index_oob_exception(bjvm_thread *thread, int index, int length);
