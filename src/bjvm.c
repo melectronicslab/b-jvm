@@ -1030,10 +1030,10 @@ struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjv
                                             STR("(Ljava/lang/Class;[Ljava/lang/Class;Z)Ljava/"
                                                 "lang/invoke/MethodType;"),
                                             false, false);
-  bjvm_stack_value result;
-  bjvm_thread_run_root(thread, init,
-                       (bjvm_stack_value[]){{.obj = (void *)rtype}, {.obj = ptypes->obj}, {.i = 1 /* trusted */}},
-                       &result);
+
+  bjvm_stack_value result = call_interpreter_synchronous(thread, init,
+                               (bjvm_stack_value[]){{.obj = (void *)rtype}, {.obj = ptypes->obj}, {.i = 1 /* trusted */}});
+  // todo: check for exceptions
   bjvm_drop_handle(thread, ptypes);
   return (void *)result.obj;
 }
