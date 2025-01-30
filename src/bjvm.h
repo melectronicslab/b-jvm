@@ -661,6 +661,7 @@ static inline bjvm_stack_value *frame_locals(const bjvm_stack_frame *frame) {
 }
 
 bjvm_classdesc *bjvm_primitive_classdesc(bjvm_thread *thread, bjvm_type_kind prim_kind);
+void bjvm_out_of_memory(bjvm_thread *thread);
 void *bump_allocate(bjvm_thread *thread, size_t bytes);
 
 #ifdef __cplusplus
