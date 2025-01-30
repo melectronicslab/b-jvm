@@ -579,27 +579,6 @@ int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc);
 bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *classdesc, const bjvm_utf8 name, const bjvm_utf8 descriptor,
                                    bool superclasses, bool superinterfaces);
 
-// Run the root-level interpreter, getting stuck if we hit an asynchronous
-// function. This should only be used when you know that you're not going to be
-// calling any asynchronous functions. (e.g., initializing most JDK classes).
-// Cannot be called if an interpreter is already running.
-int bjvm_thread_run_root(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result);
-
-
-// Run a short-lived, second-level interpreter.  The provided method may NEVER
-// block.
-int bjvm_thread_run_root(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, bjvm_stack_value *result);
-
-// Get an asynchronous running context. The caller should repeatedly call
-// bjvm_async_run_step() until it returns true.
-EMSCRIPTEN_KEEPALIVE
-bjvm_async_run_ctx *create_run_ctx(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args);
-
-EMSCRIPTEN_KEEPALIVE
-bool bjvm_async_run_step(bjvm_async_run_ctx *ctx);
-
-void bjvm_free_async_run_ctx(bjvm_async_run_ctx *ctx);
-
 void bjvm_register_native(bjvm_vm *vm, const bjvm_utf8 class_name, const bjvm_utf8 method_name,
                           const bjvm_utf8 method_descriptor, bjvm_native_callback callback);
 

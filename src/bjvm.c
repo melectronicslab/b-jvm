@@ -1940,45 +1940,8 @@ bjvm_async_run_ctx *create_run_ctx(bjvm_thread *thread, bjvm_cp_method *method, 
   return ctx;
 }
 
-bool bjvm_async_run_step(bjvm_async_run_ctx *ctx) {
-  if (ctx->status != BJVM_ASYNC_RUN_RESULT_INT) {
-    return true; // done
-  }
-  ctx->interpreter_state.args = (struct bjvm_interpret_args){ctx->thread, ctx->frame};
-  future_t result = bjvm_interpret(&ctx->interpreter_state);
-  if (ctx->thread->current_exception) {
-    ctx->status = BJVM_ASYNC_RUN_RESULT_EXC;
-  } else if (result.status == FUTURE_NOT_READY) {
-    ctx->status = BJVM_ASYNC_RUN_RESULT_INT;
-  } else {
-    *ctx->result = ctx->interpreter_state._result;
-    ctx->status = BJVM_ASYNC_RUN_RESULT_OK;
-  }
-  return ctx->status != BJVM_ASYNC_RUN_RESULT_INT;
-}
-
-void bjvm_free_async_run_ctx(bjvm_async_run_ctx *ctx) { free(ctx); }
-
-static int _bjvm_thread_run(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
-                            bjvm_stack_value *result) {
-  bjvm_interpret_t ctx = {.args = {.}};
-  int ret;
-
-  while (true) {
-    future_t f = bjvm_interpret(&ctx);
-    if (thread->must_unwind) {
-      bjvm_raise_vm_exception(thread, STR("java/lang/InternalError"),
-                              STR("Attempted to execute an async function while "
-                                  "in bjvm_thread_run_root"));
-      ret = -1;
-      goto done;
-    }
-  }
-  ret = -(ctx->status == BJVM_ASYNC_RUN_RESULT_EXC);
-
-done:
-  bjvm_free_async_run_ctx(ctx);
-  return ret;
+void bjvm_free_async_run_ctx(bjvm_async_run_ctx *ctx) {
+  free(ctx);
 }
 
 DEFINE_ASYNC(call_interpreter) {
@@ -1989,7 +1952,7 @@ DEFINE_ASYNC(call_interpreter) {
   if (!self->ctx)
     ASYNC_RETURN((bjvm_stack_value){.l = 0});
 
-  self->ctx->interpreter_state.args = (struct bjvm_interpret_args){thread, self->ctx->frame};
+  self->ctx->interpreter_state.args = (struct bjvm_interpret_args){ thread, self->ctx->frame};
   AWAIT_FUTURE_EXPR(bjvm_interpret(&self->ctx->interpreter_state));
 
   bjvm_stack_value result = self->ctx->interpreter_state._result;
@@ -1998,15 +1961,6 @@ DEFINE_ASYNC(call_interpreter) {
   ASYNC_END(result);
 #undef method
 #undef thread
-}
-
-int bjvm_thread_run_root(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
-                         bjvm_stack_value *result) {
-  bjvm_stack_value blah;
-  if (result == nullptr) {
-    result = &blah;
-  }
-  return _bjvm_thread_run(thread, method, args, result);
 }
 
 int bjvm_resolve_class(bjvm_thread *thread, bjvm_cp_class_info *info) {
