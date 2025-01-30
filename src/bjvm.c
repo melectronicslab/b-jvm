@@ -953,11 +953,11 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 
   bjvm_cp_method *method;
   bjvm_stack_value ret;
-  for (uint_fast8_t i = 0; i < sizeof(phases) / sizeof(*phases); ++i) {
+  for (uint_fast8_t i = 0; i < sizeof(phases) / sizeof(*phases); ++i) { // todo: these init phases should only be called once per VM
     method = bjvm_method_lookup(vm->cached_classdescs->system, phases[i], signatures[i], false, false);
     assert(method);
     bjvm_stack_value args[2] = {{.i = 1}, {.i = 1}};
-    bjvm_thread_run_root(thr, method, args, &ret);
+    call_interpreter_synchronous(thr, method, args); // void methods, no result
 
     assert(!thr->current_exception);
 
@@ -965,10 +965,10 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
                                 STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
     assert(method);
     bjvm_stack_value args2[1] = {{.obj = (void *)bjvm_intern_string(thr, STR("java.home"))}};
-    bjvm_thread_run_root(thr, method, args2, &ret);
+    ret = call_interpreter_synchronous(thr, method, args2); // returns a String
 
     heap_string java_home;
-    assert(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
+    CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
     free_heap_str(java_home);
   }
 
@@ -976,7 +976,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 
   // Call setJavaLangAccess() since we crash before getting there
   method = bjvm_method_lookup(vm->cached_classdescs->system, STR("setJavaLangAccess"), STR("()V"), false, false);
-  bjvm_thread_run_root(thr, method, nullptr, &ret);
+  call_interpreter_synchronous(thr, method, nullptr); // void methods, no result
 
   return thr;
 }
