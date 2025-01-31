@@ -2538,7 +2538,7 @@ DEFINE_ASYNC(bjvm_run_native) {
   *self->native_struct = (async_natives_args){{thread, target_handle, native_args, argc}, 0};
   AWAIT_FUTURE_EXPR(((bjvm_native_callback *)frame->method->native_handle)->async(self->native_struct));
   // We've laid out the context struct so that the result is always at offset 0
-  bjvm_stack_value result = *(bjvm_stack_value *)self->native_struct;
+  bjvm_stack_value result = ((async_natives_args *)self->native_struct)->result;
   free(self->native_struct);
 
   ASYNC_END(result);

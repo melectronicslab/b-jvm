@@ -164,7 +164,8 @@ extern bjvm_native_t *bjvm_natives;
   check_field_offset(name, args.obj, args.obj);                                                                             \
   check_field_offset(name, args.args, args.args);                                                                           \
   check_field_offset(name, args.argc, args.argc);                                                                           \
-  check_field_offset(name, _state, stage);
+  check_field_offset(name, _state, stage); \
+  check_field_offset(name, _result, result);
 
 #undef _DECLARE_CACHED_STATE
 #undef _RELOAD_CACHED_STATE

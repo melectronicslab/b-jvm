@@ -90,6 +90,7 @@ typedef struct {
 typedef struct {
   async_natives_args_inner args;
   uint32_t stage;
+  bjvm_stack_value result;
 } async_natives_args;
 
 typedef bjvm_stack_value (*sync_native_callback)(bjvm_thread *vm, bjvm_handle *obj, bjvm_value *args, uint8_t argc);
