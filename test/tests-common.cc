@@ -243,9 +243,9 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
     bjvm_stack_value to_string_args[1] = {{.obj = thread->current_exception}};
     thread->current_exception = nullptr;
 
-    bjvm_stack_value to_string_invoke_arg = call_interpreter_synchronous(thread, method, to_string_args);
+    bjvm_stack_value to_string_invoke_args = call_interpreter_synchronous(thread, method, to_string_args);
     heap_string read;
-    REQUIRE(!read_string_to_utf8(thread, &read, to_string_invoke_arg.obj));
+    REQUIRE(!read_string_to_utf8(thread, &read, to_string_invoke_args.obj));
 
     std::cout << "Exception thrown!\n" << read.chars << '\n' << '\n';
     free_heap_str(read);
