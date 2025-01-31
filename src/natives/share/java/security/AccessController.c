@@ -18,7 +18,7 @@
   AWAIT(call_interpreter, thread__, method__, method_args__); \
   ret = get_async_result(call_interpreter); \
 } while (0); \
-ASYNC_END(ret); \
+ASYNC_END(ret);
 
 DECLARE_ASYNC_NATIVE("java/security", AccessController, doPrivileged,
                "(Ljava/security/PrivilegedExceptionAction;Ljava/security/"
