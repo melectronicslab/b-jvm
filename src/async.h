@@ -12,6 +12,7 @@ extern "C" {
 #include "util.h"
 #include <assert.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <util.h>
 
 #ifdef __cplusplus
@@ -126,12 +127,12 @@ template <typename T> using pick_or_zero_sized_t = typename pick_or_zero_sized<T
 // deal with the fallout of FixTypeSize
 #ifdef __cplusplus
 extern "C++" {
-template <typename T> T ZeroInternalState_(T t) {
-  if constexpr (sizeof(t.args) == 0)
-    return (T){._state = t._state};
-  else
-    return (T){.args = t.args, ._state = t._state};
-}
+  template <typename T> T ZeroInternalState_(T t) {
+    if constexpr (sizeof(t.args) == 0)
+      return (T){._state = t._state};
+    else
+      return (T){.args = t.args, ._state = t._state};
+  }
 }
 
 #define DoArgsDecl(name) [[maybe_unused]] auto args = &self->args;

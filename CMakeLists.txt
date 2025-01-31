@@ -26,19 +26,19 @@ FetchContent_MakeAvailable(zlib)
 endif()
 
 # If doing emscripten
-set(BASE_C_FLAGS "-foptimize-sibling-calls -g -O2 -fms-extensions -Wno-pragmas -Wall -Wno-pragmas -Wno-unused-parameter -Werror -fno-strict-aliasing -Wno-missing-field-initializers")
+set(BASE_C_FLAGS "-foptimize-sibling-calls -g -O2 -fms-extensions -Wno-pragmas -Wall -Wno-pragmas -Wno-unused-parameter -fno-strict-aliasing -Wno-missing-field-initializers")
 set(BASE_CXX_FLAGS "-g -O2 -Wall -Wno-c99-extensions -Wno-extra-semi")
 
 if (EMSCRIPTEN)
     set(PLATFORM_C_FLAGS "-sUSE_ZLIB=1 -mtail-call")
     set(PLATFORM_CXX_FLAGS "-O2 -Wall -Wpedantic")
-    add_link_options("-sMODULARIZE -sEXPORT_ES6=1 -s EXPORTED_FUNCTIONS=\"['_malloc','_free','_main']\" -gsource-map -sSTACK_SIZE=500000 -sWASMFS -sFORCE_FILESYSTEM=1 -sALLOW_MEMORY_GROWTH=1 --emit-tsd bjvm_main.d.ts -s ALLOW_TABLE_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='\"ccall\",\"wasmMemory\",\"cwrap\",\"addFunction\",\"removeFunction\",\"wasmTable\",\"FS\",\"UTF8ToString\",\"getValue\",\"setValue\"'")
+    set(EmscriptenFlags "-s EXPORTED_FUNCTIONS=\"['_malloc','_free','_main']\" -gsource-map -sSTACK_SIZE=500000 -sWASMFS -sFORCE_FILESYSTEM=1 -sALLOW_MEMORY_GROWTH=1 --emit-tsd bjvm_main.d.ts -s ALLOW_TABLE_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='\"ccall\",\"wasmMemory\",\"cwrap\",\"addFunction\",\"removeFunction\",\"wasmTable\",\"FS\",\"UTF8ToString\",\"getValue\",\"setValue\"'")
 elseif (APPLE)
-    set(PLATFORM_C_FLAGS "")
-    set(PLATFORM_CXX_FLAGS "-O2 -Wall -Wextra -Wimplicit-fallthrough -g -Werror=incompatible-pointer-types -Wno-missing-field-initializers") # -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
+    set(PLATFORM_C_FLAGS "-Werror")
+    set(PLATFORM_CXX_FLAGS "-Werror -O2 -Wall -Wextra -Wimplicit-fallthrough -g -Wno-missing-field-initializers") # -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
 else ()
     set(PLATFORM_C_FLAGS "-march=native")
-    set(PLATFORM_CXX_FLAGS "-O2 -fms-extensions -Wall -g -fopenmp -march=native -Werror=incompatible-pointer-types -fno-strict-aliasing")
+    set(PLATFORM_CXX_FLAGS "-O2 -fms-extensions -Wall -g -fopenmp -march=native -fno-strict-aliasing")
 endif ()
 
 set(CMAKE_C_FLAGS "${BASE_C_FLAGS} ${PLATFORM_C_FLAGS}")
@@ -80,6 +80,7 @@ target_link_libraries(bjvm_async_test PRIVATE bjvm)
 if (EMSCRIPTEN)
     add_executable(bjvm_main src/bin/main.c)  # for now
     target_link_libraries(bjvm_main PRIVATE bjvm)
+    set_target_properties(bjvm_main PROPERTIES LINK_FLAGS "${EmscriptenFlags} -sMODULARIZE -sEXPORT_ES6=1")
 endif()
 
 if (NOT APPLE)
@@ -94,7 +95,10 @@ add_executable(tests test/tests.cc test/arrays-test.cc test/tests-common.cc test
         test/analysis-tests.cc
         test/classpath-tests.cc
         test/natives-test.cc
-        test/benches.cc ${bjvm_wasm_SRC} )
+        test/benches.cc)
+if (NOT EMSCRIPTEN)
+    target_sources(tests PRIVATE ${bjvm_wasm_SRC})
+endif()
 target_link_libraries(tests PRIVATE bjvm)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 set_target_properties(tests PROPERTIES LINK_FLAGS "${EmscriptenFlags}")
