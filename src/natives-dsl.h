@@ -6,6 +6,10 @@
 #include <natives-dsl.h>
 #include <stddef.h>
 
+#ifdef EMSCRIPTEN
+#include <emscripten.h>
+#endif
+
 maybe_extern_begin;
 void push_bjvm_native(bjvm_utf8 class_name, bjvm_utf8 method_name, bjvm_utf8 signature, bjvm_native_callback native);
 

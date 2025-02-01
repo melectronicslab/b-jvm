@@ -2629,6 +2629,7 @@ bjvm_obj_header *get_main_thread_group(bjvm_thread *thread) {
 }
 
 #ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
 __attribute__((constructor)) static void nodejs_bootloader() {
   MAIN_THREAD_EM_ASM_INT({
     if (ENVIRONMENT_IS_NODE) {

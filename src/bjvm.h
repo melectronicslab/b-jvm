@@ -144,7 +144,6 @@ typedef struct bjvm_native_frame bjvm_native_frame;
 // popped off, the result of that frame (if any) is placed in "result", and
 // either INTERP_RESULT_OK or INTERP_RESULT_EXC is returned, depending on
 // whether the frame completed abruptly.
-EMSCRIPTEN_KEEPALIVE
 DECLARE_ASYNC(
     bjvm_stack_value, bjvm_interpret,
     locals(
