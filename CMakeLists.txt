@@ -68,8 +68,6 @@ target_include_directories(bjvm PUBLIC src ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (NOT EMSCRIPTEN)
 target_link_libraries(bjvm PRIVATE zlibstatic)
-else()
-target_link_libraries(bjvm PRIVATE z)
 endif()
 
 target_link_libraries(bjvm PRIVATE m)
