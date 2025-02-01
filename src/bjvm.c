@@ -1190,7 +1190,7 @@ static bjvm_handle *make_member_name(bjvm_thread *thread, bjvm_cp_field_info *fi
   return member;
 }
 
-DEFINE_STATIC_ASYNC(resolve_mh_vh) {
+DEFINE_ASYNC(resolve_mh_vh) {
 #define info (args)->info
 #define thread (args->thread)
 
@@ -1216,7 +1216,7 @@ DEFINE_STATIC_ASYNC(resolve_mh_vh) {
 #undef thread
 }
 
-DEFINE_STATIC_ASYNC(resolve_mh_invoke) {
+DEFINE_ASYNC(resolve_mh_invoke) {
 #define info (args)->info
 #define thread (args)->thread
 
