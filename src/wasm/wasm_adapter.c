@@ -112,6 +112,7 @@ void *create_adapter_to_interpreter_frame(bjvm_type_kind *kinds,
 static bjvm_string_hash_table adapters;
 
 __attribute__((constructor))
+EMSCRIPTEN_KEEPALIVE
 static void init_adapters() {
   adapters = bjvm_make_hash_table(nullptr, 0.75, 16);
 }

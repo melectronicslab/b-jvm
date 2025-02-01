@@ -2072,7 +2072,7 @@ static int extended_npe_phase2(const bjvm_cp_method *method,
     assert(index >= 0 && index < method->code->insn_count);
     bjvm_bytecode_insn *insn = method->code->code + index;
 
-    if (lvt && ((ent = bjvm_lvt_lookup(insn->index, insn->original_pc, lvt)))) {
+    if (lvt && ((ent = bjvm_lvt_lookup(insn->index, original_pc, lvt)))) {
       bjvm_string_builder_append(builder, "%.*s", fmt_slice(*ent));
     } else {
       bjvm_string_builder_append(builder, "<local%d>", insn->index);
