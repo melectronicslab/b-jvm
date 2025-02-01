@@ -83,10 +83,6 @@ if (EMSCRIPTEN)
     set_target_properties(bjvm_main PROPERTIES LINK_FLAGS "${EmscriptenFlags} -sMODULARIZE -sEXPORT_ES6=1")
 endif()
 
-if (NOT APPLE)
-    set_target_properties(bjvm PROPERTIES LINK_DEPENDS ${CMAKE_SOURCE_DIR}/natives_table.ld)
-endif ()
-
 add_executable(gen_natives codegen/gen_natives.c)
 target_link_libraries(gen_natives PRIVATE bjvm)
 
