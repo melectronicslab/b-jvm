@@ -207,7 +207,7 @@ DECLARE_ASYNC(struct bjvm_native_MethodType *, resolve_mh_mt, locals(),
                 invoked_method(call_interpreter)
                 ));
 
-DECLARE_STATIC_ASYNC(bjvm_obj_header*, resolve_mh_vh,
+DECLARE_ASYNC(bjvm_obj_header*, resolve_mh_vh,
   locals(),
   arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
   invoked_methods(
@@ -216,7 +216,7 @@ DECLARE_STATIC_ASYNC(bjvm_obj_header*, resolve_mh_vh,
   )
 );
 
-DECLARE_STATIC_ASYNC(bjvm_obj_header*, resolve_mh_invoke,
+DECLARE_ASYNC(bjvm_obj_header*, resolve_mh_invoke,
   locals(),
   arguments(bjvm_thread *thread; bjvm_cp_method_handle_info *info),
   invoked_methods(
