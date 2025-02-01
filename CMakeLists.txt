@@ -47,7 +47,7 @@ set(CMAKE_CXX_FLAGS "${BASE_CXX_FLAGS} ${PLATFORM_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto -fomit-frame-pointer -DNDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -flto -fomit-frame-pointer -DNDEBUG")
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT EMSCRIPTEN)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND APPLE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address,undefined")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined")
 endif ()
