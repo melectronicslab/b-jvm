@@ -1491,7 +1491,7 @@ force_inline static int64_t new_impl_void(ARGS_VOID) {
     init.args.thread = thread;
     init.args.classdesc = insn->cp->class_info.classdesc;
     future_t fut = bjvm_initialize_class(&init);
-    assert(fut.status == FUTURE_READY); // for now
+    BJVM_CHECK(fut.status == FUTURE_READY); // for now
     if (thread->current_exception)
       return 0;
   }
@@ -1693,7 +1693,7 @@ __attribute__((noinline)) static int64_t invokevirtual_impl_void(ARGS_VOID) {
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
   future_t fut = resolve_methodref(&ctx);
-  assert(fut.status == FUTURE_READY);
+  BJVM_CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
   }
@@ -1743,7 +1743,7 @@ __attribute__((noinline)) static int64_t invokespecial_impl_void(ARGS_VOID) {
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
   future_t fut = resolve_methodref(&ctx);
-  assert(fut.status == FUTURE_READY);
+  BJVM_CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
   }
@@ -1838,7 +1838,7 @@ __attribute__((noinline)) static int64_t invokeinterface_impl_void(ARGS_VOID) {
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
   future_t fut = resolve_methodref(&ctx);
-  assert(fut.status == FUTURE_READY);
+  BJVM_CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception)
     return 0;
 
@@ -2014,7 +2014,7 @@ __attribute__((noinline)) static int64_t invokedynamic_impl_void(ARGS_VOID) {
       insn;
   ctx.args.indy = indy;
   future_t fut = indy_resolve(&ctx);
-  assert(fut.status == FUTURE_READY);
+  BJVM_CHECK(fut.status == FUTURE_READY);
 
   if (thread->current_exception) {
     return 0;

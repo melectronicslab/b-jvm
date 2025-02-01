@@ -47,7 +47,7 @@ extern "C" {
 
 /// Checks the condition is true;  if not, optionally prints a message and aborts.
 /// This check is not removed in release builds.
-#define CHECK(condition, ...)                                                                                          \
+#define BJVM_CHECK(condition, ...)                                                                                          \
   do {                                                                                                                 \
     if (!(condition)) {                                                                                                \
       fprintf(stderr, "%s: %s%d: CHECK(" #condition ") failed: ", __func__, __FILE__, __LINE__);                       \

@@ -289,7 +289,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
 //   - No interrupts will occur as a result of executing this function.
 bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, uint8_t argc) {
   assert(method != nullptr && "Method is null");
-  bool argc_ok = argc == method->descriptor->args_count + !(method->access_flags & BJVM_ACCESS_STATIC);
+  [[maybe_unused]] bool argc_ok = argc == method->descriptor->args_count + !(method->access_flags & BJVM_ACCESS_STATIC);
   assert(argc_ok && "Wrong argc");
   if (method->access_flags & BJVM_ACCESS_NATIVE) {
     return bjvm_push_native_frame(thread, method, method->descriptor, args, argc);
@@ -838,7 +838,7 @@ bjvm_stack_value call_interpreter_synchronous(bjvm_thread *thread, bjvm_cp_metho
 
   call_interpreter_t ctx = (call_interpreter_t){.args = {thread, method, args}};
   future_t fut = call_interpreter(&ctx);
-  CHECK(fut.status == FUTURE_READY, "method tried to suspend");
+  BJVM_CHECK(fut.status == FUTURE_READY, "method tried to suspend");
 
   return ctx._result;
 }
@@ -895,7 +895,7 @@ static void init_unsafe_constants(bjvm_thread *thread) {
 
   bjvm_initialize_class_t ctx = {.args = {thread, UC}};
   future_t init = bjvm_initialize_class(&ctx);
-  assert(init.status == FUTURE_READY);
+  BJVM_CHECK(init.status == FUTURE_READY);
 
   bjvm_cp_field *address_size = bjvm_field_lookup(UC, STR("ADDRESS_SIZE0"), STR("I")),
                 *page_size = bjvm_field_lookup(UC, STR("PAGE_SIZE"), STR("I")),
@@ -926,7 +926,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 
   init_cached_classdescs_t init = {.args = {thr}};
   future_t result = init_cached_classdescs(&init);
-  assert(result.status == FUTURE_READY);
+  BJVM_CHECK(result.status == FUTURE_READY);
 
   // Pre-allocate OOM and stack overflow errors
   thr->out_of_mem_error = new_object(thr, vm->cached_classdescs->oom_error);
@@ -964,7 +964,20 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
     bjvm_stack_value args[2] = {{.i = 1}, {.i = 1}};
     call_interpreter_synchronous(thr, method, args); // void methods, no result
 
-    assert(!thr->current_exception);
+    if (thr->current_exception) {
+      // Failed to initialize
+      method = bjvm_method_lookup(thr->current_exception->descriptor, STR("getMessage"), STR("()Ljava/lang/String;"), false, false);
+      assert(method);
+      bjvm_stack_value obj = call_interpreter_synchronous(thr, method, nullptr);
+      heap_string message;
+      if (obj.obj) {
+        BJVM_CHECK(read_string_to_utf8(thr, &message, obj.obj) == 0);
+      }
+      fprintf(stderr, "Error in init phase %.*s: %.*s, %s\n",
+        fmt_slice(thr->current_exception->descriptor->name), fmt_slice(phases[i]),
+        obj.obj ? message.chars : "no message");
+      abort();
+    }
 
     method = bjvm_method_lookup(vm->cached_classdescs->system, STR("getProperty"),
                                 STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
@@ -973,7 +986,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
     ret = call_interpreter_synchronous(thr, method, args2); // returns a String
 
     heap_string java_home;
-    CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
+    BJVM_CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
     free_heap_str(java_home);
   }
 
@@ -1043,7 +1056,7 @@ struct bjvm_native_MethodType *bjvm_resolve_method_type(bjvm_thread *thread, bjv
   return (void *)result.obj;
 }
 
-static bool mh_handle_supported(bjvm_method_handle_kind kind) {
+[[maybe_unused]] static bool mh_handle_supported(bjvm_method_handle_kind kind) {
   switch (kind) {
   case BJVM_MH_KIND_GET_FIELD:
   case BJVM_MH_KIND_INVOKE_STATIC:
@@ -1136,7 +1149,7 @@ DEFINE_ASYNC(resolve_mh_mt) {
 
   mh_type_info_t info = {};
   int err = compute_mh_type_info(args->thread, args->info, &info);
-  assert(err == 0);
+  BJVM_CHECK(err == 0);
 
   // Call MethodType.makeImpl(rtype, ptypes, true)
   bjvm_cp_method *make = bjvm_method_lookup(args->thread->vm->cached_classdescs->method_type, STR("makeImpl"),
@@ -2140,7 +2153,7 @@ struct bjvm_native_Class *bjvm_get_class_mirror(bjvm_thread *thread, bjvm_classd
   bjvm_classdesc *java_lang_Class = bootstrap_lookup_class(thread, STR("java/lang/Class"));
   bjvm_initialize_class_t init = {.args = {thread, java_lang_Class}};
   future_t klass_init_state = bjvm_initialize_class(&init);
-  assert(klass_init_state.status == FUTURE_READY);
+  BJVM_CHECK(klass_init_state.status == FUTURE_READY);
   if (init._result) {
     // TODO raise exception
     UNREACHABLE();

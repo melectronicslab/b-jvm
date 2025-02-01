@@ -292,24 +292,6 @@ DECLARE_ASYNC(int, resolve_methodref,
               invoked_method(bjvm_initialize_class)
 );
 
-// Continue execution of a thread.
-//
-// When popping frames off the stack, if the passed frame "final_frame" is
-// popped off, the result of that frame (if any) is placed in "result", and
-// either INTERP_RESULT_OK or INTERP_RESULT_EXC is returned, depending on
-// whether the frame completed abruptly.
-DECLARE_ASYNC(
-    bjvm_stack_value, bjvm_interpret,
-    locals(
-      uint16_t sd;
-      uint16_t async_ctx; // offset within the secondary stack
-    ),
-    arguments(
-      bjvm_thread *thread;
-      bjvm_stack_frame *raw_frame;
-    ),
-);
-
 typedef struct {
   void *ptr;
   size_t len;
