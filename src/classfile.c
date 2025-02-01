@@ -1718,6 +1718,12 @@ void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx,
   if (utf8_equals(attr->name, "Code")) {
     attr->kind = BJVM_ATTRIBUTE_KIND_CODE;
     attr->code = parse_code_attribute(attr_reader, ctx);
+  } else if (utf8_equals(attr->name, "StackMapTable")) {
+    attr->kind = BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE;
+    attr->smt.entries_count =
+        reader_next_u16(&attr_reader, "stack map table count");
+    attr->smt.data = arena_alloc(ctx->arena, attr_reader.len, sizeof(uint8_t));
+    memcpy(attr->smt.data, attr_reader.bytes, attr_reader.len);
   } else if (utf8_equals(attr->name, "ConstantValue")) {
     attr->kind = BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE;
     attr->constant_value = checked_cp_entry(
