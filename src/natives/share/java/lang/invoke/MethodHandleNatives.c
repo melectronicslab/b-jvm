@@ -139,7 +139,7 @@ method_resolve_result resolve_mn(bjvm_thread *thread, bjvm_handle *mn) {
     slice field_desc =
         unparse_classdesc_to_field_descriptor(field_str, field_type);
     bjvm_cp_field *field =
-        bjvm_easy_field_lookup(search_on, hslc(search_for), field_desc);
+        bjvm_field_lookup(search_on, hslc(search_for), field_desc);
     if (!field) {
       break;
     }

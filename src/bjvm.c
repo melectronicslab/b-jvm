@@ -402,9 +402,6 @@ void bjvm_register_native(bjvm_vm *vm, const slice class, const slice method_nam
   ent->callback = callback;
 }
 
-bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor, slice name, slice method_descriptor,
-                                   bool search_superclasses, bool search_superinterfaces);
-
 void read_string(bjvm_thread *, bjvm_obj_header *obj, s8 **buf, size_t *len) {
   assert(utf8_equals(hslc(obj->descriptor->name), "java/lang/String"));
   bjvm_obj_header *array = ((struct bjvm_native_String *)obj)->value;
@@ -715,10 +712,6 @@ __attribute__((noinline)) bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *class
   }
 
   return nullptr;
-}
-
-bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const slice name, const slice descriptor) {
-  return bjvm_field_lookup(classdesc, name, descriptor);
 }
 
 bjvm_obj_header *get_main_thread_group(bjvm_thread *thread);

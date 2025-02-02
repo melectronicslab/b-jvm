@@ -16,14 +16,14 @@ void push_bjvm_native(slice class_name, slice method_name, slice signature, bjvm
 
 static inline void __obj_store_field(bjvm_obj_header *thing, slice field_name, bjvm_stack_value value,
                                      slice desc) {
-  bjvm_cp_field *field = bjvm_easy_field_lookup(thing->descriptor, field_name, desc);
+  bjvm_cp_field *field = bjvm_field_lookup(thing->descriptor, field_name, desc);
   assert(field);
 
   bjvm_set_field(thing, field, value);
 }
 
 static inline bjvm_stack_value __obj_load_field(bjvm_obj_header *thing, slice field_name, slice desc) {
-  bjvm_cp_field *field = bjvm_easy_field_lookup(thing->descriptor, field_name, desc);
+  bjvm_cp_field *field = bjvm_field_lookup(thing->descriptor, field_name, desc);
   assert(field);
 
   return bjvm_get_field(thing, field);
