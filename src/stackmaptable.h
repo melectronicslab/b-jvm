@@ -31,7 +31,8 @@ static_assert(STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT == 8);
 
 typedef struct {
   stack_map_frame_validation_type_kind kind;
-  slice *name;  // for OBJECT and UNINIT only
+  // for OBJECT and UNINIT only. internally used to detect whether a TOP entry is explicit or implicit
+  slice *name;
 } stack_map_frame_validation_type;
 
 typedef struct {
@@ -48,7 +49,7 @@ typedef struct {
 void stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method);
 bool stack_map_frame_iterator_has_next(const stack_map_frame_iterator *iter);
 // Returns nonzero on error and fills in the heap_string
-int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, heap_string *error);
+int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **error);
 void stack_map_frame_iterator_uninit(stack_map_frame_iterator *iter);
 
 #endif //STACKMAPTABLE_H

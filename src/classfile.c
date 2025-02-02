@@ -1723,6 +1723,7 @@ void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx,
     attr->smt.entries_count =
         reader_next_u16(&attr_reader, "stack map table count");
     attr->smt.data = arena_alloc(ctx->arena, attr_reader.len, sizeof(uint8_t));
+    attr->smt.length = attr_reader.len;
     memcpy(attr->smt.data, attr_reader.bytes, attr_reader.len);
   } else if (utf8_equals(attr->name, "ConstantValue")) {
     attr->kind = BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE;

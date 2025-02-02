@@ -15,10 +15,12 @@ typedef struct {
   bool is_first;  // is this the first stack map frame besides the 0th, implicit frame
 } impl;
 
+enum { EXPLICIT_TOP = 0 /* default */, IMPLICIT_TOP };
+
 static validation_type *allocate_validation_buffer(size_t count) {
   validation_type *b = malloc((count + 1 /* to allow for some slop */) * sizeof(validation_type));
   while (count--)
-    b[count] = (validation_type) { STACK_MAP_FRAME_VALIDATION_TYPE_TOP };
+    b[count] = (validation_type) { STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (void*) EXPLICIT_TOP };
   return b;
 }
 
@@ -29,6 +31,8 @@ static stack_map_frame_validation_type_kind lut[] = {
   [BJVM_TYPE_KIND_FLOAT] = STACK_MAP_FRAME_VALIDATION_TYPE_FLOAT,
   [BJVM_TYPE_KIND_DOUBLE] = STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE
 };
+
+static validation_type implicit_top = { STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (void*) IMPLICIT_TOP };
 
 // Create the initial stack frame for the method
 static void init_locals(iterator *iter, const bjvm_cp_method *method) {
@@ -48,27 +52,29 @@ static void init_locals(iterator *iter, const bjvm_cp_method *method) {
   auto *d = method->descriptor;
   assert(d && "Method has no descriptor");
   for (int j = 0; j < d->args_count; ++i, ++j) {
-    bjvm_type_kind kind = field_to_kind(d->args + i);
+    bjvm_type_kind kind = field_to_kind(d->args + j);
     iter->locals[i].kind = lut[kind];
     if (kind == BJVM_TYPE_KIND_REFERENCE) {
       iter->locals[i].name = nullptr; // TODO
     } else if (kind == BJVM_TYPE_KIND_DOUBLE || kind == BJVM_TYPE_KIND_LONG) {
-      iter->locals[i + 1].kind = STACK_MAP_FRAME_VALIDATION_TYPE_TOP;
+      iter->locals[i + 1] = implicit_top;
       i++;
     }
   }
   iter->locals_size = i;
 }
 
-
 void stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method) {
   impl *I = iter->_impl = malloc(sizeof(impl));
   auto *code = I->code = method->code;
   assert(code && "Method has no code");
   // Look for a StackMapTable, otherwise zero-init
+  I->has_next = false;
+  I->is_first = true;
   for (int i = 0; i < code->attributes_count; ++i) {
     if (BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE == code->attributes[i].kind) {
       I->table_copy = code->attributes[i].smt;
+      I->has_next = true;
       goto found;
     }
   }
@@ -78,7 +84,11 @@ void stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp
   init_locals(iter, method);
   iter->stack_size = 0;
   iter->stack = allocate_validation_buffer(code->max_stack);
-  I->has_next = false;
+
+  if (I->table_copy.length && I->table_copy.data[0] == 0) {
+    // Funny case where the first SMT entry is same_frame with offset 0; skip it
+    stack_map_frame_iterator_next(iter, nullptr);
+  }
 }
 
 bool stack_map_frame_iterator_has_next(const stack_map_frame_iterator *iter) {
@@ -112,7 +122,7 @@ static int read_verification_type(iterator *iter, validation_type *result, bool 
   if (read_u8(iter->_impl, &type_kind, error))
     return -1;
   if (type_kind > STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT) {
-    error = "Invalid verification type";
+    *error = "Invalid verification type";
     return -1;
   }
   result->kind = type_kind;
@@ -122,6 +132,8 @@ static int read_verification_type(iterator *iter, validation_type *result, bool 
     if (read_u16(iter->_impl, &index, error))
       return -1;
     result->name = nullptr;  // TODO
+  } else {
+    result->name = nullptr;
   }
   *is_wide = type_kind == STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE || type_kind == STACK_MAP_FRAME_VALIDATION_TYPE_LONG;
   return 0;
@@ -137,34 +149,33 @@ static void increment_pc(iterator *iter, int delta) {
   }
 }
 
+bool is_implicit_top(stack_map_frame_validation_type local) {
+  return local.kind == STACK_MAP_FRAME_VALIDATION_TYPE_TOP && local.name == (void*) IMPLICIT_TOP;
+}
+
 // Returns nonzero on error and fills in the heap_string
 int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **error) {
   impl *I =iter->_impl;
   int max_locals = I->code->max_locals;
   int max_stack = I->code->max_stack;
 
-  uint8_t frame_kind;
+  uint8_t frame_kind = 0;
   if (read_u8(iter->_impl, &frame_kind, error))
     return -1;
   uint16_t offset_delta;
   bool is_wide;
   if (frame_kind <= 63) {
-    // same_frame, don't change anything
+    // same_frame, just set stack to zero
     offset_delta = frame_kind;
+    iter->stack_size = 0;
   } else if ((64 <= frame_kind && frame_kind <= 127) || frame_kind == 247) {
     // same_locals_1_stack_item_frame
-    if (iter->stack_size != 0)
-      return -1;
     iter->stack_size = 1;
     bool is_extended = frame_kind == 247;
     if (is_extended && read_u16(iter->_impl, &offset_delta, error))
       return -1;
     if (read_verification_type(iter, iter->stack, &is_wide, error))
       return -1;
-    if (is_wide) {
-      iter->stack_size = 2;
-      (iter->stack + 1)->kind = STACK_MAP_FRAME_VALIDATION_TYPE_TOP;
-    }
     if (!is_extended)
       offset_delta = frame_kind - 64;
   } else if (128 <= frame_kind && frame_kind <= 246) {
@@ -172,17 +183,24 @@ int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **e
     return -1;
   } else if (248 <= frame_kind && frame_kind <= 250) {
     // chop_frame
-    if (iter->stack_size != 0)
-      return -1;
-    iter->locals_size -= 251 - frame_kind;
+    for (int pop_i = 0; pop_i < 251 - frame_kind; ++pop_i) {
+      if (is_implicit_top(iter->locals[iter->locals_size-- - 1])) {
+        iter->locals_size--;
+      }
+    }
+
     if (iter->locals_size < 0) {
       *error = "chop_frame underflow";
       return -1;
     }
+    iter->stack_size = 0;
+    if (read_u16(iter->_impl, &offset_delta, error))
+      return -1;
   } else if (frame_kind == 251) {
     // same_frame_extended
     if (read_u16(iter->_impl, &offset_delta, error))
       return -1;
+    iter->stack_size = 0;
   } else if (252 <= frame_kind && frame_kind <= 254) {
     // append_frame
     if (read_u16(iter->_impl, &offset_delta, error))
@@ -194,13 +212,12 @@ int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **e
       if (read_verification_type(iter, local, &is_wide, error))
         return -1;
       if (is_wide)
-        (iter->locals + iter->locals_size++)->kind = STACK_MAP_FRAME_VALIDATION_TYPE_TOP;
+        *(iter->locals + iter->locals_size++) = implicit_top;
       if (iter->locals_size > max_locals) {
         *error = "append_frame locals overflow";
         return -1;
       }
     }
-    increment_pc(iter, offset_delta);
   } else {
     // full_frame
     assert(frame_kind == 255);
@@ -216,7 +233,7 @@ int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **e
       if (read_verification_type(iter, local, &is_wide, error))
         return -1;
       if (is_wide)
-        (iter->locals + iter->locals_size++)->kind = STACK_MAP_FRAME_VALIDATION_TYPE_TOP;
+        *(iter->locals + iter->locals_size++) = implicit_top;
       if (iter->locals_size > max_locals) {
         *error = "full_frame locals overflow";
         return -1;
@@ -228,8 +245,6 @@ int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **e
       validation_type *stack = iter->stack + iter->stack_size++;
       if (read_verification_type(iter, stack, &is_wide, error))
         return -1;
-      if (is_wide)
-        (iter->stack + iter->stack_size++)->kind = STACK_MAP_FRAME_VALIDATION_TYPE_TOP;
       if (iter->stack_size > max_stack) {
         *error = "full_frame stack overflow";
         return -1;
