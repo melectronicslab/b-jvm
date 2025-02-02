@@ -69,7 +69,7 @@ static inline void ByteArrayStoreBlock(object array, int32_t offset, int32_t len
   assert(data != nullptr);
   assert((*ArrayLength(array) - offset) <= length);
 
-  memcpy(ArrayData(array), data, length);
+  memcpy((int8_t*)ArrayData(array) + offset, data, length);
 }
 
 #define MAKE_PRIMITIVE_LOAD_STORE(name, type)                                  \
