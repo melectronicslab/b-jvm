@@ -291,8 +291,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
 //   - No interrupts will occur as a result of executing this function.
 bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, u8 argc) {
   assert(method != nullptr && "Method is null");
-  [[maybe_unused]] bool argc_ok = argc == method->descriptor->args_count + !(method->access_flags & BJVM_ACCESS_STATIC);
-  assert(argc_ok && "Wrong argc");
+  assert(argc == bjvm_argc(method) && "Wrong argc");
   if (method->access_flags & BJVM_ACCESS_NATIVE) {
     return bjvm_push_native_frame(thread, method, method->descriptor, args, argc);
   }
@@ -1612,8 +1611,7 @@ bjvm_async_run_ctx *create_run_ctx(bjvm_thread *thread, bjvm_cp_method *method, 
     return nullptr;
   }
 
-  int nonstatic = !(method->access_flags & BJVM_ACCESS_STATIC);
-  u8 argc = method->descriptor->args_count + nonstatic;
+  u8 argc = bjvm_argc(method);
 
   bjvm_stack_value *stack_top = (bjvm_stack_value *)(thread->frame_buffer + thread->frame_buffer_used);
   size_t args_size = sizeof(bjvm_stack_value) * argc;
@@ -1997,7 +1995,8 @@ DEFINE_ASYNC(bjvm_invokevirtual_signature_polymorphic) {
     assert(self->method);
 
     args->sp_->obj = (void *)mh;
-    self->frame = bjvm_push_frame(thread, self->method, args->sp_, self->argc = self->method->descriptor->args_count);
+    u8 argc = self->argc = self->method->descriptor->args_count;
+    self->frame = bjvm_push_frame(thread, self->method, args->sp_, argc);
 
     // TODO arena allocate this in the VM so that it gets freed appropriately
     // if the VM is deleted

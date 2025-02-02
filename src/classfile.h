@@ -759,6 +759,8 @@ typedef struct bjvm_cp_method {
   bool failed_jit;
 } bjvm_cp_method;
 
+int bjvm_argc(const bjvm_cp_method* method) ;
+
 typedef struct bjvm_cp_field {
   bjvm_access_flags access_flags;
   slice name;
