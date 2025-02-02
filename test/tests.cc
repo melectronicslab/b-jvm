@@ -588,6 +588,13 @@ TEST_CASE("Random API") {
   REQUIRE(result.stdout_.find("Random Integer (50 to 150)") != std::string::npos);  // Just check that it completes :)
 }
 
+TEST_CASE("Basic input/output") {
+  auto result = run_test_case("test_files/system_input/", false);
+  //  REQUIRE(result.stdout_ == R"(Egg
+  //Chicken
+  //)");
+}
+
 TEST_CASE("Sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver" << std::endl;
