@@ -581,7 +581,6 @@ struct method_analysis_ctx {
   char *insn_error;
   heap_string *error;
   struct edge *edges;
-  bool *is_branch_target;  // if 1, this insn is the target of a branch
   int edges_count;
   int edges_cap;
 };
@@ -649,7 +648,6 @@ int push_branch_target(struct method_analysis_ctx *ctx, u32 curr,
 
     *VECTOR_PUSH(ctx->edges, ctx->edges_count, ctx->edges_cap) =
         (struct edge){.start = curr, .end = target};
-    ctx->is_branch_target[target] = true;
   }
   return 0;
 }
@@ -1329,7 +1327,6 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
   int result = 0;
   ctx.stack.entries =
       calloc(code->max_stack + 1, sizeof(bjvm_analy_stack_entry));
-  ctx.is_branch_target = calloc(code->insn_count, sizeof(bool));
 
   // After jumps, we can infer the stack and locals at these points
   bjvm_analy_stack_state *inferred_stacks = ctx.inferred_stacks =
@@ -1410,20 +1407,6 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
     if (analyze_instruction(insn, i, &ctx)) {
       result = -1;
       goto done;
-    }
-  }
-
-  // Check that all entries have been filled
-  for (int i = 0; i < code->insn_count; ++i) {
-    if (!inferred_stacks[i].entries) {
-      heap_string context = code_attribute_to_string(method->code);
-      heap_string unreachable_code_error = make_heap_str(context.len + 100);
-      bprintf(hslc(unreachable_code_error),
-              "Unreachable code detected at instruction %d\nContext:\n%.*s\n",
-              i, fmt_slice(context));
-      // TODO report
-      UNREACHABLE();
-      break;
     }
   }
 
@@ -1524,7 +1507,6 @@ done:
   free(ctx.stack_before.entries);
   free(ctx.locals_swizzle);
   free(ctx.edges);
-  free(ctx.is_branch_target);
   free(inferred_stacks);
   free(inferred_locals);
 

@@ -7,14 +7,6 @@
 
 #include "classfile.h"
 
-typedef enum {
-  STACK_MAP_FRAME_KIND_SAME,
-  STACK_MAP_FRAME_KIND_SAME_1_STACK,
-  STACK_MAP_FRAME_CHOP,
-  STACK_MAP_FRAME_APPEND,
-  STACK_MAP_FRAME_FULL
-} stack_map_frame_kind;
-
 typedef enum : uint8_t {
   STACK_MAP_FRAME_VALIDATION_TYPE_TOP,
   STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER,

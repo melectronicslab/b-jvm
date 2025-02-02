@@ -641,6 +641,10 @@ TEST_CASE("Playground") {
   auto result = run_test_case("test_files/compiler", false);
 }
 
+TEST_CASE("printf") {
+  auto result = run_test_case("test_files/printf", false, "Printf");
+}
+
 #if 0
 TEST_CASE("Filesystem") {
   auto result = run_test_case("test_files/filesystem", true, "Filesystem");
