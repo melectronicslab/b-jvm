@@ -4,10 +4,10 @@
 #ifndef OBJECTS_H
 #define OBJECTS_H
 
-uint64_t ObjNextHashCode();
+u64 ObjNextHashCode();
 
 
-typedef enum : int32_t {
+typedef enum : s32 {
   STRING_CODER_LATIN1 = 0,
   STRING_CODER_UTF16 = 1
 } string_coder_kind;
