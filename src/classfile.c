@@ -1864,6 +1864,8 @@ bjvm_cp_method parse_method(cf_byteslice *reader,
       arena_alloc(ctx->arena, method.attributes_count, sizeof(bjvm_attribute));
   method.descriptor =
       arena_alloc(ctx->arena, 1, sizeof(bjvm_method_descriptor));
+  method.is_ctor = utf8_equals(method.name, "<init>");
+  method.is_clinit = utf8_equals(method.name, "<clinit>");
   char *error = parse_method_descriptor(method.unparsed_descriptor,
                                         method.descriptor, ctx->arena);
   if (error) {

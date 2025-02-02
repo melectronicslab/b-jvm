@@ -216,8 +216,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredFields0, "(Z)[Ljava/lang/reflect/F
 }
 
 bool include_ctor(const bjvm_cp_method *method, bool public_only) {
-  return utf8_equals(method->name, "<init>") && !utf8_equals(method->name, "<clinit>") &&
-         (!public_only || method->access_flags & BJVM_ACCESS_PUBLIC);
+  return method->is_ctor && (!public_only || method->access_flags & BJVM_ACCESS_PUBLIC);
 }
 
 // Get a list of all constructors on a class, optionally filtering by
@@ -248,7 +247,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredConstructors0, "(Z)[Ljava/lang/ref
 }
 
 bool include_method(const bjvm_cp_method *method, bool public_only) {
-  return !utf8_equals(method->name, "<init>") && !utf8_equals(method->name, "<clinit>") &&
+  return !method->is_ctor && !method->is_clinit &&
          (!public_only || method->access_flags & BJVM_ACCESS_PUBLIC);
 }
 

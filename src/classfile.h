@@ -734,6 +734,10 @@ typedef struct bjvm_cp_method {
   bjvm_attribute_code *code;
 
   bool is_signature_polymorphic;
+  // Whether the method is a constructor (i.e., its name is <init>)
+  bool is_ctor;
+  // Whether the method is a <clinit> (class initialization method)
+  bool is_clinit;
   bjvm_classdesc *my_class;
 
   // Index in the vtable, if applicable. Only set at class link time.

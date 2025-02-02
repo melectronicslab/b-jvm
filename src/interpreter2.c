@@ -1759,7 +1759,7 @@ __attribute__((noinline)) static s64 invokespecial_impl_void(ARGS_VOID) {
   // The resolved method is not an instance initialization method;
   // If the symbolic reference names a class (not an interface), then that
   // class is a superclass of the current class."
-  if (!utf8_equals(method_info->resolved->name, "<init>") &&
+  if (!method->is_ctor &&
       (!(lookup_on->access_flags & BJVM_ACCESS_INTERFACE) &&
        (method->my_class != lookup_on && bjvm_instanceof(method->my_class, lookup_on)))) {
     lookup_on = method->my_class->super_class->classdesc;

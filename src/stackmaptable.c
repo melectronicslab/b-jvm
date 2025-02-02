@@ -38,11 +38,10 @@ static validation_type implicit_top = { STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (vo
 static void init_locals(iterator *iter, const bjvm_cp_method *method) {
   iter->locals = allocate_validation_buffer(method->code->max_locals);
   s32 i = 0;
-  bool is_ctor = utf8_equals(method->name, "<init>");
   if (!(method->access_flags & BJVM_ACCESS_STATIC)) {
     // Write "this"
     iter->locals[i++] = (validation_type) {
-      is_ctor ? STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS : STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
+      method->is_ctor ? STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS : STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
       // TODO this is probs UB
       (slice*)&method->my_class->name
     };

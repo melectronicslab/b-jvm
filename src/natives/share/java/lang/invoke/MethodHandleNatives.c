@@ -94,7 +94,7 @@ void fill_mn_with_method(bjvm_thread *thread, bjvm_handle *mn,
                          bjvm_cp_method *method, bool dynamic_dispatch) {
   assert(method);
   bjvm_classdesc *search_on = method->my_class;
-  if (utf8_equals(method->name, "<init>")) {
+  if (method->is_ctor) {
     bjvm_reflect_initialize_constructor(thread, search_on, method);
     M->flags |= MN_IS_CONSTRUCTOR;
   } else {
