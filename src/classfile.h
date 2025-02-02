@@ -503,6 +503,7 @@ typedef enum {
   BJVM_ATTRIBUTE_KIND_ANNOTATION_DEFAULT,
   BJVM_ATTRIBUTE_KIND_NEST_HOST,
   BJVM_ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE,
+  BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE,
 } bjvm_attribute_kind;
 
 typedef struct bjvm_method_descriptor {
@@ -686,6 +687,13 @@ typedef struct {
   slice name;
 } bjvm_attribute_source_file;
 
+// We leave the attribute unparsed until analysis time (which is technically incorrect I think, but whatever)
+typedef struct {
+  uint8_t *data;
+  int32_t length;
+  int32_t entries_count;
+} attribute_stack_map_table;
+
 typedef struct bjvm_attribute {
   bjvm_attribute_kind kind;
   slice name;
@@ -705,6 +713,7 @@ typedef struct bjvm_attribute {
     bjvm_attribute_annotation_default annotation_default;
     bjvm_attribute_signature signature;
     bjvm_attribute_local_variable_table lvt;
+    attribute_stack_map_table smt;
     bjvm_cp_class_info *nest_host;
   };
 } bjvm_attribute;
@@ -776,6 +785,7 @@ typedef struct bjvm_classdesc {
 
   bjvm_access_flags access_flags;
   heap_string name;
+  bjvm_cp_class_info *self;
   bjvm_cp_class_info *super_class;
   bjvm_cp_class_info *nest_host;
 

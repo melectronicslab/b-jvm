@@ -1718,6 +1718,13 @@ void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx,
   if (utf8_equals(attr->name, "Code")) {
     attr->kind = BJVM_ATTRIBUTE_KIND_CODE;
     attr->code = parse_code_attribute(attr_reader, ctx);
+  } else if (utf8_equals(attr->name, "StackMapTable")) {
+    attr->kind = BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE;
+    attr->smt.entries_count =
+        reader_next_u16(&attr_reader, "stack map table count");
+    attr->smt.data = arena_alloc(ctx->arena, attr_reader.len, sizeof(uint8_t));
+    attr->smt.length = attr_reader.len;
+    memcpy(attr->smt.data, attr_reader.bytes, attr_reader.len);
   } else if (utf8_equals(attr->name, "ConstantValue")) {
     attr->kind = BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE;
     attr->constant_value = checked_cp_entry(
@@ -2063,6 +2070,7 @@ parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len,
       &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"),
                         BJVM_CP_KIND_CLASS, "this class")
            ->class_info;
+  cf->self = this_class;
   cf->name = (heap_string){.chars = this_class->name.chars,
                            .len = this_class->name.len}; // TODO unjank
 
