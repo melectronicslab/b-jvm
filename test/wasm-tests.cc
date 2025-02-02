@@ -2,7 +2,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <wasm/wasm_utils.h>
-#include <wasm/wasm_adapter.h>
 
 TEST_CASE("write leb128 unsigned", "[wasm]") {
   bjvm_bytevector ctx = {nullptr};

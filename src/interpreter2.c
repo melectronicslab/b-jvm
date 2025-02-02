@@ -96,9 +96,9 @@ const static bytecode_handler_t *bytecode_tables[4] = {
 // Sad :(
 #define WITH_UNDEF(expr)                                                                                               \
   do {                                                                                                                    \
-    s64 a_undef;                                                                                                   \
-    float b_undef;                                                                                                     \
-    double c_undef;                                                                                                    \
+    [[maybe_unused]] s64 a_undef = 0;                                                                                                   \
+    [[maybe_unused]] float b_undef = 0;                                                                                                     \
+    [[maybe_unused]] double c_undef = 0;                                                                                                    \
     MUSTTAIL return (expr);                                                                                                               \
   } while (0);
 #else
