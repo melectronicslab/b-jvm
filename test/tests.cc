@@ -642,7 +642,11 @@ TEST_CASE("Playground") {
 }
 
 TEST_CASE("printf") {
-  auto result = run_test_case("test_files/printf", false, "Printf");
+  auto result = run_test_case("test_files/printf", true, "Printf");
+  REQUIRE(result.stdout_ == R"(Hello!
+Hello, world!
+Hello, 42! The answer is 42. The quick brown fox jumps over the lazy dog.
+)");
 }
 
 #if 0
