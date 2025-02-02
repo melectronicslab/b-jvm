@@ -94,7 +94,7 @@ void fill_mn_with_method(bjvm_thread *thread, bjvm_handle *mn,
                          bjvm_cp_method *method, bool dynamic_dispatch) {
   assert(method);
   bjvm_classdesc *search_on = method->my_class;
-  if (utf8_equals(method->name, "<init>")) {
+  if (method->is_ctor) {
     bjvm_reflect_initialize_constructor(thread, search_on, method);
     M->flags |= MN_IS_CONSTRUCTOR;
   } else {
@@ -215,7 +215,7 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandleNatives, getMemberVMInfo,
 
 
   AWAIT(call_interpreter, thread, valueOf, (bjvm_stack_value[]){{.l = mn->vmindex}});
-  bjvm_stack_value vmindex_long_obj = get_async_result(call_interpreter);
+  bjvm_handle *vmindex_long = bjvm_make_handle(thread, get_async_result(call_interpreter).obj);
   // todo: check exception
 
   bjvm_obj_header *array = CreateObjectArray1D(
@@ -223,7 +223,8 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandleNatives, getMemberVMInfo,
   // todo check exception (out of memory error)
 
   bjvm_obj_header **data = ArrayData(array);
-  data[0] = vmindex_long_obj.obj;
+  data[0] = vmindex_long->obj;
+  bjvm_drop_handle(thread, vmindex_long);
 
   // either mn->type or mn itself depending on the kind
   switch (unpack_mn_kind(mn)) {

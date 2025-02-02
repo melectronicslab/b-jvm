@@ -1,19 +1,9 @@
-//
-// Created by Cowpox on 2/1/25.
-//
+// StackMapTable parser
 
 #ifndef STACKMAPTABLE_H
 #define STACKMAPTABLE_H
 
 #include "classfile.h"
-
-typedef enum {
-  STACK_MAP_FRAME_KIND_SAME,
-  STACK_MAP_FRAME_KIND_SAME_1_STACK,
-  STACK_MAP_FRAME_CHOP,
-  STACK_MAP_FRAME_APPEND,
-  STACK_MAP_FRAME_FULL
-} stack_map_frame_kind;
 
 typedef enum : uint8_t {
   STACK_MAP_FRAME_VALIDATION_TYPE_TOP,
@@ -31,25 +21,32 @@ static_assert(STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT == 8);
 
 typedef struct {
   stack_map_frame_validation_type_kind kind;
-  // for OBJECT and UNINIT only. internally used to detect whether a TOP entry is explicit or implicit
+  // for OBJECT and UNINIT only.
+  // Internally used to detect whether a TOP entry is explicit or implicit
   slice *name;
 } stack_map_frame_validation_type;
 
 typedef struct {
+  // The formal program counter of the current frame
   int pc;
+  // The state of the stack
   stack_map_frame_validation_type *stack;
   int stack_size;
-  stack_map_frame_validation_type *locals; // in unswizzled indices
+  // in unswizzled indices
+  stack_map_frame_validation_type *locals;
   int locals_size;
 
-  // pimpl
+  // pointer to implementation
   void *_impl;
 } stack_map_frame_iterator;
 
-void stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method);
+// Initializes the iterator with the given method
+int stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method);
+// Check if there is another frame to read
 bool stack_map_frame_iterator_has_next(const stack_map_frame_iterator *iter);
-// Returns nonzero on error and fills in the heap_string
+// Returns nonzero on a failure to read and fills in the error with a constant (although not terribly helpful) message
 int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **error);
+// Frees the iterator
 void stack_map_frame_iterator_uninit(stack_map_frame_iterator *iter);
 
 #endif //STACKMAPTABLE_H

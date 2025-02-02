@@ -74,8 +74,10 @@ DECLARE_NATIVE("java/lang", Class, getEnclosingMethod0, "()[Ljava/lang/Object;")
   if (!enclosing_method.class_info) {
     return value_null();
   }
-  bjvm_obj_header *array = CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 3);
-  bjvm_obj_header **data = ArrayData(array);
+  bjvm_handle *array = bjvm_make_handle(thread,
+    CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 3));
+#define data ((bjvm_obj_header **)ArrayData(array->obj))
+
   int error = bjvm_resolve_class(thread, enclosing_method.class_info);
   BJVM_CHECK(!error);
   data[0] = (void *)enclosing_method.class_info->classdesc->mirror;
@@ -83,7 +85,10 @@ DECLARE_NATIVE("java/lang", Class, getEnclosingMethod0, "()[Ljava/lang/Object;")
     data[1] = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->name, true);
     data[2] = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->descriptor, true);
   }
-  return (bjvm_stack_value){.obj = array};
+#undef data
+  bjvm_stack_value result = (bjvm_stack_value) { .obj = array->obj };
+  bjvm_drop_handle(thread, array);
+  return result;
 }
 
 DECLARE_NATIVE("java/lang", Class, getDeclaringClass0, "()Ljava/lang/Class;") {
@@ -138,7 +143,7 @@ DECLARE_NATIVE("java/lang", Class, initClassName, "()Ljava/lang/String;") {
   bjvm_classdesc *classdesc = bjvm_unmirror_class(obj->obj);
   INIT_STACK_STRING(name, 1000);
   bprintf(name, "%.*s", fmt_slice(classdesc->name));
-  for (int i = 0; i < classdesc->name.len; ++i) {
+  for (u32 i = 0; i < classdesc->name.len; ++i) {
     name.chars[i] = name.chars[i] == '/' ? '.' : name.chars[i];
   }
   name.len = classdesc->name.len;
@@ -211,8 +216,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredFields0, "(Z)[Ljava/lang/reflect/F
 }
 
 bool include_ctor(const bjvm_cp_method *method, bool public_only) {
-  return utf8_equals(method->name, "<init>") && !utf8_equals(method->name, "<clinit>") &&
-         (!public_only || method->access_flags & BJVM_ACCESS_PUBLIC);
+  return method->is_ctor && (!public_only || method->access_flags & BJVM_ACCESS_PUBLIC);
 }
 
 // Get a list of all constructors on a class, optionally filtering by
@@ -243,7 +247,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredConstructors0, "(Z)[Ljava/lang/ref
 }
 
 bool include_method(const bjvm_cp_method *method, bool public_only) {
-  return !utf8_equals(method->name, "<init>") && !utf8_equals(method->name, "<clinit>") &&
+  return !method->is_ctor && !method->is_clinit &&
          (!public_only || method->access_flags & BJVM_ACCESS_PUBLIC);
 }
 
