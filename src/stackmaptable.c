@@ -49,7 +49,7 @@ static void init_locals(iterator *iter, const bjvm_cp_method *method) {
   }
 
   // Write the remaining objects
-  auto *d = method->descriptor;
+  bjvm_method_descriptor *d = method->descriptor;
   assert(d && "Method has no descriptor");
   for (int j = 0; j < d->args_count; ++i, ++j) {
     bjvm_type_kind kind = field_to_kind(d->args + j);
@@ -66,7 +66,7 @@ static void init_locals(iterator *iter, const bjvm_cp_method *method) {
 
 void stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method) {
   impl *I = iter->_impl = malloc(sizeof(impl));
-  auto *code = I->code = method->code;
+  bjvm_attribute_code *code = I->code = method->code;
   assert(code && "Method has no code");
   // Look for a StackMapTable, otherwise zero-init
   I->has_next = false;
