@@ -651,6 +651,12 @@ Hello, 42! The answer is 42. The quick brown fox jumps over the lazy dog.
 }
 #endif
 
+TEST_CASE("benchmark startup") {
+  BENCHMARK("benchmark startup") {
+    auto result = run_test_case("test_files/basic_lambda", true);
+  };
+}
+
 #if 0
 TEST_CASE("Filesystem") {
   auto result = run_test_case("test_files/filesystem", true, "Filesystem");
