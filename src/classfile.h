@@ -785,6 +785,7 @@ typedef struct bjvm_classdesc {
 
   bjvm_access_flags access_flags;
   heap_string name;
+  bjvm_cp_class_info *self;
   bjvm_cp_class_info *super_class;
   bjvm_cp_class_info *nest_host;
 

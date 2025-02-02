@@ -2069,6 +2069,7 @@ parse_result_t bjvm_parse_classfile(const uint8_t *bytes, size_t len,
       &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"),
                         BJVM_CP_KIND_CLASS, "this class")
            ->class_info;
+  cf->self = this_class;
   cf->name = (heap_string){.chars = this_class->name.chars,
                            .len = this_class->name.len}; // TODO unjank
 
