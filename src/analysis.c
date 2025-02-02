@@ -523,7 +523,7 @@ int bjvm_locals_on_method_entry(const bjvm_cp_method *method,
   const bjvm_attribute_code *code = method->code;
   const bjvm_method_descriptor *desc = method->descriptor;
   assert(code);
-  uint16_t max_locals = code->max_locals;
+  u16 max_locals = code->max_locals;
   locals->entries = calloc(max_locals, sizeof(bjvm_analy_stack_entry));
   *locals_swizzle = malloc(max_locals * sizeof(int));
   for (int i = 0; i < max_locals; ++i) {
@@ -636,8 +636,8 @@ struct method_analysis_ctx {
       goto local_type_mismatch;                                                \
   }
 
-int push_branch_target(struct method_analysis_ctx *ctx, uint32_t curr,
-                       uint32_t target) {
+int push_branch_target(struct method_analysis_ctx *ctx, u32 curr,
+                       u32 target) {
   assert((int)target < ctx->code->insn_count);
   if (ctx->inferred_stacks[target].entries) {
     if ((ctx->insn_error = expect_analy_stack_states_equal(
@@ -1058,7 +1058,7 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
     PUSH_ENTRY(insn_source(kind, insn_index))
     if (ent->kind == BJVM_CP_KIND_INTEGER) { // rewrite to iconst or lconst
       insn->kind = bjvm_insn_iconst;
-      insn->integer_imm = (int32_t)ent->integral.value;
+      insn->integer_imm = (s32)ent->integral.value;
     } else if (ent->kind == BJVM_CP_KIND_FLOAT) {
       insn->kind = bjvm_insn_fconst;
       insn->f_imm = (float)ent->floating.value;
@@ -1442,8 +1442,8 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
       calloc(code->insn_count, sizeof(bjvm_analy_stack_state));
   bjvm_analy_stack_state *inferred_locals = ctx.inferred_locals =
       calloc(code->insn_count, sizeof(bjvm_analy_stack_state));
-  uint16_t *insn_index_to_stack_depth =
-      calloc(code->insn_count, sizeof(uint16_t));
+  u16 *insn_index_to_stack_depth =
+      calloc(code->insn_count, sizeof(u16));
 
   // Initialize stack to the stack at exception handler entry
   ctx.stack.entries_cap = code->max_stack + 1;
@@ -1722,7 +1722,7 @@ int bjvm_scan_basic_blocks(const bjvm_attribute_code *code,
   if (analy->blocks)
     return 0; // already done
   // First, record all branch targets.
-  int *ts = calloc(code->max_formal_pc, sizeof(uint32_t));
+  int *ts = calloc(code->max_formal_pc, sizeof(u32));
   int tc = 0;
   ts[tc++] = 0; // mark entry point
   for (int i = 0; i < code->insn_count; ++i) {
@@ -1823,7 +1823,7 @@ static void get_dfs_tree(bjvm_basic_block *block, int *block_to_pre,
   block->dfs_post = (*postorder_clock)++;
 }
 
-static void idom_dfs(bjvm_basic_block *block, int *visited, uint32_t *clock) {
+static void idom_dfs(bjvm_basic_block *block, int *visited, u32 *clock) {
   block->idom_pre = (*clock)++;
   visited[block->my_index] = 1;
   bjvm_dominated_list_t *dlist = &block->idominates;
@@ -1912,7 +1912,7 @@ void bjvm_compute_dominator_tree(bjvm_code_analysis *analy) {
   for (int preorder_i = 1; preorder_i < block_count; ++preorder_i) {
     int i = pre_to_block[preorder_i];
     int idom = analy->blocks[i].idom =
-        i == reldom[i] ? semidom[i] : analy->blocks[reldom[i]].idom;
+        i == reldom[i] ? semidom[i] : (s32)analy->blocks[reldom[i]].idom;
     bjvm_dominated_list_t *sdlist = &analy->blocks[idom].idominates;
     *VECTOR_PUSH(sdlist->list, sdlist->count, sdlist->cap) = i;
   }
@@ -1923,7 +1923,7 @@ void bjvm_compute_dominator_tree(bjvm_code_analysis *analy) {
   free(reldom);
   // Now compute a DFS tree on the immediate dominator tree (still need a
   // "visited" array because there are duplicate edges)
-  uint32_t clock = 1;
+  u32 clock = 1;
   // Re-use F as the visited array
   memset(F, 0, block_count * sizeof(int));
   idom_dfs(analy->blocks, F, &clock);
@@ -2148,7 +2148,7 @@ static int extended_npe_phase2(const bjvm_cp_method *method,
 
 // If a NullPointerException is thrown by the given instruction, generate a message like "Cannot load from char array
 // because the return value of "charAt" is null".
-int get_extended_npe_message(bjvm_cp_method *method, uint16_t pc, heap_string *result) {
+int get_extended_npe_message(bjvm_cp_method *method, u16 pc, heap_string *result) {
   // See https://openjdk.org/jeps/358 for more information on how this works, but there are basically two phases: One
   // which depends on the particular instruction that failed (e.g. caload -> cannot load from char array) and the other
   // which uses the instruction's sources to produce a more informative message.
