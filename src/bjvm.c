@@ -1946,17 +1946,6 @@ DEFINE_ASYNC(bjvm_invokevirtual_signature_polymorphic) {
   struct bjvm_native_MethodHandle *mh = (void *)target;
   struct bjvm_native_MethodType *targ = (void *)mh->type;
 
-  // varargs iff mh is of class AsVarargsCollector
-  /*bool is_varargs =
-      utf8_equals(hslc(mh->base.descriptor->name), "java/lang/invoke/MethodHandleImpl$AsVarargsCollector");
-  if (is_varargs) {
-    printf("Varargs: %.*s\n", fmt_slice(args->method->name));
-    dump_method_type(stderr, targ);
-    dump_method_type(stderr, provider_mt);
-    // To-implement
-    UNREACHABLE();
-  }*/
-
   bool mts_are_same = method_types_compatible(provider_mt, targ);
   bool is_invoke_exact = utf8_equals_utf8(args->method->name, STR("invokeExact"));
   // only raw calls to MethodHandle.invoke involve "asType" conversions
