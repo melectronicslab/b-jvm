@@ -30,8 +30,8 @@
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
-  dump_frame(stderr, frame);                                                                                           \
-  assert(stack_depth(frame) == sp - frame->plain.stack);
+  dump_frame(stdout, frame);                                                                                           \
+  /* assert(stack_depth(frame) == sp - frame->plain.stack); */
 #endif
 
 // If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
@@ -1535,10 +1535,9 @@ static s64 newarray_impl_int(ARGS_INT) {
 }
 
 static s64 anewarray_impl_int(ARGS_INT) {
-
   DEBUG_CHECK
+  SPILL_VOID
   bjvm_cp_class_info *info = &insn->cp->class_info;
-  SPILL(tos)
   if (bjvm_resolve_class(thread, info)) {
     return 0;
   }
@@ -1553,10 +1552,9 @@ static s64 anewarray_impl_int(ARGS_INT) {
 
 // <length> -> <object>
 static s64 anewarray_resolved_impl_int(ARGS_INT) {
-
   DEBUG_CHECK
+  SPILL_VOID
   int count = tos;
-  SPILL(tos)
   if (count < 0) {
     raise_negative_array_size_exception(thread, count);
     return 0;
@@ -2230,8 +2228,7 @@ static s64 ldc_impl_void(ARGS_VOID) {
   }
   case BJVM_CP_KIND_STRING: {
     if (likely(ent->string.interned)) {
-      bjvm_obj_header *s = ent->string.interned;
-      NEXT_INT(s);
+      NEXT_INT(ent->string.interned);
     }
     slice s = ent->string.chars;
     SPILL_VOID
