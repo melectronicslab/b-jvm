@@ -130,7 +130,7 @@ void read_string(bjvm_thread *thread, bjvm_obj_header *obj, s8 **buf,
 int read_string_to_utf8(bjvm_thread *thread, heap_string *result, bjvm_obj_header *obj);
 typedef struct bjvm_vm bjvm_vm;
 
-typedef void (*bjvm_write_byte)(int ch, void *param);
+typedef void (*bjvm_write_byte)(char * buf, int len, void *param);
 
 #define BJVM_CARD_BYTES 4096
 

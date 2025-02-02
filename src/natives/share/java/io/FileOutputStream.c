@@ -23,13 +23,9 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
   char *buf = data + offset;
 
   if (unix_fd == 1 && thread->vm->write_stdout) {
-    for (int i = 0; i < length; ++i) {
-      thread->vm->write_stdout(buf[i], thread->vm->write_byte_param);
-    }
+    thread->vm->write_stdout(buf, length, thread->vm->write_byte_param);
   } else if (unix_fd == 2 && thread->vm->write_stderr) {
-    for (int i = 0; i < length; ++i) {
-      thread->vm->write_stderr(buf[i], thread->vm->write_byte_param);
-    }
+    thread->vm->write_stderr(buf, length, thread->vm->write_byte_param);
   } else { // do an actual syscall
     while (length > 0) {
       s32 written = (s32) write(unix_fd, buf, length);

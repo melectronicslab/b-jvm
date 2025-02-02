@@ -199,13 +199,13 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 
   options.classpath = (slice){.chars = (char *)classpath.c_str(),
                                   .len = static_cast<u16>(classpath.size())};
-  options.write_stdout = capture_stdio ? +[](int ch, void *param) {
-    auto *result = (TestCaseResult *)param;
-    result->stdout_ += (char)ch;
+  options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stdout_.append(buf, len);
   } : nullptr;
-  options.write_stderr = capture_stdio ? +[](int ch, void *param) {
-    auto *result = (TestCaseResult *)param;
-    result->stderr_ += (char)ch;
+  options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stderr_.append(buf, len);
   } : nullptr;
   options.write_byte_param = &result;
 
