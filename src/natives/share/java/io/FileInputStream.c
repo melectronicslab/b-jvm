@@ -10,34 +10,24 @@ DECLARE_NATIVE("java/io", FileInputStream, initIDs, "()V") {
   return value_null();
 }
 
-static bjvm_obj_header **get_fd(bjvm_obj_header *obj) {
-  bjvm_cp_field *field = bjvm_easy_field_lookup(
-      obj->descriptor, STR("fd"), STR("Ljava/io/FileDescriptor;"));
-  return (void *)obj + field->byte_offset;
-}
-
-static int *get_native_fd(bjvm_obj_header *obj) {
-  bjvm_cp_field *native_fd_field =
-      bjvm_easy_field_lookup(obj->descriptor, STR("fd"), STR("I"));
-  return (void *)obj + native_fd_field->byte_offset;
-}
-
 DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
   if (!args[0].handle->obj)
     return value_null();
 
   heap_string filename = AsHeapString(args[0].handle->obj, on_oom);
 
-  bjvm_obj_header *fd = *get_fd(obj->obj);
+  // this method does no allocations or yielding, so we can use the same pointer
+  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   assert(fd);
-  int unix_fd = open(filename.chars, O_RDONLY);
+  s32 unix_fd = open(filename.chars, O_RDONLY);
+  StoreFieldInt(fd, "fd", unix_fd);
+
   if (unix_fd < 0) {
     // TODO use errno to give a better error message
     bjvm_raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
                          hslc(filename));
-  } else {
-    *get_native_fd(fd) = unix_fd;
   }
+
   free_heap_str(filename);
   return value_null();
 
@@ -47,9 +37,10 @@ DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
 
 DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   assert(argc == 3);
-  bjvm_obj_header *fd = *get_fd(obj->obj);
+  // this method does no allocations or yielding, so we can use the same pointer
+  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   assert(fd);
-  int unix_fd = *get_native_fd(fd);
+  s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd < 0) {
     bjvm_raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
                             STR("File not found"));
@@ -62,15 +53,15 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
     return value_null();
   }
 
-  int offset = args[1].i;
-  int length = args[2].i;
+  s32 offset = args[1].i;
+  s32 length = args[2].i;
 
   if (offset < 0 || length < 0 || offset + length > *ArrayLength(array)) {
     ThrowLangException(ArrayIndexOutOfBoundsException);
     return value_null();
   }
 
-  int bytes_read = (int) read(unix_fd, ArrayData(array) + offset, length);
+  s32 bytes_read = (s32) read(unix_fd, ArrayData(array) + offset, length);
   if (bytes_read < 0) {
     bjvm_raise_vm_exception(thread, STR("java/io/IOException"),
                            STR("Error reading file"));
@@ -80,21 +71,23 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
 }
 
 DECLARE_NATIVE("java/io", FileInputStream, close0, "()V") {
-  bjvm_obj_header *fd = *get_fd(obj->obj);
+  // this method does no allocations or yielding, so we can use the same pointer
+  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   assert(fd);
-  int handle = *get_native_fd(fd);
-  if (handle < 0) {
-    close(handle);
-  }
-  *get_native_fd(fd) = -1; // make invalid again
+
+  s32 unix_fd = LoadFieldInt(fd, "fd");
+  if (unix_fd != -1) close(unix_fd);
+  StoreFieldInt(fd, "fd", -1);
+
   return value_null();
 }
 
 DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
-  bjvm_obj_header *fd = *get_fd(obj->obj);
+  // this method does no allocations or yielding, so we can use the same pointer
+  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   assert(fd);
-  int unix_fd = *get_native_fd(fd);
-  if (unix_fd < 0) {
+  s32 unix_fd = LoadFieldInt(fd, "fd");
+  if (unix_fd == -1) {
     return (bjvm_stack_value) { .i = 0 };
   }
 
@@ -105,5 +98,6 @@ DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
                            STR("Error getting available bytes"));
     return value_null();
   }
-  return (bjvm_stack_value) { .i = (int32_t ) available };
+
+  return (bjvm_stack_value) { .i = (s32) available };
 }
