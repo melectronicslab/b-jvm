@@ -11,8 +11,7 @@ static bjvm_obj_header* create_unix_exception(bjvm_thread *thread, int errno_cod
   bjvm_obj_header *obj = new_object(thread, classdesc);
 
   bjvm_cp_method *method = bjvm_method_lookup(classdesc, STR("<init>"), STR("(I)V"), true, false);
-  int result = bjvm_thread_run_leaf(thread, method, (bjvm_stack_value[]){{.obj = obj}, {.i = errno_code}}, nullptr);
-  assert(result == 0);
+  call_interpreter_synchronous(thread, method, (bjvm_stack_value[]){{.obj = obj}, {.i = errno_code}}); // constructor is void method
 
   return obj;
 }
@@ -124,5 +123,22 @@ DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, map0, "(Ljava/io/FileDescri
     thread->current_exception = create_unix_exception(thread, errno);
     return value_null();
   }
+  arrput(thread->vm->mmap_allocations, ((mmap_allocation) { result, len }));
   return (bjvm_stack_value){.l = (int64_t)result};
+}
+
+DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, unmap0, "(JJ)V") {
+  void* addr = (void*)args[0].l;
+  size_t len = args[1].l;
+  for (size_t i = 0; i < arrlen(thread->vm->mmap_allocations); ++i) {
+    if (thread->vm->mmap_allocations[i].ptr == addr) {
+      arrdelswap(thread->vm->mmap_allocations, i);
+      break;
+    }
+  }
+  int result = munmap(addr, len);
+  if (result) {
+    thread->current_exception = create_unix_exception(thread, errno);
+  }
+  return value_null();
 }

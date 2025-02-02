@@ -1,4 +1,4 @@
-#include <natives-dsl.h>
+#include "natives-dsl.h"
 
 bjvm_cp_entry *lookup_entry(bjvm_obj_header *obj, int index,
                             bjvm_cp_kind expected) {
@@ -21,7 +21,7 @@ DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getUTF8At0,
   if (!entry) {
     return (bjvm_stack_value){.obj = nullptr};
   }
-  return (bjvm_stack_value){.obj = bjvm_intern_string(thread, entry->utf8)};
+  return (bjvm_stack_value){.obj = MakeJStringFromModifiedUTF8(thread, entry->utf8, true)};
 }
 
 DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getIntAt0,

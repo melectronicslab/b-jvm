@@ -42,7 +42,7 @@ double get_time() {
 }
 
 TEST_CASE("Test STR() macro") {
-  bjvm_utf8 utf = STR("abc");
+  slice utf = STR("abc");
   REQUIRE(utf.chars[0] == 'a');
   REQUIRE(utf.chars[1] == 'b');
   REQUIRE(utf.chars[2] == 'c');
@@ -649,12 +649,14 @@ TEST_CASE("Class loading") {
 }
 #endif
 
-#if 0
 TEST_CASE("java.lang.reflect.Method", "[reflection]") {
-  auto result = run_test_case("test_files/reflection_method/", false, "ReflectionMethod");
-  REQUIRE(result.stdout_ == "abcdefghijklmnopqr");
+  auto result = run_test_case("test_files/reflection_method/", true, "ReflectionMethod");
+  REQUIRE(result.stdout_ == R"(Reached!
+Reached2!
+aReached3!
+Reached4!
+b3030ef)");
 }
-#endif
 
 TEST_CASE("Simple generic types") {
   auto result = run_test_case("test_files/generic_types/", true, "GenericBox");

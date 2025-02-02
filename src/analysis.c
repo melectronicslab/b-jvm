@@ -11,6 +11,7 @@
 
 #include <inttypes.h>
 #include <limits.h>
+#include <stackmaptable.h>
 
 typedef struct {
   bjvm_type_kind type;
@@ -455,19 +456,19 @@ void copy_analy_stack_state(bjvm_analy_stack_state st,
   out->entries_count = st.entries_count;
 }
 
-char *expect_analy_stack_states_equal(bjvm_analy_stack_state a,
-                                      bjvm_analy_stack_state b) {
-  if (a.entries_count != b.entries_count)
+char *expect_jump_target_compatible(bjvm_analy_stack_state target,
+                                      bjvm_analy_stack_state from) {
+  if (target.entries_count != from.entries_count)
     goto fail;
-  for (int i = 0; i < a.entries_count; ++i) {
-    if (a.entries[i].type != b.entries[i].type) {
+  for (int i = 0; i < target.entries_count; ++i) {
+    if (target.entries[i].type != BJVM_TYPE_KIND_VOID && target.entries[i].type != from.entries[i].type) {
       goto fail;
     }
   }
   return nullptr;
 fail:;
-  char *a_str = print_analy_stack_state(&a),
-       *b_str = print_analy_stack_state(&b);
+  char *a_str = print_analy_stack_state(&target),
+       *b_str = print_analy_stack_state(&from);
   char *buf = malloc(strlen(a_str) + strlen(b_str) + 128);
   snprintf(buf, strlen(a_str) + strlen(b_str) + 128,
            "Stack mismatch:\nPreviously inferred: %s\nFound: %s", a_str, b_str);
@@ -482,25 +483,6 @@ bool is_kind_wide(bjvm_type_kind kind) {
 
 bool bjvm_is_field_wide(bjvm_field_descriptor desc) {
   return is_kind_wide(desc.base_kind) && !desc.dimensions;
-}
-
-bjvm_type_kind kind_to_representable_kind(bjvm_type_kind kind) {
-  switch (kind) {
-  case BJVM_TYPE_KIND_BOOLEAN:
-  case BJVM_TYPE_KIND_CHAR:
-  case BJVM_TYPE_KIND_BYTE:
-  case BJVM_TYPE_KIND_SHORT:
-  case BJVM_TYPE_KIND_INT:
-    return BJVM_TYPE_KIND_INT;
-  default:
-    return kind;
-  }
-}
-
-bjvm_type_kind field_to_kind(const bjvm_field_descriptor *field) {
-  if (field->dimensions)
-    return BJVM_TYPE_KIND_REFERENCE;
-  return kind_to_representable_kind(field->base_kind);
 }
 
 void write_kinds_to_bitset(const bjvm_analy_stack_state *inferred_stack,
@@ -596,8 +578,6 @@ struct method_analysis_ctx {
   int *locals_swizzle;
   bjvm_analy_stack_state *inferred_stacks;
   bjvm_analy_stack_state *inferred_locals;
-  int *branch_q;
-  int branch_count;
   char *insn_error;
   heap_string *error;
   struct edge *edges;
@@ -659,14 +639,13 @@ int push_branch_target(struct method_analysis_ctx *ctx, uint32_t curr,
                        uint32_t target) {
   assert((int)target < ctx->code->insn_count);
   if (ctx->inferred_stacks[target].entries) {
-    if ((ctx->insn_error = expect_analy_stack_states_equal(
+    if ((ctx->insn_error = expect_jump_target_compatible(
              ctx->inferred_stacks[target], ctx->stack))) {
       return -1;
     }
   } else {
     copy_analy_stack_state(ctx->stack, &ctx->inferred_stacks[target]);
     ctx->inferred_stacks[target].from_jump_target = true;
-    ctx->branch_q[ctx->branch_count++] = target;
 
     *VECTOR_PUSH(ctx->edges, ctx->edges_count, ctx->edges_cap) =
         (struct edge){.start = curr, .end = target};
@@ -1161,14 +1140,14 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
   }
   case bjvm_insn_goto: {
     if (push_branch_target(ctx, insn_index, insn->index))
-      return -1;
+      goto error;
     ctx->stack_terminated = true;
     break;
   }
   case bjvm_insn_jsr: {
     PUSH(REFERENCE)
     if (push_branch_target(ctx, insn_index, insn->index))
-      return -1;
+      goto error;
     break;
   }
   case bjvm_insn_if_acmpeq:
@@ -1176,7 +1155,7 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
     POP(REFERENCE)
     POP(REFERENCE)
     if (push_branch_target(ctx, insn_index, insn->index))
-      return -1;
+      goto error;
     break;
   }
   case bjvm_insn_if_icmpeq:
@@ -1195,14 +1174,14 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
   case bjvm_insn_ifle: {
     POP(INT)
     if (push_branch_target(ctx, insn_index, insn->index))
-      return -1;
+      goto error;
     break;
   }
   case bjvm_insn_ifnonnull:
   case bjvm_insn_ifnull: {
     POP(REFERENCE)
     if (push_branch_target(ctx, insn_index, insn->index))
-      return -1;
+      goto error;
     break;
   }
   case bjvm_insn_iconst:
@@ -1228,20 +1207,20 @@ int analyze_instruction(bjvm_bytecode_insn *insn, int insn_index, struct method_
   case bjvm_insn_tableswitch: {
     POP(INT)
     if (push_branch_target(ctx, insn_index, insn->tableswitch->default_target))
-      return -1;
+      goto error;
     for (int i = 0; i < insn->tableswitch->targets_count; ++i)
       if (push_branch_target(ctx, insn_index, insn->tableswitch->targets[i]))
-        return -1;
+        goto error;
     ctx->stack_terminated = true;
     break;
   }
   case bjvm_insn_lookupswitch: {
     POP(INT)
     if (push_branch_target(ctx, insn_index, insn->lookupswitch->default_target))
-      return -1;
+      goto error;
     for (int i = 0; i < insn->lookupswitch->targets_count; ++i)
       if (push_branch_target(ctx, insn_index, insn->lookupswitch->targets[i]))
-        return -1;
+        goto error;
     ctx->stack_terminated = true;
     break;
   }
@@ -1268,7 +1247,7 @@ stack_underflow:
   ctx->insn_error = strdup("Stack underflow:");
   goto error;
 stack_type_mismatch:
-  ctx->insn_error = "Stack type mismatch:";
+  ctx->insn_error = strdup("Stack type mismatch:");
 error:;
 
   *ctx->error = make_heap_str(50000);
@@ -1432,6 +1411,45 @@ void intersect_analy_stack_state(bjvm_analy_stack_state *src, bjvm_analy_stack_s
   }
 }
 
+static bjvm_type_kind validation_type_kind_to_representation(stack_map_frame_validation_type_kind kind) {
+  switch (kind) {
+  case STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER:
+    return BJVM_TYPE_KIND_INT;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_FLOAT:
+    return BJVM_TYPE_KIND_FLOAT;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_LONG:
+    return BJVM_TYPE_KIND_LONG;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE:
+    return BJVM_TYPE_KIND_DOUBLE;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT:
+    return BJVM_TYPE_KIND_REFERENCE;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_NULL:
+    return BJVM_TYPE_KIND_REFERENCE;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS:
+    return BJVM_TYPE_KIND_REFERENCE;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT:
+    return BJVM_TYPE_KIND_REFERENCE;
+  case STACK_MAP_FRAME_VALIDATION_TYPE_TOP:
+    return BJVM_TYPE_KIND_VOID;
+  }
+  UNREACHABLE();
+}
+
+void use_stack_map_frame(struct method_analysis_ctx *ctx, const stack_map_frame_iterator *iter) {
+  ctx->stack.entries_count = iter->stack_size;
+  for (int i = 0; i < iter->stack_size; ++i) {
+    ctx->stack.entries[i].type = validation_type_kind_to_representation(iter->stack[i].kind);
+  }
+  // First set all locals to void
+  for (int i = 0; i < ctx->locals.entries_count; ++i) {
+    ctx->locals.entries[i].type = BJVM_TYPE_KIND_VOID;
+  }
+  // Then use iterator locals, but don't forget to swizzle
+  for (int i = 0; i < iter->locals_size; ++i) {
+    ctx->locals.entries[ctx->locals_swizzle[i]].type =
+      validation_type_kind_to_representation(iter->locals[i].kind);
+  }
+}
 
 /**
  * Analyze the method's code attribute if it exists, rewriting instructions in
@@ -1501,6 +1519,9 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
 
   bjvm_code_analysis *analy = method->code_analysis = malloc(sizeof(bjvm_code_analysis));
 
+  stack_map_frame_iterator iter;
+  stack_map_frame_iterator_init(&iter, method);
+
   analy->insn_count = code->insn_count;
   analy->dominator_tree_computed = false;
   for (int i = 0; i < 5; ++i) {
@@ -1509,55 +1530,26 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
   }
   analy->blocks = nullptr;
   analy->insn_index_to_stack_depth = insn_index_to_stack_depth;
-  ctx.branch_q = calloc(code->max_formal_pc, sizeof(int));
 
   for (int i = 0; i < code->insn_count; ++i) {
-    if (inferred_stacks[i].entries) {
-      if (ctx.stack_terminated) {
-        copy_analy_stack_state(inferred_stacks[i], &ctx.stack);
-      } else {
-        intersect_analy_stack_state(&inferred_stacks[i], &ctx.stack);
+    bjvm_bytecode_insn *insn = &code->code[i];
+    if (insn->original_pc == iter.pc) {
+      use_stack_map_frame(&ctx, &iter);
+      if (stack_map_frame_iterator_has_next(&iter)) {
+        const char *c_str_error;
+        if (stack_map_frame_iterator_next(&iter, &c_str_error)) {  // stackmaptable issue
+          *error = make_heap_str(strlen(c_str_error));
+          strncpy(error->chars, c_str_error, error->len);
+          result = -1;
+          goto invalid_vt;
+        }
       }
-
-      bjvm_analy_stack_state *this_locals = &inferred_locals[i];
-      if (inferred_locals[i].is_exc_handler) {
-        // At exception handlers, use the local variable table of the start of
-        // the exception block. Later we'll intersect this down.
-        copy_analy_stack_state(inferred_locals[this_locals->exc_handler_start],
-                               &ctx.locals);
-        copy_analy_stack_state(ctx.locals, this_locals);
-      }
-
-      inferred_stacks[i].from_jump_target = false;
-      ctx.stack_terminated = false;
-    }
-
-    if (inferred_locals[i].entries) {
-      copy_analy_stack_state(inferred_locals[i], &ctx.locals);
-    }
-
-    if (ctx.stack_terminated) {
-      // We expect to be able to recover the stack/locals from a previously
-      // encountered jump, or an exception handler. If this isn't possible then
-      // there will be weeping and wailing and gnashing of teeth, and we'll
-      // choose a different branch to continue analyzing from.
-      if (ctx.branch_count == 0) {
-        break;
-      }
-      i = ctx.branch_q[--ctx.branch_count];
-      copy_analy_stack_state(inferred_stacks[i], &ctx.stack);
-      copy_analy_stack_state(inferred_locals[i], &ctx.locals);
-      inferred_stacks[i].from_jump_target = false;
-      ctx.stack_terminated = false;
     }
 
     copy_analy_stack_state(ctx.stack, &ctx.stack_before);
-    if (!inferred_stacks[i].entries)
-      copy_analy_stack_state(ctx.stack, &inferred_stacks[i]);
-    if (!inferred_locals[i].entries)
-      copy_analy_stack_state(ctx.locals, &inferred_locals[i]);
+    copy_analy_stack_state(ctx.stack, &inferred_stacks[i]);
+    copy_analy_stack_state(ctx.locals, &inferred_locals[i]);
 
-    bjvm_bytecode_insn *insn = &code->code[i];
     if (analyze_instruction(insn, i, &ctx)) {
       result = -1;
       goto done;
@@ -1579,9 +1571,6 @@ int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error) {
       break;
     }
   }
-
-  while (gross_quadratic_algorithm_to_refine_local_references(&ctx))
-    ;
 
   analy->sources = calloc(code->insn_count, sizeof(*analy->sources));
   for (int i = 0; i < code->insn_count; ++i) {
@@ -1674,7 +1663,7 @@ done:
   }
 
   invalid_vt:
-  free(ctx.branch_q);
+  stack_map_frame_iterator_uninit(&iter);
   free(ctx.stack.entries);
   free(ctx.locals.entries);
   free(ctx.stack_before.entries);
@@ -2053,7 +2042,7 @@ static int extended_npe_phase2(const bjvm_cp_method *method,
   bjvm_code_analysis *analy = method->code_analysis;
   bjvm_attribute_local_variable_table *lvt = method->code->local_variable_table;
   int original_pc = method->code->code[insn_i].original_pc;
-  const bjvm_utf8 *ent;
+  const slice *ent;
 
   switch (source->kind) {
   case BJVM_VARIABLE_SRC_KIND_PARAMETER:
@@ -2072,7 +2061,7 @@ static int extended_npe_phase2(const bjvm_cp_method *method,
     assert(index >= 0 && index < method->code->insn_count);
     bjvm_bytecode_insn *insn = method->code->code + index;
 
-    if (lvt && ((ent = bjvm_lvt_lookup(insn->index, insn->original_pc, lvt)))) {
+    if (lvt && ((ent = bjvm_lvt_lookup(insn->index, original_pc, lvt)))) {
       bjvm_string_builder_append(builder, "%.*s", fmt_slice(*ent));
     } else {
       bjvm_string_builder_append(builder, "<local%d>", insn->index);
@@ -2255,7 +2244,7 @@ int get_extended_npe_message(bjvm_cp_method *method, uint16_t pc, heap_string *r
                                phase2_builder.write_pos, phase2_builder.data);
   }
 
-  *result = make_heap_str_from((bjvm_utf8) {builder.data, builder.write_pos});
+  *result = make_heap_str_from((slice) {builder.data, builder.write_pos});
 
 error:
   bjvm_string_builder_free(&builder);

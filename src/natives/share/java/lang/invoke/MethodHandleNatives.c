@@ -1,4 +1,6 @@
+#include <linkage.h>
 #include <natives-dsl.h>
+#include <reflection.h>
 
 DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, registerNatives,
                "()V") {
@@ -28,7 +30,7 @@ bjvm_method_handle_kind unpack_mn_kind(struct bjvm_native_MemberName *mn) {
   return mn->flags >> 24 & 0xf;
 }
 
-bjvm_utf8 unparse_classdesc_to_field_descriptor(bjvm_utf8 str,
+slice unparse_classdesc_to_field_descriptor(slice str,
                                                 const bjvm_classdesc *desc) {
   switch (desc->kind) {
   case BJVM_CD_KIND_ORDINARY:
@@ -54,18 +56,18 @@ enum {
 
 heap_string unparse_method_type(const struct bjvm_native_MethodType *mt) {
   INIT_STACK_STRING(desc, 10000);
-  bjvm_utf8 write = desc;
-  write = slice(write, bprintf(write, "(").len);
+  slice write = desc;
+  write = subslice(write, bprintf(write, "(").len);
   for (int i = 0; i < *ArrayLength(mt->ptypes); ++i) {
     struct bjvm_native_Class *class =
         *((struct bjvm_native_Class **)ArrayData(mt->ptypes) + i);
-    write = slice(write, unparse_classdesc_to_field_descriptor(
+    write = subslice(write, unparse_classdesc_to_field_descriptor(
                              write, class->reflected_class)
                              .len);
   }
-  write = slice(write, bprintf(write, ")").len);
+  write = subslice(write, bprintf(write, ")").len);
   struct bjvm_native_Class *rtype = (void *)mt->rtype;
-  write = slice(
+  write = subslice(
       write,
       unparse_classdesc_to_field_descriptor(write, rtype->reflected_class).len);
   desc.len = write.chars - desc.chars;
@@ -105,7 +107,7 @@ void fill_mn_with_method(bjvm_thread *thread, bjvm_handle *mn,
       dynamic_dispatch ? 1 : -1; // ultimately, itable or vtable entry index
   M->flags |= method->access_flags;
   if (!method->is_signature_polymorphic)
-    M->type = bjvm_intern_string(thread, method->unparsed_descriptor);
+    M->type = MakeJStringFromModifiedUTF8(thread, method->unparsed_descriptor, true);
   M->clazz = (void *)bjvm_get_class_mirror(thread, search_on);
 }
 
@@ -134,7 +136,7 @@ method_resolve_result resolve_mn(bjvm_thread *thread, bjvm_handle *mn) {
   case BJVM_MH_KIND_PUT_FIELD:
     bjvm_classdesc *field_type = bjvm_unmirror_class(M->type);
     INIT_STACK_STRING(field_str, 1000);
-    bjvm_utf8 field_desc =
+    slice field_desc =
         unparse_classdesc_to_field_descriptor(field_str, field_type);
     bjvm_cp_field *field =
         bjvm_easy_field_lookup(search_on, hslc(search_for), field_desc);
@@ -199,25 +201,29 @@ DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, resolve,
   return (bjvm_stack_value){.obj = (void *)mn->obj};
 }
 
-DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, getMemberVMInfo,
-               "(Ljava/lang/invoke/MemberName;)Ljava/lang/Object;") {
-  // Create object array of length 2. Make the first element the vmtarget and
-  // the second the vmindex as a boxed Long.
+DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandleNatives, getMemberVMInfo,
+               "(Ljava/lang/invoke/MemberName;)Ljava/lang/Object;",
+               locals(), invoked_methods(invoked_method(call_interpreter))) {
+  // Create object array of length 2. Returns {vmindex, vmtarget},
+  // boxing the vmindex as a Long.
   assert(argc == 1);
-  struct bjvm_native_MemberName *mn = (void *)args[0].handle->obj;
-  bjvm_obj_header *array = CreateObjectArray1D(
-      thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 2);
-
-  bjvm_obj_header **data = ArrayData(array);
+#define mn ((struct bjvm_native_MemberName *) args[0].handle->obj)
 
   bjvm_classdesc *Long = bootstrap_lookup_class(thread, STR("java/lang/Long"));
-  bjvm_cp_method *valueFrom = bjvm_method_lookup(
+  bjvm_cp_method *valueOf = bjvm_method_lookup(
       Long, STR("valueOf"), STR("(J)Ljava/lang/Long;"), false, false);
 
-  bjvm_stack_value result;
-  bjvm_thread_run_root(thread, valueFrom, (bjvm_stack_value[]){{.l = mn->vmindex}},
-                  &result);
-  data[0] = result.obj;
+
+  AWAIT(call_interpreter, thread, valueOf, (bjvm_stack_value[]){{.l = mn->vmindex}});
+  bjvm_stack_value vmindex_long_obj = get_async_result(call_interpreter);
+  // todo: check exception
+
+  bjvm_obj_header *array = CreateObjectArray1D(
+      thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 2);
+  // todo check exception (out of memory error)
+
+  bjvm_obj_header **data = ArrayData(array);
+  data[0] = vmindex_long_obj.obj;
 
   // either mn->type or mn itself depending on the kind
   switch (unpack_mn_kind(mn)) {
@@ -232,13 +238,14 @@ DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, getMemberVMInfo,
   case BJVM_MH_KIND_NEW_INVOKE_SPECIAL:
   case BJVM_MH_KIND_INVOKE_VIRTUAL:
   case BJVM_MH_KIND_INVOKE_INTERFACE:
-    data[1] = (void *)mn;
+    data[1] = (void *) mn;
     break;
   default:
     UNREACHABLE();
   }
 
-  return (bjvm_stack_value){.obj = array};
+  ASYNC_END((bjvm_stack_value) { .obj = array });
+#undef mn
 }
 
 DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, init,
@@ -246,7 +253,7 @@ DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, init,
   bjvm_handle *mn = args[0].handle;
   bjvm_obj_header *target = args[1].handle->obj;
 
-  bjvm_utf8 s = hslc(target->descriptor->name);
+  slice s = hslc(target->descriptor->name);
   if (utf8_equals(s, "java/lang/reflect/Method")) {
     bjvm_cp_method *m = *bjvm_unmirror_method(target);
     fill_mn_with_method(thread, mn, m, true);
