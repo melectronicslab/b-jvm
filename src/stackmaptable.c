@@ -6,17 +6,17 @@ typedef stack_map_frame_iterator iterator;
 
 typedef struct {
   bjvm_attribute_code *code;
-  attribute_stack_map_table table_copy;
-  bool has_next;
+  attribute_stack_map_table table_copy;  // the pointers here indicate how much is left to read
+  bool has_next;  // whether there is another frame to read
   bool is_first;  // are we about to compute the first stack map frame besides the 0th, implicit frame
 } impl;
 
 enum { EXPLICIT_TOP = 0 /* default */, IMPLICIT_TOP };
 
 static validation_type *allocate_validation_buffer(size_t count) {
-  validation_type *b = malloc((count + 1 /* to allow for some slop */) * sizeof(validation_type));
-  while (count--)
-    b[count] = (validation_type) { STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (void*) EXPLICIT_TOP };
+  validation_type *b = calloc(count + 1 /* to allow for some slop in wide kinds */, sizeof(validation_type));
+  static_assert(STACK_MAP_FRAME_VALIDATION_TYPE_TOP == 0);
+  static_assert(EXPLICIT_TOP == 0);
   return b;
 }
 
@@ -40,7 +40,6 @@ static int init_locals(iterator *iter, const bjvm_cp_method *method) {
     // Write "this"
     iter->locals[i++] = (validation_type) {
       method->is_ctor ? STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS : STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
-      // TODO this is probs UB
       (slice*)&method->my_class->name
     };
   }
@@ -54,8 +53,7 @@ static int init_locals(iterator *iter, const bjvm_cp_method *method) {
     if (kind == BJVM_TYPE_KIND_REFERENCE) {
       iter->locals[i].name = nullptr; // TODO
     } else if (kind == BJVM_TYPE_KIND_DOUBLE || kind == BJVM_TYPE_KIND_LONG) {
-      iter->locals[i + 1] = implicit_top;
-      i++;
+      iter->locals[++i] = implicit_top;
     }
   }
   iter->locals_size = i;
@@ -64,29 +62,22 @@ static int init_locals(iterator *iter, const bjvm_cp_method *method) {
 
 int stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method) {
   memset(iter, 0, sizeof(*iter));  // clear memory
-  impl *I = iter->_impl = malloc(sizeof(impl));
+  impl *I = iter->_impl = calloc(1, sizeof(impl));
   if (!I)
     return -1;
   bjvm_attribute_code *code = I->code = method->code;
   assert(code && "Method has no code");
   // Look for a StackMapTable, otherwise zero-init
-  I->has_next = false;
   I->is_first = true;
   for (int i = 0; i < code->attributes_count; ++i) {
     if (BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE == code->attributes[i].kind) {
       I->table_copy = code->attributes[i].smt;
       I->has_next = true;
-      goto found;
+      break;
     }
   }
-  memset(&I->table_copy, 0, sizeof(I->table_copy));
-  found:
-  iter->pc = 0;
-  if (init_locals(iter, method))
-    goto oom;
-  iter->stack_size = 0;
   iter->stack = allocate_validation_buffer(code->max_stack);
-  if (!iter->stack)
+  if (!iter->stack || init_locals(iter, method))
     goto oom;
 
   if (I->table_copy.length && I->table_copy.data[0] == 0) {
@@ -195,13 +186,14 @@ int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **e
   } else if (248 <= frame_kind && frame_kind <= 250) {
     // chop_frame
     int pop_count = 251 - frame_kind;
+    int locals_size = iter->locals_size;
     for (int pop_i = 0; pop_i < pop_count; ++pop_i) {
-      if (is_implicit_top(iter->locals[iter->locals_size-- - 1])) {
-        iter->locals_size--;
+      if (is_implicit_top(iter->locals[locals_size-- - 1])) {
+        locals_size--;
       }
-      MAY_FAIL_MSG(iter->locals_size < 0, "chop_frame underflow");
+      MAY_FAIL_MSG(locals_size < 0, "chop_frame underflow");
     }
-
+    iter->locals_size = locals_size;
     iter->stack_size = 0;
     MAY_FAIL(read_u16(iter->_impl, &offset_delta, error));
   } else if (frame_kind == 251) {
