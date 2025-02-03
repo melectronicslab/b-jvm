@@ -242,7 +242,8 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 
   bjvm_classdesc *desc = bootstrap_lookup_class(thread, m);
   if (!desc) {
-    return result;
+    fprintf(stderr, "Failed to find main class %.*s\n", fmt_slice(m));
+    throw std::runtime_error("Failed to find main class");
   }
   bjvm_stack_value args[1] = {{.obj = nullptr}};
 
