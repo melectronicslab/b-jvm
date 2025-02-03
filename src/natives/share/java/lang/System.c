@@ -124,6 +124,10 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
   return value_null();
 }
 
+DECLARE_NATIVE("java/lang", System, registerNatives, "()V") {
+  return value_null();
+}
+
 DECLARE_NATIVE("java/lang", System, setOut0, "(Ljava/io/PrintStream;)V") {
   // Look up the field System.out
   bjvm_classdesc *system_class =
@@ -135,12 +139,17 @@ DECLARE_NATIVE("java/lang", System, setOut0, "(Ljava/io/PrintStream;)V") {
   return value_null();
 }
 
-DECLARE_NATIVE("java/lang", System, registerNatives, "()V") {
-  return value_null();
-}
 DECLARE_NATIVE("java/lang", System, setIn0, "(Ljava/io/InputStream;)V") {
+  // Look up the field System.in
+  bjvm_classdesc *system_class =
+      bootstrap_lookup_class(thread, STR("java/lang/System"));
+  bjvm_cp_field *in_field = bjvm_field_lookup(
+      system_class, STR("in"), STR("Ljava/io/InputStream;"));
+  void *field = &system_class->static_fields[in_field->byte_offset];
+  *(bjvm_obj_header **)field = args[0].handle->obj;
   return value_null();
 }
+
 DECLARE_NATIVE("java/lang", System, setErr0, "(Ljava/io/PrintStream;)V") {
   bjvm_classdesc *system_class =
       bootstrap_lookup_class(thread, STR("java/lang/System"));
