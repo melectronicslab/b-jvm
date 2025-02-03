@@ -109,7 +109,7 @@ char *bjvm_ffi_get_class_json(bjvm_classdesc *desc) {
   // Also collect static methods
   for (int i = 0; i < desc->methods_count; i++) {
     bjvm_cp_method *method = &desc->methods[i];
-    if (method->access_flags & BJVM_ACCESS_STATIC && !(utf8_equals(method->name, "<clinit>"))) {
+    if (method->access_flags & BJVM_ACCESS_STATIC && !method->is_clinit) {
       arrput(methods, method);
     }
   }

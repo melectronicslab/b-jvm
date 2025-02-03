@@ -3,6 +3,7 @@ A JVM for the web. Bring back the applet!
 
 Message me on Discord if you are interested in collaborating: forevermilk#0001
 
+
 ## Style guide
 
 Always use `s64` instead of `long` because Emscripten has `sizeof(long) == 4`. `int` can be assumed to be 32 bits.
@@ -49,3 +50,11 @@ See GitHub issues
 ```
 clang-format -i test/*.cc src/**/*.c src/**/*.h
 ```
+
+## Documentation
+
+### Overloaded Java functions
+
+When overloaded functions are compiled into JS, overloads with the same number of arguments
+
+Variadic functions are not yet supported; the variadic argument is 

@@ -177,6 +177,8 @@ function createClassImpl(vm: VM, bjvm_classdesc_ptr: number): any {
     const classInfo: ClassInfo = JSON.parse(info);
     module._free(classInfoStr);
 
+    let overloads: Map<string /* method name */, number[]>
+
     // Static methods
     const staticMethods: string[] = [];
     const instanceMethods: string[] = [];
