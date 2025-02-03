@@ -477,7 +477,7 @@ TEST_CASE("Array creation doesn't induce <clinit>") {
 
 TEST_CASE("Simple OutOfMemoryError") {
   auto result = run_test_case("test_files/out_of_memory/", true);
-  REQUIRE(result.stdout_.find("OutOfMemoryError") != std::string::npos);
+  REQUIRE(result.stderr_.find("OutOfMemoryError") != std::string::npos);
 }
 
 TEST_CASE("Exceptions in <clinit>") {
@@ -552,7 +552,7 @@ TEST_CASE("Conflicting defaults") {
   // -specific implementations of a given interface method.
   auto result = run_test_case("test_files/conflicting_defaults/", true,
                               "ConflictingDefaults");
-  REQUIRE(result.stdout_.find("AbstractMethodError") != std::string::npos);
+  REQUIRE(result.stderr_.find("AbstractMethodError") != std::string::npos);
 }
 
 TEST_CASE("Records") {
@@ -579,7 +579,7 @@ TEST_CASE("JSON tests") {
 
 TEST_CASE("ArrayStoreException") {
   auto result = run_test_case("test_files/array_store/", true, "ArrayStore");
-  REQUIRE(result.stdout_ == "java.lang.ArrayStoreException: Bus\n\tat "
+  REQUIRE(result.stderr_ == "java.lang.ArrayStoreException: Bus\n\tat "
                             "ArrayStore.main(ArrayStore.java:10)\n");
 }
 
