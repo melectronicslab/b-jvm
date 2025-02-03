@@ -35,6 +35,45 @@ DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
   return value_null();
 }
 
+DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
+  assert(argc == 0);
+  // this method does no allocations or yielding, so we can use the same pointer
+  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  assert(fd);
+  s32 unix_fd = LoadFieldInt(fd, "fd");
+  if (unix_fd < 0) {
+    bjvm_raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
+                            STR("File not found"));
+    return value_null();
+  }
+
+  bjvm_obj_header *array = args[0].handle->obj;
+  if (!array) {
+    ThrowLangException(NullPointerException);
+    return value_null();
+  }
+
+  int length = 1;
+  char res;
+
+  int bytes_read;
+  if (unix_fd == 0 && thread->vm->read_stdin) {
+    printf("Reading from stdin with length %d\n", length);
+    bytes_read = thread->vm->read_stdin(&res, length, thread->vm->stdio_override_param);
+    printf("Read %d bytes\n", bytes_read);
+  } else {
+    bytes_read = (s32) read(unix_fd, &res, length);
+  }
+
+  if (bytes_read < 0) {
+    bjvm_raise_vm_exception(thread, STR("java/io/IOException"),
+                            STR("Error reading file"));
+    return value_null();
+  }
+
+  return (bjvm_stack_value) { .i = bytes_read == 0 ? -1 : (int) res };
+}
+
 DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   assert(argc == 3);
   // this method does no allocations or yielding, so we can use the same pointer
@@ -63,14 +102,10 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
 
   char *buf = ArrayData(array) + offset;
 
-  puts("readBytes");
   s32 bytes_read;
   if (unix_fd == 0 && thread->vm->read_stdin) {
     bytes_read = thread->vm->read_stdin(buf, length, thread->vm->stdio_override_param);
-    printf("(fake) read: %d\n", bytes_read);
-    printf("(fake) char: %c\n", *buf);
   } else {
-    puts("readBytes real");
     bytes_read = (s32) read(unix_fd, buf, length);
   }
 
@@ -107,7 +142,6 @@ DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
 
   if (unix_fd == 0 && thread->vm->poll_available_stdin) {
     available = thread->vm->poll_available_stdin(thread->vm->stdio_override_param);
-    printf("(fake) available: %d\n", available);
   } else {
     int err = ioctl(unix_fd, FIONREAD, &available);
     if (err < 0) {

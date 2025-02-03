@@ -201,28 +201,29 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   options.classpath = (slice){.chars = (char *)classpath.c_str(),
                                   .len = static_cast<u16>(classpath.size())};
 
-  std::cout << "capturing stdio: " << capture_stdio << '\n';
   options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
     std::cout << "read_stdin\n";
+    std::cout << "len0: " << len << '\n';
     auto *result = (TestCaseResult *) param;
     std::cout << "current input: " << result->stdin_ << '\n';
     int remaining = result->stdin_.length();
     int num_bytes = std::min(len, remaining);
+    std::cout << "len: " << len << '\n';
+    std::cout << "remaining: " << remaining << '\n';
+    std::cout << "num_bytes: " << num_bytes << '\n';
     result->stdin_.copy(buf, num_bytes);
     result->stdin_ = result->stdin_.substr(num_bytes);
+    std::cout << "after substr: " << result->stdin_ << '\n';
     return num_bytes;
   } : nullptr;
   options.poll_available_stdin = capture_stdio ? +[](void *param) {
     auto *result = (TestCaseResult *) param;
-    std::cout << "poll_available_stdin\n";
-    std::cout << "current input: " << result->stdin_ << '\n';
+    std::cout << "poll_available_stdin\n" << result->stdin_.length() << '\n';
     return (int) result->stdin_.length();
   } : nullptr;
   options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
-    std::cout << "write_stdout\n";
     auto *result = (TestCaseResult *) param;
     result->stdout_.append(buf, len);
-    std::cout << "current output:\n" << result->stdout_ << '\n';
   } : nullptr;
   options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
     auto *result = (TestCaseResult *) param;
