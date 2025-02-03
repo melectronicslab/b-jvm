@@ -366,6 +366,9 @@ typedef struct bjvm_vm {
 
   // Vector of allocations done via mmap, to be unmapped
   mmap_allocation *mmap_allocations;
+
+  // Latest TID
+  u32 next_tid;
 } bjvm_vm;
 
 // Java Module
@@ -531,6 +534,8 @@ typedef struct bjvm_thread {
 
   int allocations_so_far;
 
+  u64 tid;
+
   // Thread-local allocation buffer (objects are first created here)
 } bjvm_thread;
 
@@ -606,7 +611,7 @@ void bjvm_set_field(bjvm_obj_header *obj, bjvm_cp_field *field, bjvm_stack_value
 int bjvm_resolve_field(bjvm_thread *thread, bjvm_cp_field_info *info);
 bjvm_stack_value bjvm_get_field(bjvm_obj_header *obj, bjvm_cp_field *field);
 bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, slice const name, slice const descriptor);
-bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const slice name, const slice descriptor);
+bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *classdesc, const slice name, const slice descriptor);
 int bjvm_multianewarray(bjvm_thread *thread, bjvm_plain_frame *frame, struct bjvm_multianewarray_data *multianewarray,
                         u16 *sd);
 void dump_frame(FILE *stream, const bjvm_stack_frame *frame);

@@ -2,8 +2,6 @@
 #include <natives-dsl.h>
 #include <sys/fcntl.h>
 #include <sys/ioctl.h>
-#include <sys/poll.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 DECLARE_NATIVE("java/io", FileInputStream, initIDs, "()V") {

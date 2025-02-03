@@ -402,9 +402,6 @@ void bjvm_register_native(bjvm_vm *vm, const slice class, const slice method_nam
   ent->callback = callback;
 }
 
-bjvm_cp_method *bjvm_method_lookup(bjvm_classdesc *descriptor, slice name, slice method_descriptor,
-                                   bool search_superclasses, bool search_superinterfaces);
-
 void read_string(bjvm_thread *, bjvm_obj_header *obj, s8 **buf, size_t *len) {
   assert(utf8_equals(hslc(obj->descriptor->name), "java/lang/String"));
   bjvm_obj_header *array = ((struct bjvm_native_String *)obj)->value;
@@ -626,6 +623,8 @@ bjvm_vm *bjvm_create_vm(const bjvm_vm_options options) {
   vm->write_stderr = options.write_stderr;
   vm->stdio_override_param = options.stdio_override_param;
 
+  vm->next_tid = 0;
+
   bjvm_native_t const *natives;
   size_t natives_reg_count = bjvm_get_natives_list(&natives);
   for (size_t i = 0; i < natives_reg_count; ++i) {
@@ -719,10 +718,6 @@ __attribute__((noinline)) bjvm_cp_field *bjvm_field_lookup(bjvm_classdesc *class
   return nullptr;
 }
 
-bjvm_cp_field *bjvm_easy_field_lookup(bjvm_classdesc *classdesc, const slice name, const slice descriptor) {
-  return bjvm_field_lookup(classdesc, name, descriptor);
-}
-
 bjvm_obj_header *get_main_thread_group(bjvm_thread *thread);
 
 void bjvm_set_field(bjvm_obj_header *obj, bjvm_cp_field *field, bjvm_stack_value bjvm_stack_value) {
@@ -773,6 +768,8 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   thr->lang_exception_frame = -1;
 
   thr->async_stack = calloc(1, 0x20);
+
+  thr->tid = vm->next_tid++;
 
   bjvm_vm_init_primitive_classes(thr);
   init_unsafe_constants(thr);

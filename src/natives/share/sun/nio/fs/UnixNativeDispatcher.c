@@ -1,7 +1,12 @@
 
 #include <natives-dsl.h>
+#ifdef EMSCRIPTEN
+#include <errno.h>
+#include <fcntl.h>
+#else
 #include <sys/errno.h>
 #include <sys/fcntl.h>
+#endif
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/mman.h>
