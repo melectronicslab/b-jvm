@@ -56,9 +56,7 @@ DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
 
   int bytes_read;
   if (unix_fd == 0 && thread->vm->read_stdin) {
-    printf("Reading from stdin with length %d\n", length);
     bytes_read = thread->vm->read_stdin(&res, length, thread->vm->stdio_override_param);
-    printf("Read %d bytes\n", bytes_read);
   } else {
     bytes_read = (s32) read(unix_fd, &res, length);
   }
@@ -93,7 +91,7 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   s32 offset = args[1].i;
   s32 length = args[2].i;
 
-  if (offset < 0 || length < 0 || offset + length > *ArrayLength(array)) {
+  if (offset < 0 || length < 0 || (s64) offset + length > *ArrayLength(array)) {
     ThrowLangException(ArrayIndexOutOfBoundsException);
     return value_null();
   }
