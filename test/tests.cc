@@ -477,7 +477,7 @@ TEST_CASE("Array creation doesn't induce <clinit>") {
 
 TEST_CASE("Simple OutOfMemoryError") {
   auto result = run_test_case("test_files/out_of_memory/", true);
-  REQUIRE(result.stdout_.find("OutOfMemoryError") != std::string::npos);
+  REQUIRE(result.stderr_.find("OutOfMemoryError") != std::string::npos);
 }
 
 TEST_CASE("Exceptions in <clinit>") {
@@ -552,7 +552,7 @@ TEST_CASE("Conflicting defaults") {
   // -specific implementations of a given interface method.
   auto result = run_test_case("test_files/conflicting_defaults/", true,
                               "ConflictingDefaults");
-  REQUIRE(result.stdout_.find("AbstractMethodError") != std::string::npos);
+  REQUIRE(result.stderr_.find("AbstractMethodError") != std::string::npos);
 }
 
 TEST_CASE("Records") {
@@ -579,13 +579,72 @@ TEST_CASE("JSON tests") {
 
 TEST_CASE("ArrayStoreException") {
   auto result = run_test_case("test_files/array_store/", true, "ArrayStore");
-  REQUIRE(result.stdout_ == "java.lang.ArrayStoreException: Bus\n\tat "
+  REQUIRE(result.stderr_ == "java.lang.ArrayStoreException: Bus\n\tat "
                             "ArrayStore.main(ArrayStore.java:10)\n");
 }
 
 TEST_CASE("Random API") {
   auto result = run_test_case("test_files/random/", true, "RandomTest");
   REQUIRE(result.stdout_.find("Random Integer (50 to 150)") != std::string::npos);  // Just check that it completes :)
+}
+
+TEST_CASE("Simulated input/output") {
+  // auto human_result = run_test_case("test_files/system_input/", false);
+  std::cout << "test one char" << std::endl;
+  auto result_char = run_test_case("test_files/system_input/", true, "Main", "A");
+  REQUIRE(result_char.stdout_ == R"(Write a byte
+Data read: 65
+As a char: A
+)");
+  REQUIRE(result_char.stdin_ == "");
+
+  std::cout << "test no char" << std::endl;
+  auto end_of_file = run_test_case("test_files/system_input/", true, "Main", "");
+  REQUIRE(end_of_file.stdout_ == R"(Write a byte
+EOF
+)");
+  REQUIRE(end_of_file.stdin_ == "");
+
+  std::cout << "test many char" << std::endl;
+  auto result_many = run_test_case("test_files/system_input/", true, "Main", "ABCDEFG");
+  REQUIRE(result_many.stdout_ == R"(Write a byte
+Data read: 65
+As a char: A
+)");
+  REQUIRE(result_many.stdin_ == ""); // BufferedReader tries to consume 8192 bytes, but we only provide 7
+}
+
+TEST_CASE("Sudoku solver") {
+  int num_puzzles = 33761;
+  std::cout << "Starting sudoku solver" << std::endl;
+  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+  auto now = std::chrono::system_clock::now();
+
+  auto result = run_test_case("test_files/sudoku/", true, "Main");
+  // last puzzle
+  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+}
+
+TEST_CASE("Autodiff") {
+  int num_derivatives = 10000 * 10 + 3;
+  std::cout << "Testing Autodiff" << std::endl;
+  std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
+  auto now = std::chrono::system_clock::now();
+
+  auto result = run_test_case("test_files/autodiff/", true, "Main");
+  // last test
+  REQUIRE(result.stdout_.find("((84.02894029503324*(-(sin((x*y))*x)+1.0))+((84.02894029503324*x)*-(((cos((x*y))*x)*y)+sin((x*y))))) = -3209354.522523045 == -3209354.522523045")
+          != std::string::npos);
+
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
 }
 
 TEST_CASE("Method parameters reflection API") {

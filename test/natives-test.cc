@@ -46,8 +46,11 @@ DECLARE_ASYNC_NATIVE("", AsyncNative, myYield, "(I)I", locals(int i),
 #define _RELOAD_CACHED_STATE()
 
 extern "C"
-void stout_write(int ch, void *param) {
-  ((std::vector<u8>*)param)->push_back((u8)ch);
+void stout_write(char *buf, int len, void *param) {
+  auto vec = (std::vector<u8> *) param;
+  vec->reserve(vec->size() + len);
+  for (int i=0; i<len; i++)
+    vec->push_back((u8) buf[i]);
 }
 
 TEST_CASE("Async natives") {
@@ -57,7 +60,9 @@ TEST_CASE("Async natives") {
         vm_options.classpath = STR("test_files/async_natives/");
   vm_options.write_stdout = &stout_write;
   vm_options.write_stderr = &stout_write;
-  vm_options.write_byte_param = &out;
+  vm_options.read_stdin = nullptr;
+  vm_options.poll_available_stdin = nullptr;
+  vm_options.stdio_override_param = &out;
 
   bjvm_vm *vm = bjvm_create_vm(vm_options);
 
