@@ -1982,6 +1982,7 @@ static s64 invokevtable_polymorphic_impl_void(ARGS_VOID) {
     raise_null_pointer_exception(thread);
     return 0;
   }
+  printf("Target method: %.*s %.*s\n", fmt_slice(insn->cp->methodref.nat->name), fmt_slice(target->descriptor->name));
   bjvm_cp_method *target_method = bjvm_vtable_lookup(target->descriptor, (size_t)insn->ic2);
   assert(target_method);
   bjvm_stack_frame *invoked_frame = bjvm_push_frame(thread, target_method, sp - insn->args, insn->args);
@@ -2469,11 +2470,8 @@ static s64 checkcast_resolved_impl_int(ARGS_INT) {
   DEBUG_CHECK
   bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   if (obj && unlikely(!bjvm_instanceof(obj->descriptor, insn->classdesc))) {
-    INIT_STACK_STRING(complaint, 1000);
-    complaint = bprintf(complaint, "Expected instance of %.*s, got %.*s", fmt_slice(insn->classdesc->name),
-                        fmt_slice(obj->descriptor->name));
     SPILL(tos)
-    bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
+    raise_class_cast_exception(thread, obj->descriptor, insn->classdesc);
     return 0;
   }
   NEXT_INT(tos)

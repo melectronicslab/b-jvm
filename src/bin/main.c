@@ -2,6 +2,10 @@
 // Created by Cowpox on 12/10/24.
 //
 
+#include "exceptions.h"
+#include "reflection.h"
+
+
 #include <emscripten/emscripten.h>
 #include "../bjvm.h"
 
@@ -48,11 +52,56 @@ bjvm_classdesc *bjvm_ffi_get_classdesc(bjvm_obj_header *obj) {
   return obj->descriptor;
 }
 
+bool check_casts(bjvm_thread * thread, bjvm_cp_method * method, bjvm_stack_value * args) {
+  // Perform the moral equivalent of a checkcast instruction
+  int argc = bjvm_argc(method);
+  for (int i = 0; i < argc; i++) {
+    bjvm_field_descriptor *arg;
+    if (method->access_flags & BJVM_ACCESS_STATIC) {
+      arg = method->descriptor->args + i;
+    } else {
+      arg = i != 0 ? method->descriptor->args + (i - 1) : nullptr;
+    }
+
+    if (arg && field_to_kind(arg) != BJVM_TYPE_KIND_REFERENCE)
+      continue;
+    if (!args[i].obj) // null
+      continue;
+
+    bjvm_classdesc *class;
+    if (arg) {
+      INIT_STACK_STRING(str, 1000);
+      str = bjvm_unparse_field_descriptor(str, arg);
+      class = load_class_of_field_descriptor(thread, str);
+    } else {
+      class = method->my_class;
+    }
+
+    printf("A: %.*s, B: %.*s\n", fmt_slice(class->name), fmt_slice(args[i].obj->descriptor->name));
+    if (!bjvm_instanceof(args[i].obj->descriptor, class)) {
+      raise_class_cast_exception(thread, args[i].obj->descriptor, class);
+      return true;
+    }
+  }
+  return false;
+}
+
 EMSCRIPTEN_KEEPALIVE
 call_interpreter_t *bjvm_ffi_async_run(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args) {
   call_interpreter_t *ctx = malloc(sizeof(call_interpreter_t));
+
+  if (check_casts(thread, method, args)) {
+    return nullptr;
+  }
+
   *ctx = (call_interpreter_t){.args = {thread, method, args}};
   return ctx;
+}
+
+EMSCRIPTEN_KEEPALIVE
+object bjvm_ffi_allocate_object(bjvm_thread *thr, bjvm_cp_method *method) {
+  bjvm_classdesc *clazz = method->my_class;
+  return AllocateObject(thr, clazz, clazz->instance_bytes);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -70,11 +119,19 @@ void bjvm_ffi_free_async_run_ctx(call_interpreter_t *ctx) {
 }
 
 
+#define INSERT_METHOD() char key[sizeof(void*)]; \
+memcpy(key, &method, sizeof(void*)); \
+if (bjvm_hash_table_insert(&field_names, key, sizeof(void*), (void*)1)) { \
+  continue; \
+}
+
 // Returns a TS ClassInfo as JSON
 EMSCRIPTEN_KEEPALIVE
 char *bjvm_ffi_get_class_json(bjvm_classdesc *desc) {
   bjvm_cp_field** fields = nullptr;
   bjvm_cp_method** methods = nullptr;
+
+  printf("Class name: %.*s\n", fmt_slice(desc->name));
 
   // Collect fields from the class and its super classes
   for (bjvm_classdesc *s = desc; s->super_class; s = s->super_class->classdesc) {
@@ -86,12 +143,15 @@ char *bjvm_ffi_get_class_json(bjvm_classdesc *desc) {
     }
   }
 
-  // Collect methods from the vtable/itable. Only include non-abstract methods
+  bjvm_string_hash_table field_names = bjvm_make_hash_table(nullptr, 0.75, 16);
+
+  // Collect methods from the vtable/itable. Only include non-abstract methods. Keep track of duplicate methods.
   for (int i = 0; i < arrlen(desc->vtable.methods); i++) {
     bjvm_cp_method *method = desc->vtable.methods[i];
     if (method->access_flags & BJVM_ACCESS_ABSTRACT) {
       continue;
     }
+    INSERT_METHOD()
     arrput(methods, method);
   }
 
@@ -102,17 +162,24 @@ char *bjvm_ffi_get_class_json(bjvm_classdesc *desc) {
       if (method & BJVM_ITABLE_METHOD_BIT_INVALID) {
         continue;
       }
+      INSERT_METHOD()
       arrput(methods, (bjvm_cp_method *)method);
     }
   }
 
-  // Also collect static methods
+  // Also collect static methods and constructors
   for (int i = 0; i < desc->methods_count; i++) {
     bjvm_cp_method *method = &desc->methods[i];
-    if (method->access_flags & BJVM_ACCESS_STATIC && !method->is_clinit) {
+    if ((method->access_flags & BJVM_ACCESS_STATIC && !method->is_clinit) || method->is_ctor) {
+      INSERT_METHOD()
       arrput(methods, method);
     }
   }
+
+  bjvm_free_hash_table(field_names);
+
+  int field_index = 0;
+  int method_index = 0;
 
   bjvm_string_builder out;
   bjvm_string_builder_init(&out);
@@ -122,8 +189,8 @@ char *bjvm_ffi_get_class_json(bjvm_classdesc *desc) {
     bjvm_cp_field *f = fields[i];
     if (i > 0)
       bjvm_string_builder_append(&out, ",");
-    bjvm_string_builder_append(&out, R"({"name":"%s","type":"%s","accessFlags":%d,"byteOffset":%d})",
-      f->name.chars, field_to_kind(&f->parsed_descriptor), f->access_flags, f->byte_offset);
+    bjvm_string_builder_append(&out, R"({"name":"%s","type":"%s","accessFlags":%d,"byteOffset":%d,"index":%d})",
+      f->name.chars, field_to_kind(&f->parsed_descriptor), f->access_flags, f->byte_offset, field_index++);
   }
 
   bjvm_string_builder_append(&out, R"(],"methods":[)");
@@ -132,8 +199,8 @@ char *bjvm_ffi_get_class_json(bjvm_classdesc *desc) {
     bjvm_cp_method *m = methods[i];
     if (i > 0)
       bjvm_string_builder_append(&out, ",");
-    bjvm_string_builder_append(&out, R"({"name":"%s","descriptor":"%s","methodPointer":%d,"accessFlags":%d,"parameterNames":[)",
-      m->name.chars, m->unparsed_descriptor.chars, (intptr_t)m, m->access_flags);
+    bjvm_string_builder_append(&out, R"({"name":"%s","index":%d,"descriptor":"%s","methodPointer":%d,"accessFlags":%d,"parameterNames":[)",
+      m->name.chars, method_index++, m->unparsed_descriptor.chars, (intptr_t)m, m->access_flags);
 
     for (int attrib_i = 0; attrib_i < m->attributes_count; ++attrib_i) {
       if (m->attributes[attrib_i].kind == BJVM_ATTRIBUTE_KIND_METHOD_PARAMETERS) {
