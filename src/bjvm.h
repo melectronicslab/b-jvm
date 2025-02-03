@@ -130,7 +130,9 @@ void read_string(bjvm_thread *thread, bjvm_obj_header *obj, s8 **buf,
 int read_string_to_utf8(bjvm_thread *thread, heap_string *result, bjvm_obj_header *obj);
 typedef struct bjvm_vm bjvm_vm;
 
-typedef void (*bjvm_write_byte)(char * buf, int len, void *param);
+typedef void (*bjvm_write_bytes)(char * buf, int len, void *param);
+typedef int (*bjvm_read_bytes)(char * buf, int len, void *param);
+typedef int (*bjvm_poll_available_bytes)(void *param);
 
 #define BJVM_CARD_BYTES 4096
 
@@ -322,12 +324,14 @@ typedef struct bjvm_vm {
   // Defined moules  (name -> bjvm_module *)
   bjvm_string_hash_table modules;
 
-  // Write byte of stdout/stderr (if nullptr, uses the default implementation)
-  bjvm_write_byte write_stdout;
-  bjvm_write_byte write_stderr;
+  // Overrides for stdio (if nullptr, uses the default implementation)
+  bjvm_read_bytes  read_stdin;
+  bjvm_poll_available_bytes poll_available_stdin;
+  bjvm_write_bytes write_stdout;
+  bjvm_write_bytes write_stderr;
 
-  // Passed to write_stdout/write_stderr
-  void *write_byte_param;
+  // Passed to write_stdout/write_stderr/read_stdin
+  void *stdio_override_param;
 
   // Primitive classes (int.class, etc.)
   bjvm_classdesc *primitive_classes[9];
@@ -375,11 +379,14 @@ typedef struct bjvm_module {
 int bjvm_define_module(bjvm_vm *vm, slice module_name, bjvm_obj_header *module);
 
 typedef struct {
-  // Write byte of stdout/stderr (if nullptr, uses the default implementation)
-  bjvm_write_byte write_stdout;
-  bjvm_write_byte write_stderr;
-  // Passed to write_stdout/write_stderr
-  void *write_byte_param;
+  // Overrides for stdio (if nullptr, uses the default implementation)
+  bjvm_read_bytes  read_stdin;
+  bjvm_poll_available_bytes poll_available_stdin;
+  bjvm_write_bytes write_stdout;
+  bjvm_write_bytes write_stderr;
+
+  // Passed to write_stdout/write_stderr/read_stdin
+  void *stdio_override_param;
 
   // Heap size (static for now)
   size_t heap_size;
@@ -563,9 +570,6 @@ typedef struct {
   // What thread group to construct the thread in (nullptr = default thread
   // group)
   bjvm_obj_header *thread_group;
-  // Write byte of stdout/stderr (if nullptr, prints directly to stdout/stderr)
-  bjvm_write_byte write_stdout;
-  bjvm_write_byte write_stderr;
 } bjvm_thread_options;
 
 bjvm_thread_options bjvm_default_thread_options();

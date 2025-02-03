@@ -192,22 +192,43 @@ std::optional<std::vector<u8>> ReadFile(const std::string &file) {
 }
 
 TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
-                             std::string main_class) {
+                             std::string main_class, std::string input) {
   bjvm_vm_options options = bjvm_default_vm_options();
 
-  TestCaseResult result{};
+  TestCaseResult result { };
+  result.stdin_ = input;
 
   options.classpath = (slice){.chars = (char *)classpath.c_str(),
                                   .len = static_cast<u16>(classpath.size())};
+
+  std::cout << "capturing stdio: " << capture_stdio << '\n';
+  options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
+    std::cout << "read_stdin\n";
+    auto *result = (TestCaseResult *) param;
+    std::cout << "current input: " << result->stdin_ << '\n';
+    int remaining = result->stdin_.length();
+    int num_bytes = std::min(len, remaining);
+    auto erased = result->stdin_.erase(0, num_bytes);
+    erased.copy(buf, num_bytes);
+    return num_bytes;
+  } : nullptr;
+  options.poll_available_stdin = capture_stdio ? +[](void *param) {
+    auto *result = (TestCaseResult *) param;
+    std::cout << "poll_available_stdin\n";
+    std::cout << "current input: " << result->stdin_ << '\n';
+    return (int) result->stdin_.length();
+  } : nullptr;
   options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
+    std::cout << "write_stdout\n";
     auto *result = (TestCaseResult *) param;
     result->stdout_.append(buf, len);
+    std::cout << "current output:\n" << result->stdout_ << '\n';
   } : nullptr;
   options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
     auto *result = (TestCaseResult *) param;
     result->stderr_.append(buf, len);
   } : nullptr;
-  options.write_byte_param = &result;
+  options.stdio_override_param = &result;
 
   bjvm_vm *vm = bjvm_create_vm(options);
   if (!vm) {

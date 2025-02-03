@@ -588,11 +588,32 @@ TEST_CASE("Random API") {
   REQUIRE(result.stdout_.find("Random Integer (50 to 150)") != std::string::npos);  // Just check that it completes :)
 }
 
-TEST_CASE("Basic input/output") {
-  auto result = run_test_case("test_files/system_input/", false);
-  //  REQUIRE(result.stdout_ == R"(Egg
-  //Chicken
-  //)");
+TEST_CASE("Simulated input/output") {
+  // auto human_result = run_test_case("test_files/system_input/", false);
+  std::cout << "test one char" << std::endl;
+  auto result_char = run_test_case("test_files/system_input/", true, "A");
+  std::cout << "stdout is:\n" << result_char.stdout_ << std::endl;
+  std::cout << "stdin is:\n" << result_char.stdin_ << std::endl;
+  REQUIRE(result_char.stdout_ == R"(Write a byte
+Data read: 65
+As a char: A
+)");
+  REQUIRE(result_char.stdin_ == "");
+
+  std::cout << "test no char" << std::endl;
+  auto end_of_file = run_test_case("test_files/system_input/", true, "");
+//  REQUIRE(end_of_file.stdout_ == R"(Write a byte
+//EOF
+//)");
+//  REQUIRE(end_of_file.stdin_ == "");
+
+  std::cout << "test many char" << std::endl;
+  auto result_many = run_test_case("test_files/system_input/", true, "ABCDEFG");
+//  REQUIRE(end_of_file.stdout_ == R"(Write a byte
+//Data read: 65
+//As a char: A
+//)");
+//  REQUIRE(end_of_file.stdin_ == "BCDEFG"); // only consumed 1 char
 }
 
 TEST_CASE("Sudoku solver") {

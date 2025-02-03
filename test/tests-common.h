@@ -38,11 +38,12 @@ int load_classfile(slice filename, void *param, u8 **bytes,
     std::optional<std::vector<u8>> ReadFile(const std::string &file);
 
 struct TestCaseResult {
+  std::string stdin_;
   std::string stdout_;
   std::string stderr_;
 };
 
-TestCaseResult run_test_case(std::string classpath, bool capture_stdio = true, std::string main_class = "Main");
+TestCaseResult run_test_case(std::string classpath, bool capture_stdio = true, std::string main_class = "Main", std::string input = "");
 }
 
 #endif // BJVM_TESTS_COMMON_H

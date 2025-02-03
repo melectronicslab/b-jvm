@@ -620,9 +620,11 @@ bjvm_vm *bjvm_create_vm(const bjvm_vm_options options) {
   vm->active_threads = nullptr;
   vm->active_thread_count = vm->active_thread_cap = 0;
 
+  vm->read_stdin = options.read_stdin;
+  vm->poll_available_stdin = options.poll_available_stdin;
   vm->write_stdout = options.write_stdout;
   vm->write_stderr = options.write_stderr;
-  vm->write_byte_param = options.write_byte_param;
+  vm->stdio_override_param = options.stdio_override_param;
 
   bjvm_native_t const *natives;
   size_t natives_reg_count = bjvm_get_natives_list(&natives);
