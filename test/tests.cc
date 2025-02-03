@@ -591,7 +591,7 @@ TEST_CASE("Random API") {
 TEST_CASE("Simulated input/output") {
   // auto human_result = run_test_case("test_files/system_input/", false);
   std::cout << "test one char" << std::endl;
-  auto result_char = run_test_case("test_files/system_input/", true, "A");
+  auto result_char = run_test_case("test_files/system_input/", true, "Main", "A");
   std::cout << "stdout is:\n" << result_char.stdout_ << std::endl;
   std::cout << "stdin is:\n" << result_char.stdin_ << std::endl;
   REQUIRE(result_char.stdout_ == R"(Write a byte
@@ -601,14 +601,14 @@ As a char: A
   REQUIRE(result_char.stdin_ == "");
 
   std::cout << "test no char" << std::endl;
-  auto end_of_file = run_test_case("test_files/system_input/", true, "");
+  auto end_of_file = run_test_case("test_files/system_input/", true, "Main", "");
 //  REQUIRE(end_of_file.stdout_ == R"(Write a byte
 //EOF
 //)");
 //  REQUIRE(end_of_file.stdin_ == "");
 
   std::cout << "test many char" << std::endl;
-  auto result_many = run_test_case("test_files/system_input/", true, "ABCDEFG");
+  auto result_many = run_test_case("test_files/system_input/", true, "Main", "ABCDEFG");
 //  REQUIRE(end_of_file.stdout_ == R"(Write a byte
 //Data read: 65
 //As a char: A

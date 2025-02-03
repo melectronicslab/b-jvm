@@ -208,8 +208,8 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
     std::cout << "current input: " << result->stdin_ << '\n';
     int remaining = result->stdin_.length();
     int num_bytes = std::min(len, remaining);
-    auto erased = result->stdin_.erase(0, num_bytes);
-    erased.copy(buf, num_bytes);
+    result->stdin_.copy(buf, num_bytes);
+    result->stdin_ = result->stdin_.substr(num_bytes);
     return num_bytes;
   } : nullptr;
   options.poll_available_stdin = capture_stdio ? +[](void *param) {

@@ -38,7 +38,7 @@ int load_classfile(slice filename, void *param, u8 **bytes,
     std::optional<std::vector<u8>> ReadFile(const std::string &file);
 
 struct TestCaseResult {
-  std::string stdin_;
+  std::string_view stdin_;
   std::string stdout_;
   std::string stderr_;
 };
