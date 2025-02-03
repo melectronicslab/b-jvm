@@ -73,6 +73,7 @@
 #include "reflection.h"
 
 #include <instrumentation.h>
+#include <sys/time.h>
 
 typedef s64 (*bytecode_handler_t)(ARGS_VOID);
 
@@ -329,6 +330,7 @@ typedef enum {
   CONT_INVOKE,
   CONT_INVOKESIGPOLY, // tos must be reloaded
   CONT_RUN_NATIVE,
+  CONT_RESUME_INSN,
 } continuation_point;
 
 typedef struct {
@@ -397,6 +399,41 @@ static async_wakeup_info *async_stack_top(bjvm_thread *thread) {
   assert(thread->async_stack->height > 0);
   return thread->async_stack->frames[thread->async_stack->height - 1].wakeup;
 }
+
+/** FUEL CHECKING */
+
+
+__attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
+  const int REFUEL = 10000;
+  thread->fuel = REFUEL;
+
+  if (thread->synchronous_depth)  // we're in a synchronous call, don't try to yield
+    return false;
+
+  // Get the current time in milliseconds since 1970
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  u64 now = tv.tv_sec * 1000000 + tv.tv_usec;
+  if (thread->yield_at_time != 0 && now >= thread->yield_at_time) {
+    thread->frames[thread->frames_count - 1]->is_async_suspended = true;
+
+    continuation_frame *cont = async_stack_push(thread);
+    *cont = (continuation_frame){.pnt = CONT_RESUME_INSN,
+                                 .wakeup = nullptr};
+    return true;
+  }
+  return false;
+}
+
+static bool fuel_check_impl(bjvm_thread *thread) {
+  if (unlikely(thread->fuel-- == 0)) {
+    return refuel_check(thread);
+  }
+  return false;
+}
+
+#define FUEL_CHECK if (fuel_check_impl(thread)) { SPILL(tos); return 0; }
+#define FUEL_CHECK_VOID if (fuel_check_impl(thread)) { SPILL_VOID return 0; }
 
 /** BYTECODE IMPLEMENTATIONS */
 
@@ -1314,6 +1351,7 @@ static s64 dreturn_impl_double(ARGS_DOUBLE) {
 
 static s64 goto_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
+  FUEL_CHECK_VOID
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1322,6 +1360,7 @@ static s64 goto_impl_void(ARGS_VOID) {
 
 static s64 goto_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
+  FUEL_CHECK
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1330,6 +1369,7 @@ static s64 goto_impl_double(ARGS_DOUBLE) {
 
 static s64 goto_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK();
+  FUEL_CHECK
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1338,6 +1378,7 @@ static s64 goto_impl_float(ARGS_FLOAT) {
 
 static s64 goto_impl_int(ARGS_INT) {
   DEBUG_CHECK();
+  FUEL_CHECK
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1345,7 +1386,6 @@ static s64 goto_impl_int(ARGS_INT) {
 }
 
 static s64 tableswitch_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   s32 index = (s32)tos;
   s32 low = insn->tableswitch->low;
@@ -1394,7 +1434,8 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
 
 #define MAKE_INT_BRANCH_AGAINST_0(which, op)                                                                           \
   static s64 which##_impl_int(ARGS_INT) {                                                                          \
-    DEBUG_CHECK();;                                                                                                       \
+    DEBUG_CHECK();                                                                                                       \
+    FUEL_CHECK\
     u16 old_pc = pc;                                                                                              \
     pc = ((s32)tos op 0) ? insn->index : (u32)(pc + 1);                                                                 \
     insns += (s32)pc - (s32)old_pc;                                                                            \
@@ -1414,6 +1455,7 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
 #define MAKE_INT_BRANCH(which, op)                                                                                     \
   static s64 which##_impl_int(ARGS_INT) {                                                                          \
     DEBUG_CHECK();                                                                                                        \
+    FUEL_CHECK\
     s64 a = (sp - 2)->i, b = (int)tos;                                                                             \
     u16 old_pc = pc;                                                                                              \
     pc = a op b ? insn->index : (u32)(pc + 1);                                                                              \
@@ -1430,8 +1472,8 @@ MAKE_INT_BRANCH(if_icmpgt, >)
 MAKE_INT_BRANCH(if_icmple, <=)
 
 static s64 if_acmpeq_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
+  FUEL_CHECK
   bjvm_obj_header *a = (sp - 2)->obj, *b = (bjvm_obj_header *)tos;
   int old_pc = pc;
   pc = a == b ? (insn->index - 1) : pc;
@@ -1441,8 +1483,8 @@ static s64 if_acmpeq_impl_int(ARGS_INT) {
 }
 
 static s64 if_acmpne_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
+  FUEL_CHECK
   bjvm_obj_header *a = (sp - 2)->obj, *b = (bjvm_obj_header *)tos;
   int old_pc = pc;
   pc = a != b ? (insn->index - 1) : pc;
@@ -2562,6 +2604,10 @@ static s64 async_resume(ARGS_VOID) {
       needs_polymorphic_jump = intrinsify(in);
     }
     break;
+
+  case CONT_RESUME_INSN: {
+    break;
+  }
 
   case CONT_INVOKE:
     result = bjvm_interpret_2(&fut, thread, cont.ctx.interp_call.frame);

@@ -686,9 +686,13 @@ bjvm_stack_value call_interpreter_synchronous(bjvm_thread *thread, bjvm_cp_metho
     args = (bjvm_stack_value[]){};
   }
 
+  thread->synchronous_depth++;
+
   call_interpreter_t ctx = (call_interpreter_t){.args = {thread, method, args}};
   future_t fut = call_interpreter(&ctx);
   BJVM_CHECK(fut.status == FUTURE_READY, "method tried to suspend");
+
+  thread->synchronous_depth--;
 
   return ctx._result;
 }

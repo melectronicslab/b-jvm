@@ -337,6 +337,10 @@ typedef struct bjvm_vm {
   int active_thread_count;
   int active_thread_cap;
 
+  // The first thread created, which will always be kept around so there as at least one thread
+  // available (even if it isn't running anything)
+  bjvm_thread *primordial_thread;
+
   u8 *heap;
   // Next object should be allocated here. Should always be 8-byte aligned
   // which is the alignment of BJVM objects.
@@ -526,6 +530,12 @@ typedef struct bjvm_thread {
   async_stack_t *async_stack;
 
   int allocations_so_far;
+  // This value is used to periodically check whether we should yield back to the scheduler ...
+  int fuel;
+  // ... if the current time is past this value
+  u64 yield_at_time;
+  // Current number of active synchronous calls
+  int synchronous_depth;
 
   u64 tid;
 
