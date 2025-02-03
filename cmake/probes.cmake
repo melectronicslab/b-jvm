@@ -7,7 +7,7 @@ function(add_dtrace_support target probes_definitions)
     file(MAKE_DIRECTORY ${probes_dir})
 
     # Add compile definitions and include directories
-    target_compile_definitions(${target} PRIVATE DTRACE_SUPPORT)
+    # target_compile_definitions(${target} PRIVATE DTRACE_SUPPORT)
     target_include_directories(${target} PRIVATE ${probes_dir})
 
     # Generate DTrace header file

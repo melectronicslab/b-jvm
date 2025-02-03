@@ -773,85 +773,89 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 
   thr->tid = vm->next_tid++;
 
-  bjvm_vm_init_primitive_classes(thr);
-  init_unsafe_constants(thr);
+  if (!vm->vm_initialized) {
+    bjvm_vm_init_primitive_classes(thr);
+    init_unsafe_constants(thr);
 
-  init_cached_classdescs_t init = {.args = {thr}};
-  future_t result = init_cached_classdescs(&init);
-  BJVM_CHECK(result.status == FUTURE_READY);
+    init_cached_classdescs_t init = {.args = {thr}};
+    future_t result = init_cached_classdescs(&init);
+    BJVM_CHECK(result.status == FUTURE_READY);
+
+    bootstrap_lookup_class(thr, STR("java/lang/reflect/Field"));
+    bootstrap_lookup_class(thr, STR("java/lang/reflect/Constructor"));
+  }
 
   // Pre-allocate OOM and stack overflow errors
   thr->out_of_mem_error = new_object(thr, vm->cached_classdescs->oom_error);
   thr->stack_overflow_error = new_object(thr, vm->cached_classdescs->stack_overflow_error);
 
-  bootstrap_lookup_class(thr, STR("java/lang/reflect/Field"));
-  bootstrap_lookup_class(thr, STR("java/lang/reflect/Constructor"));
-
-  bjvm_handle *java_thread = bjvm_make_handle(thr, new_object(thr, vm->cached_classdescs->thread));
+    bjvm_handle *java_thread = bjvm_make_handle(thr, new_object(thr, vm->cached_classdescs->thread));
 #define java_thr ((struct bjvm_native_Thread *)java_thread->obj)
-  thr->thread_obj = java_thr;
+    thr->thread_obj = java_thr;
 
-  java_thr->vm_thread = thr;
-  java_thr->name = MakeJStringFromCString(thr, "main", true);
+    java_thr->vm_thread = thr;
+    java_thr->name = MakeJStringFromCString(thr, "main", true);
 
-  // Call (Ljava/lang/ThreadGroup;Ljava/lang/String;)V
-  bjvm_cp_method *make_thread = bjvm_method_lookup(vm->cached_classdescs->thread, STR("<init>"),
-                                                   STR("(Ljava/lang/ThreadGroup;Ljava/lang/String;)V"), false, false);
+    // Call (Ljava/lang/ThreadGroup;Ljava/lang/String;)V
+    bjvm_cp_method *make_thread = bjvm_method_lookup(vm->cached_classdescs->thread, STR("<init>"),
+                                                     STR("(Ljava/lang/ThreadGroup;Ljava/lang/String;)V"), false, false);
 
-  bjvm_obj_header *main_thread_group = options.thread_group;
-  if (!main_thread_group) {
-    main_thread_group = get_main_thread_group(thr);
-  }
-
-  call_interpreter_synchronous(thr, make_thread,
-                       (bjvm_stack_value[]){{.obj = (void *)java_thr}, {.obj = main_thread_group}, {.obj = java_thr->name}});
-
-#undef java_thr
-  bjvm_drop_handle(thr, java_thread);
-  slice const phases[3] = {STR("initPhase1"), STR("initPhase2"), STR("initPhase3")};
-  slice const signatures[3] = {STR("()V"), STR("(ZZ)I"), STR("()V")};
-
-  bjvm_cp_method *method;
-  bjvm_stack_value ret;
-  for (uint_fast8_t i = 0; i < sizeof(phases) / sizeof(*phases); ++i) { // todo: these init phases should only be called once per VM
-    method = bjvm_method_lookup(vm->cached_classdescs->system, phases[i], signatures[i], false, false);
-    assert(method);
-    bjvm_stack_value args[2] = {{.i = 1}, {.i = 1}};
-    call_interpreter_synchronous(thr, method, args); // void methods, no result
-
-    if (thr->current_exception) {
-      // Failed to initialize
-      method = bjvm_method_lookup(thr->current_exception->descriptor, STR("getMessage"), STR("()Ljava/lang/String;"), true, true);
-      assert(method);
-
-      bjvm_stack_value args[] = {{.obj = thr->current_exception}};
-      bjvm_stack_value obj = call_interpreter_synchronous(thr, method, args);
-      heap_string message;
-      if (obj.obj) {
-        BJVM_CHECK(read_string_to_utf8(thr, &message, obj.obj) == 0);
-      }
-      fprintf(stderr, "Error in init phase %.*s: %.*s, %s\n",
-        fmt_slice(thr->current_exception->descriptor->name), fmt_slice(phases[i]),
-        obj.obj ? message.chars : "no message");
-      abort();
+    bjvm_obj_header *main_thread_group = options.thread_group;
+    if (!main_thread_group) {
+      main_thread_group = get_main_thread_group(thr);
     }
 
-    method = bjvm_method_lookup(vm->cached_classdescs->system, STR("getProperty"),
-                                STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
-    assert(method);
-    bjvm_stack_value args2[1] = {{.obj = (void *)MakeJStringFromCString(thr, "java.home", true)}};
-    ret = call_interpreter_synchronous(thr, method, args2); // returns a String
+    call_interpreter_synchronous(thr, make_thread,
+                         (bjvm_stack_value[]){{.obj = (void *)java_thr}, {.obj = main_thread_group}, {.obj = java_thr->name}});
 
-    heap_string java_home;
-    BJVM_CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
-    free_heap_str(java_home);
+#undef java_thr
+    bjvm_drop_handle(thr, java_thread);
+
+  if (!vm->vm_initialized) {
+    slice const phases[3] = {STR("initPhase1"), STR("initPhase2"), STR("initPhase3")};
+    slice const signatures[3] = {STR("()V"), STR("(ZZ)I"), STR("()V")};
+
+    bjvm_cp_method *method;
+    bjvm_stack_value ret;
+    for (uint_fast8_t i = 0; i < sizeof(phases) / sizeof(*phases); ++i) { // todo: these init phases should only be called once per VM
+      method = bjvm_method_lookup(vm->cached_classdescs->system, phases[i], signatures[i], false, false);
+      assert(method);
+      bjvm_stack_value args[2] = {{.i = 1}, {.i = 1}};
+      call_interpreter_synchronous(thr, method, args); // void methods, no result
+
+      if (thr->current_exception) {
+        // Failed to initialize
+        method = bjvm_method_lookup(thr->current_exception->descriptor, STR("getMessage"), STR("()Ljava/lang/String;"), true, true);
+        assert(method);
+
+        bjvm_stack_value args[] = {{.obj = thr->current_exception}};
+        bjvm_stack_value obj = call_interpreter_synchronous(thr, method, args);
+        heap_string message;
+        if (obj.obj) {
+          BJVM_CHECK(read_string_to_utf8(thr, &message, obj.obj) == 0);
+        }
+        fprintf(stderr, "Error in init phase %.*s: %.*s, %s\n",
+          fmt_slice(thr->current_exception->descriptor->name), fmt_slice(phases[i]),
+          obj.obj ? message.chars : "no message");
+        abort();
+      }
+
+      method = bjvm_method_lookup(vm->cached_classdescs->system, STR("getProperty"),
+                                  STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
+      assert(method);
+      bjvm_stack_value args2[1] = {{.obj = (void *)MakeJStringFromCString(thr, "java.home", true)}};
+      ret = call_interpreter_synchronous(thr, method, args2); // returns a String
+
+      heap_string java_home;
+      BJVM_CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
+      free_heap_str(java_home);
+    }
+
+    vm->vm_initialized = true;
   }
 
   thr->current_exception = nullptr;
 
-  // Call setJavaLangAccess() since we crash before getting there
-  method = bjvm_method_lookup(vm->cached_classdescs->system, STR("setJavaLangAccess"), STR("()V"), false, false);
-  call_interpreter_synchronous(thr, method, nullptr); // void methods, no result
 
   return thr;
 }

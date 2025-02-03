@@ -73,6 +73,7 @@
 #include "reflection.h"
 
 #include <instrumentation.h>
+#include <roundrobin_scheduler.h>
 #include <sys/time.h>
 
 typedef s64 (*bytecode_handler_t)(ARGS_VOID);
@@ -418,8 +419,10 @@ __attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
     thread->frames[thread->frames_count - 1]->is_async_suspended = true;
 
     continuation_frame *cont = async_stack_push(thread);
+    rr_wakeup_info *wakeup = malloc(sizeof(rr_wakeup_info));
+    wakeup->kind = RR_WAKEUP_YIELDING;
     *cont = (continuation_frame){.pnt = CONT_RESUME_INSN,
-                                 .wakeup = nullptr};
+                                 .wakeup = (void*)wakeup};
     return true;
   }
   return false;
@@ -2059,8 +2062,10 @@ __attribute__((noinline)) static s64 invokedynamic_impl_void(ARGS_VOID) {
 #define insn (&insns[0])
       insn;
   ctx.args.indy = indy;
+  thread->synchronous_depth++;
   future_t fut = indy_resolve(&ctx);
   BJVM_CHECK(fut.status == FUTURE_READY);
+  thread->synchronous_depth--;
 
   if (thread->current_exception) {
     return 0;

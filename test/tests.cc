@@ -27,6 +27,7 @@
 #endif
 
 #include <numeric>
+#include <roundrobin_scheduler.h>
 
 using namespace Bjvm::Tests;
 using Catch::Matchers::Equals;
@@ -664,3 +665,36 @@ TEST_CASE("Filesystem") {
   REQUIRE_THAT(result.stdout_, Equals("UnixFileSystem"));
 }
 #endif
+
+TEST_CASE("Multithreading") {
+  bjvm_vm_options options = bjvm_default_vm_options();
+  options.classpath = STR("test_files/basic_multithreading/");
+  bjvm_vm *vm = bjvm_create_vm(options);
+
+  auto thread = bjvm_create_thread(vm, bjvm_default_thread_options());
+  bjvm_classdesc *desc = bootstrap_lookup_class(thread, STR("Multithreading"));
+
+  BJVM_CHECK(desc);
+
+  bjvm_initialize_class_t init = {.args = {thread, desc}};
+  future_t fut = bjvm_initialize_class(&init);
+  BJVM_CHECK(fut.status == FUTURE_READY);
+
+  bjvm_cp_method *method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
+
+  rr_scheduler scheduler;
+  rr_scheduler_init(&scheduler, vm);
+  vm->scheduler = &scheduler;
+
+  bjvm_stack_value args[1] = {{.obj = nullptr}};
+
+  call_interpreter_t ctx = {{ thread, method, args }};
+  rr_scheduler_run(&scheduler, ctx);
+
+  while (true) {
+    auto result = rr_scheduler_step(&scheduler);
+    if (result == SCHEDULER_RESULT_DONE) {
+      break;
+    }
+  }
+}

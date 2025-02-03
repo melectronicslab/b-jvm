@@ -40,8 +40,19 @@ typedef struct {
   bjvm_vm *vm;
 } execution_record;
 
+typedef enum {
+  RR_WAKEUP_YIELDING,
+  RR_WAKEUP_SLEEP
+} rr_wakeup_kind;
+
+typedef struct {
+  rr_wakeup_kind kind;
+  u64 wakeup_us;  // At this time, the thread should be rescheduled
+} rr_wakeup_info;
+
 execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t call);
-void free_execution_record(execution_record *record) ;
+void free_execution_record(execution_record *record);
+
 
 #ifdef __cplusplus
 }

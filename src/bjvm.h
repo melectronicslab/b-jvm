@@ -369,6 +369,9 @@ typedef struct bjvm_vm {
 
   // Latest TID
   u32 next_tid;
+
+  bool vm_initialized;
+  void *scheduler;  // rr_scheduler or null
 } bjvm_vm;
 
 // Java Module

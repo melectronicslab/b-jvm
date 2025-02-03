@@ -69,7 +69,7 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, staticFieldOffset0,
   return (bjvm_stack_value){.l = reflect_field->byte_offset};
 }
 
-DECLARE_NATIVE("jdk/internal/misc", Unsafe, staticFieldBase,
+DECLARE_NATIVE("jdk/internal/misc", Unsafe, staticFieldBase0,
                "(Ljava/lang/reflect/Field;)Ljava/lang/Object;") {
   assert(argc == 1);
   // Return pointer to static_fields
