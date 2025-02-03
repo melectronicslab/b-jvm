@@ -1,8 +1,8 @@
 function(add_dtrace_support target probes_definitions)
-    get_filename_component(basename "${probes_definitions}" NAME)
+    get_filename_component(basename "${probes_definitions}" NAME_WE)
     set(probes_dir "${CMAKE_CURRENT_BINARY_DIR}/probes")
     set(probes_object "${probes_dir}/${basename}.o")
-    set(probes_header "${probes_dir}/${basename}.o")
+    set(probes_header "${probes_dir}/${basename}.h")
 
     file(MAKE_DIRECTORY ${probes_dir})
 
