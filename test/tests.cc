@@ -28,6 +28,7 @@
 
 #include <numeric>
 #include <roundrobin_scheduler.h>
+#include <unistd.h>
 
 using namespace Bjvm::Tests;
 using Catch::Matchers::Equals;
@@ -695,6 +696,12 @@ TEST_CASE("Multithreading") {
     auto result = rr_scheduler_step(&scheduler);
     if (result == SCHEDULER_RESULT_DONE) {
       break;
+    }
+
+    u64 sleep_for = rr_scheduler_may_sleep_us(&scheduler);
+    if (sleep_for) {
+      printf("Sleeping for: %llu µs\n", sleep_for);
+      usleep(sleep_for);
     }
   }
 }

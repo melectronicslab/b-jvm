@@ -534,11 +534,11 @@ typedef struct bjvm_thread {
 
   int allocations_so_far;
   // This value is used to periodically check whether we should yield back to the scheduler ...
-  int fuel;
+  u32 fuel;
   // ... if the current time is past this value
   u64 yield_at_time;
   // Current number of active synchronous calls
-  int synchronous_depth;
+  u32 synchronous_depth;
 
   u64 tid;
 

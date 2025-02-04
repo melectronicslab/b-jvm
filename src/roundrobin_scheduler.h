@@ -30,6 +30,7 @@ typedef enum {
 } scheduler_status_t;
 
 scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler);
+u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler);
 
 typedef struct {
   scheduler_status_t status;  // as long as this is MORE, the method isn't yet finished

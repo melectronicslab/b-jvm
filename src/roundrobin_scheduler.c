@@ -37,6 +37,34 @@ static thread_info * get_next_thr(impl *impl) {
   return info;
 }
 
+
+u64 get_unix_us(void) {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
+  return time;
+}
+
+u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
+  s64 min = INT64_MAX;
+  impl *I = scheduler->_impl;
+  // Check all infos for wakeup times
+  for (int i = 0; i < arrlen(I->round_robin); i++) {
+    thread_info *info = I->round_robin[i];
+    if (arrlen(info->call_queue) > 0) {
+      if (info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP) {
+        if ((s64)info->wakeup_info->wakeup_us < min) {
+          min = (s64)info->wakeup_info->wakeup_us;
+        }
+      } else {
+        return 0; // at least one thing is waiting, and not sleeping
+      }
+    }
+  }
+  min -= (s64)get_unix_us();
+  return min >= 0 ? min : 0;
+}
+
 scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   impl *impl = scheduler->_impl;
 
@@ -51,9 +79,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   const int MICROSECONDS_TO_RUN = 10000;
 
   thread->fuel = 100000;
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
+  u64 time = get_unix_us();
 
   // If the thread is sleeping, check if it's time to wake up
   if (info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP) {
@@ -78,12 +104,16 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
 
     memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
     arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);
+
+    if (arrlen(info->call_queue) == 0) {
+      arrpop(impl->round_robin);
+    }
   } else {
     free(info->wakeup_info);
     info->wakeup_info = (void*)fut.wakeup;
   }
 
-  return SCHEDULER_RESULT_MORE;
+  return arrlen(impl->round_robin) ? SCHEDULER_RESULT_MORE : SCHEDULER_RESULT_DONE;
 }
 
 static thread_info *get_or_create_thread_info(impl *impl, bjvm_thread *thread) {
