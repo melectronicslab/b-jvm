@@ -340,6 +340,87 @@ function createClassImpl(vm: VM, bjvm_classdesc_ptr: number): HandleConstructor 
     return Class;
 }
 
+const _BRANDS = Symbol("BRANDS");
+
+declare class TSJavaType {
+    [_BRANDS]: {
+        "TSJavaType": [];
+    }
+}
+
+// Superclass
+export declare class AbstractList<E extends TSJavaType> {
+    get(index: number): Promise<E>;
+
+    [_BRANDS]: {
+        "TSJavaType": [];
+        "AbstractList": [];
+        "List": [E];
+    }
+}
+
+// "Superinterface"
+export declare class List<E extends TSJavaType> {
+    [_BRANDS]: {
+        "TSJavaType": [];
+        "List": [E];
+    }
+}
+
+const _PRIMITIVE = Symbol("PRIMITIVE");
+
+type JavaPrimitive<N extends string, T> = T & {[_PRIMITIVE]: N}
+type JavaInt = JavaPrimitive<"int", number>;
+type JavaFloat = JavaPrimitive<"float", number>;
+
+function makeInt(n: number): JavaInt {
+    if (n < 2 ** 31 && n >= -(2 ** 31) && Number.isInteger(n)) {
+        return (n | 0) as JavaInt;
+    }
+    throw new Error("NO!");
+}
+
+function makeFloat(n: number): JavaFloat {
+    return Math.fround(n) as JavaFloat;
+}
+
+export declare class ArrayList<E extends TSJavaType> extends AbstractList<E> {
+    private static vm: number;
+    constructor(capacity: number);  // VERY GOOD. DO NOT YIELD TO ASYNC IN THE CONSTRUCTOR
+
+    add(item: E): Promise<boolean>;
+    add(index: JavaInt | Integer, item: E);
+
+    pox(float: JavaFloat | Float);
+    pox(integer: JavaInt | Integer);
+
+    [_BRANDS]: {
+        "TSJavaType": [];
+        "ArrayList": [];
+        "AbstractList": [];
+        "List": [E];
+    }
+}
+
+export declare class Integer {
+    static "valueOf_$I": (value: number) => Promise<Integer>;
+
+    static cow(list: List<Integer>);
+
+
+    [_BRANDS]: {
+        "TSJavaType": [];
+        "Integer": [];
+    }
+}
+
+type LoadedClassMap = {
+    "java/util/ArrayList": typeof ArrayList;
+    "java/lang/Integer": typeof Integer;
+};
+export type LoadableClassName = keyof LoadedClassMap;
+type LoadedClass<T extends LoadableClassName> = LoadedClassMap[T];
+
 class Thread {
     vm: VM;
     ptr: number;
@@ -397,7 +478,7 @@ class Thread {
         throw handle;
     }
 
-    async loadClass(name: string): Promise<any> {
+    async loadClass<N extends LoadableClassName>(name: N): Promise<LoadedClass<N>> {
         let namePtr = module._malloc(name.length + 1);
         new TextEncoder().encodeInto(name, new Uint8Array(module.HEAPU8.buffer, namePtr, name.length));
         module.HEAPU8[namePtr + name.length] = 0;

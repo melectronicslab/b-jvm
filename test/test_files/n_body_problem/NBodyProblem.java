@@ -4,6 +4,8 @@ public final class NBodyProblem {
 
         Body(double x, double y, double z,
              double vx, double vy, double vz, double mass) {
+
+             Thread.sleep(100);
             this.x = x;
             this.y = y;
             this.z = z;
