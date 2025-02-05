@@ -85,7 +85,7 @@ DECLARE_NATIVE("java/lang", Thread, clearInterruptEvent, "()V") {
 
 DECLARE_ASYNC_NATIVE("java/lang", Thread, yield0, "()V", locals(), invoked_methods()) {
   // Thread.yield has no synchronization semantics [JLS 17.9];
-  // the JVM is free to implement them as no-ops or treat them as scheduling hints.
+  // the JVM is free to implement it as a no-op or treat it as a scheduling hint.
   // This is usually used to "encourage" more context switches to improve throughput
   // "It is rarely appropriate to use this method" (OpenJDK).
   ASYNC_END_VOID();
