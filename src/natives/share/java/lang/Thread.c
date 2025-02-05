@@ -82,3 +82,11 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(), invoked
 DECLARE_NATIVE("java/lang", Thread, clearInterruptEvent, "()V") {
   return value_null(); // openjdk only does something here on Windows devices
 }
+
+DECLARE_ASYNC_NATIVE("java/lang", Thread, yield0, "()V", locals(), invoked_methods()) {
+  // Thread.yield has no synchronization semantics [JLS 17.9];
+  // the JVM is free to implement them as no-ops or treat them as scheduling hints.
+  // This is usually used to "encourage" more context switches to improve throughput
+  // "It is rarely appropriate to use this method" (OpenJDK).
+  ASYNC_END_VOID();
+}
