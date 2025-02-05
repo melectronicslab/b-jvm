@@ -5,6 +5,8 @@
 #include <emscripten/emscripten.h>
 #include "../bjvm.h"
 
+#include <roundrobin_scheduler.h>
+
 EMSCRIPTEN_KEEPALIVE
 bjvm_vm *bjvm_ffi_create_vm(const char* classpath, bjvm_write_byte stdout_, bjvm_write_byte stderr_) {
   bjvm_vm_options options = bjvm_default_vm_options();
@@ -46,6 +48,47 @@ void bjvm_ffi_clear_current_exception(bjvm_thread *thr) {
 EMSCRIPTEN_KEEPALIVE
 bjvm_classdesc *bjvm_ffi_get_classdesc(bjvm_obj_header *obj) {
   return obj->descriptor;
+}
+
+EMSCRIPTEN_KEEPALIVE
+rr_scheduler *bjvm_ffi_create_rr_scheduler(bjvm_vm *vm) {
+  rr_scheduler *scheduler = malloc(sizeof(rr_scheduler));
+  rr_scheduler_init(scheduler, vm);
+  return scheduler;
+}
+
+EMSCRIPTEN_KEEPALIVE
+u32 bjvm_ffi_rr_scheduler_wait_for_us(rr_scheduler *scheduler) {
+  return rr_scheduler_may_sleep_us(scheduler);
+}
+
+EMSCRIPTEN_KEEPALIVE
+scheduler_status_t bjvm_ffi_rr_scheduler_step(rr_scheduler *scheduler) {
+  return rr_scheduler_step(scheduler);
+}
+
+EMSCRIPTEN_KEEPALIVE
+execution_record *bjvm_ffi_rr_schedule(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args) {
+  call_interpreter_t call = {.args = {thread, method, args}};
+  BJVM_CHECK(thread->vm->scheduler && "No scheduler set");
+  return rr_scheduler_run(thread->vm->scheduler, call);
+}
+
+EMSCRIPTEN_KEEPALIVE
+bjvm_stack_value *bjvm_ffi_get_execution_record_result_pointer(execution_record *record) {
+  if (record->js_handle != -1) {
+    return (void*) bjvm_deref_js_handle(record->vm, record->js_handle);
+  }
+  return &record->returned;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void bjvm_ffi_free_execution_record(execution_record *record) {
+  free_execution_record(record);
+}
+
+void bjvm_ffi_free_rr_scheduler(rr_scheduler *scheduler) {
+  rr_scheduler_uninit(scheduler);
 }
 
 EMSCRIPTEN_KEEPALIVE

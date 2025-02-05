@@ -99,8 +99,18 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   future_t fut = call_interpreter(&call->call);
 
   if (fut.status == FUTURE_READY) {
-    call->record->status = SCHEDULER_RESULT_DONE;
-    call->record->returned = call->call._result;
+    execution_record *rec = call->record;
+    rec->status = SCHEDULER_RESULT_DONE;
+    rec->returned = call->call._result;
+    rec->vm = scheduler->vm;
+
+    if (field_to_kind(&call->call.args.method->descriptor->return_type) == BJVM_TYPE_KIND_REFERENCE &&
+      rec->returned.obj) {
+      // Create a handle
+      rec->js_handle = bjvm_make_js_handle(scheduler->vm, rec->returned.obj);
+    } else {
+      rec->js_handle = -1;  // no handle here
+    }
 
     memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
     arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);

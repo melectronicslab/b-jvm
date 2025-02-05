@@ -224,7 +224,8 @@ class Thread {
 
     private async _runMethod(method: MethodInfo, ...args: any[]): Promise<any> {
         let argsPtr = module._malloc(args.length * 8);
-        let resultPtr = module._malloc(8);
+        let executionRecord = 0;
+
         try {
             const parsed = parseMethodDescriptor(method.descriptor);
             let isInstanceMethod = !(method.accessFlags & 0x0008);
@@ -236,17 +237,16 @@ class Thread {
             for (let i = 0; i < args.length - +isInstanceMethod; i++, j++) {
                 setJavaType(this.vm, argsPtr + j * 8, parsed.parameterTypes[i], args[j]);
             }
-            let ctx = module._bjvm_ffi_async_run(this.ptr, method.methodPointer, argsPtr);
-            while (!module._bjvm_ffi_run_step(ctx, resultPtr)) {
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
+            executionRecord = await this.vm.scheduleMethod(this, method, argsPtr);
             this.throwThreadException();
+            const resultPtr = module._bjvm_ffi_get_execution_record_result_pointer(executionRecord);
             if (parsed.returnType !== 'V') {
                 return readJavaType(this.vm, resultPtr, parsed.returnType);
             }
         } finally {
+            if (executionRecord)
+                module._bjvm_ffi_free_execution_record(executionRecord);
             module._free(argsPtr);
-            module._free(resultPtr);
         }
     }
 
@@ -282,6 +282,8 @@ class VM {
     namedClasses: Map<number /* bjvm_classdesc* */, any> = new Map();
     cachedThread: Thread;
 
+    scheduler: number;
+
     private constructor(options: VMOptions) {
         let classpath = module._malloc(options.classpath.length + 1);
         new TextEncoder().encodeInto(options.classpath, new Uint8Array(module.HEAPU8.buffer, classpath, options.classpath.length));
@@ -292,6 +294,18 @@ class VM {
 
         this.ptr = module._bjvm_ffi_create_vm(classpath, module.addFunction(options.stdout, 'vii'), module.addFunction(options.stderr, 'vii'));
         module._free(classpath);
+
+        this.scheduler = module._bjvm_ffi_create_rr_scheduler(this.ptr);
+    }
+
+    async scheduleMethod(thread: Thread, method: MethodInfo, argsPtr: number) {
+        let executionRecord = module._bjvm_ffi_rr_schedule(thread.ptr, method.methodPointer, argsPtr);
+        let status = module._bjvm_ffi_rr_scheduler_step(this.scheduler);
+        if (status == 1) {
+            const waitUs = module._bjvm_ffi_rr_scheduler_wait_for_us(this.scheduler);
+            await new Promise((resolve) => setTimeout(resolve, waitUs / 1000));
+        }
+        return executionRecord;
     }
 
     static async create(options: VMOptions) {
