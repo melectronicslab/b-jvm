@@ -192,22 +192,36 @@ std::optional<std::vector<u8>> ReadFile(const std::string &file) {
 }
 
 TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
-                             std::string main_class) {
+                             std::string main_class, std::string input) {
   bjvm_vm_options options = bjvm_default_vm_options();
 
-  TestCaseResult result{};
+  TestCaseResult result { };
+  result.stdin_ = input;
 
   options.classpath = (slice){.chars = (char *)classpath.c_str(),
                                   .len = static_cast<u16>(classpath.size())};
-  options.write_stdout = capture_stdio ? +[](int ch, void *param) {
-    auto *result = (TestCaseResult *)param;
-    result->stdout_ += (char)ch;
+
+  options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    int remaining = result->stdin_.length();
+    int num_bytes = std::min(len, remaining);
+    result->stdin_.copy(buf, num_bytes);
+    result->stdin_ = result->stdin_.substr(num_bytes);
+    return num_bytes;
   } : nullptr;
-  options.write_stderr = capture_stdio ? +[](int ch, void *param) {
-    auto *result = (TestCaseResult *)param;
-    result->stderr_ += (char)ch;
+  options.poll_available_stdin = capture_stdio ? +[](void *param) {
+    auto *result = (TestCaseResult *) param;
+    return (int) result->stdin_.length();
   } : nullptr;
-  options.write_byte_param = &result;
+  options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stdout_.append(buf, len);
+  } : nullptr;
+  options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stderr_.append(buf, len);
+  } : nullptr;
+  options.stdio_override_param = &result;
 
   bjvm_vm *vm = bjvm_create_vm(options);
   if (!vm) {
@@ -221,7 +235,8 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 
   bjvm_classdesc *desc = bootstrap_lookup_class(thread, m);
   if (!desc) {
-    return result;
+    fprintf(stderr, "Failed to find main class %.*s\n", fmt_slice(m));
+    throw std::runtime_error("Failed to find main class");
   }
   bjvm_stack_value args[1] = {{.obj = nullptr}};
 

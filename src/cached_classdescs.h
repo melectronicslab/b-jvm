@@ -29,6 +29,7 @@
   X(direct_method_handle_holder, "java/lang/invoke/DirectMethodHandle$Holder") \
   X(delegating_method_handle_holder, "java/lang/invoke/DelegatingMethodHandle$Holder") \
   X(lf_holder, "java/lang/invoke/LambdaForm$Holder") \
+  X(file_not_found_exception, "java/io/FileNotFoundException")
   X(interrupted_exception, "java/lang/InterruptedException") \
   X(illegal_state_exception, "java/lang/IllegalStateException")
 
