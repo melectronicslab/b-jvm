@@ -708,7 +708,62 @@ TEST_CASE("Multithreading") {
 
 TEST_CASE("Thread interruption") {
   // todo: figure out how to schedule this so that we don't run into an assertion error
-  auto result = run_test_case("test_files/thread_interrupt/", true, "Main");
+  TestCaseResult result { };
+
+  bjvm_vm_options options = bjvm_default_vm_options();
+  options.write_stdout = +[](int ch, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stdout_ += (char)ch;
+  };
+  options.write_byte_param = &result;
+  options.classpath = STR("test_files/thread_interrupt/");
+  bjvm_vm *vm = bjvm_create_vm(options);
+
+  auto thread = bjvm_create_thread(vm, bjvm_default_thread_options());
+  bjvm_classdesc *desc = bootstrap_lookup_class(thread, STR("Main"));
+
+  BJVM_CHECK(desc);
+
+  bjvm_initialize_class_t init = {.args = {thread, desc}};
+  future_t fut = bjvm_initialize_class(&init);
+  BJVM_CHECK(fut.status == FUTURE_READY);
+
+  bjvm_cp_method *method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
+
+  rr_scheduler scheduler;
+  rr_scheduler_init(&scheduler, vm);
+  vm->scheduler = &scheduler;
+
+  bjvm_stack_value args[1] = {{.obj = nullptr}};
+
+  call_interpreter_t ctx = {{ thread, method, args }};
+  rr_scheduler_run(&scheduler, ctx);
+
+  int num_sleep = 0;
+
+  // since this is single-threaded test code,
+  // a non-interrupted Thread.sleep(1000) should let the entire VM sleep for 1 second
+  // todo: if our VM ever uses multiple threads or does other work like garbage collection during sleeps,
+  // these assertions might not be valid
+
+  while (true) {
+    auto result = rr_scheduler_step(&scheduler);
+    if (result == SCHEDULER_RESULT_DONE) {
+      break;
+    }
+
+    u64 sleep_for = rr_scheduler_may_sleep_us(&scheduler);
+    if (sleep_for) {
+      num_sleep++;
+      assert(sleep_for <= 1000000); // sleep for at most 1 second
+      assert(sleep_for >= 1000000 * 9 / 10); // sleep for roughly 1 second
+      printf("Sleeping for: %llu µs\n", sleep_for);
+      usleep(sleep_for);
+    }
+  }
+
+  assert(num_sleep == 1); // only yield once; the other sleep gets interrupted before even yielding
+
   REQUIRE(result.stdout_ == R"(initially interrupted: false
 interrupted: true
 interrupted: true
