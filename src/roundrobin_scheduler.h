@@ -26,7 +26,8 @@ void rr_scheduler_uninit(rr_scheduler *scheduler);
 
 typedef enum {
   SCHEDULER_RESULT_DONE,
-  SCHEDULER_RESULT_MORE
+  SCHEDULER_RESULT_MORE,
+  SCHEDULER_RESULT_INVAL
 } scheduler_status_t;
 
 scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler);
@@ -35,10 +36,13 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler);
 typedef struct {
   scheduler_status_t status;  // as long as this is MORE, the method isn't yet finished
   bjvm_stack_value returned;
+  bjvm_thread *thread;  // The thread that this execution record corresponds to
 
   int js_handle;  // TEMPORARY, to prevent GC
   bjvm_vm *vm;
 } execution_record;
+
+scheduler_status_t rr_scheduler_execute_immediately(execution_record *record);
 
 typedef enum {
   RR_WAKEUP_YIELDING,

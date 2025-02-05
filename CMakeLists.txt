@@ -40,7 +40,7 @@ set(BASE_CXX_FLAGS "-g -O2 -Werror=sign-compare -Wall -Werror=uninitialized -Wno
 
 if (EMSCRIPTEN)
     set(PLATFORM_C_FLAGS "-Wno-limited-postlink-optimizations -sUSE_ZLIB=1 -mtail-call")
-    set(EmscriptenFlags "-s EXPORTED_FUNCTIONS=\"['_malloc','_free','_main']\" -sSTACK_SIZE=500000 -Wl,--whole-archive -sWASMFS -sFORCE_FILESYSTEM=1 -sALLOW_MEMORY_GROWTH=1 --emit-tsd bjvm_main.d.ts -s ALLOW_TABLE_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='\"ccall\",\"wasmMemory\",\"cwrap\",\"addFunction\",\"removeFunction\",\"wasmTable\",\"FS\",\"UTF8ToString\",\"getValue\",\"setValue\"'")
+    set(EmscriptenFlags "-s WARN_ON_UNDEFINED_SYMBOLS=0 -s EXPORTED_FUNCTIONS=\"['_malloc','_free','_main']\" -sSTACK_SIZE=500000 -Wl,--whole-archive -sWASMFS -sFORCE_FILESYSTEM=1 -sALLOW_MEMORY_GROWTH=1 --emit-tsd bjvm_main.d.ts -s ALLOW_TABLE_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='\"ccall\",\"wasmMemory\",\"cwrap\",\"addFunction\",\"removeFunction\",\"wasmTable\",\"FS\",\"UTF8ToString\",\"getValue\",\"setValue\"'")
 elseif (APPLE)
     set(PLATFORM_CXX_FLAGS "-Wimplicit-fallthrough -Wno-missing-field-initializers") # -openmp -Xclang -fopenmp -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include -lomp -g")
 else ()

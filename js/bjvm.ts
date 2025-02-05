@@ -407,16 +407,50 @@ export declare class Integer {
 
     static cow(list: List<Integer>);
 
-
     [_BRANDS]: {
         "TSJavaType": [];
         "Integer": [];
     }
 }
 
+export declare class Multithreading {
+    static main(args: any): ForceablePromise<void>;
+
+    [_BRANDS]: {
+        "TSJavaType": [];
+        "Multithreading": [];
+    }
+}
+
+// A promise type for which we can also attempt to call the function synchronously.
+type ForceablePromise<T> = Promise<T> & {
+    // - The promise resolves normally if __forceSync is not called.
+    // - If __forceSync is called after the promise has resolved, it throws a JS error.
+    // - If __forceSync is called before the promise has resolved, the promise will be discarded and never resolve.
+    // - If __forceSync fails, it will return { success: false, illegalStateException: e } where e is an error containing
+    //   a backtrace to the function which forced a yielding to occur. thread->current_exception is NOT set. The promise
+    //   will resolve normally.
+    // - If __forceSync succeeds, it will return { success: true }. The current exception must still be checked in case
+    //   an error was thrown.
+    //
+    // This function is intended for internal use only, by the forceSync and attemptSync APIs.
+    __forceSync(raiseIllegalState: boolean): { success: true, value: T } | { success: false, illegalStateException: BaseHandle | null};
+};
+
+export function sync<T>(toExecute: ForceablePromise<T>): T {
+    const result = toExecute.__forceSync(true);
+    if (result.success) {
+        return result.value;
+    } else if (result.success === false /* convince TS */) {
+        throw result.illegalStateException;
+    }
+}
+
+
 type LoadedClassMap = {
     "java/util/ArrayList": typeof ArrayList;
     "java/lang/Integer": typeof Integer;
+    "NBodyProblem": typeof Multithreading;
 };
 export type LoadableClassName = keyof LoadedClassMap;
 type LoadedClass<T extends LoadableClassName> = LoadedClassMap[T];
@@ -440,9 +474,20 @@ class Thread {
         return handle;
     }
 
-    private async _runMethod(method: MethodInfo, ...args: any[]): Promise<any> {
+    private _runMethod(method: MethodInfo, ...args: any[]): ForceablePromise<any> {
         let argsPtr = module._malloc(args.length * 8);
         let executionRecord = 0;
+
+        let freed = false;
+        function freeData() {
+            if (freed) {
+                return;
+            }
+            freed = true;
+            if (executionRecord)
+                module._bjvm_ffi_free_execution_record(executionRecord);
+            module._free(argsPtr);
+        }
 
         try {
             const parsed = parseMethodDescriptor(method);
@@ -452,19 +497,44 @@ class Thread {
                 setJavaType(this.vm, argsPtr, { kind: 'L', className: "" }, args[0]);
                 j++;
             }
-            for (let i = 0; i < args.length - +isInstanceMethod; i++, j++) {
+            const nonInstanceArgc = args.length - +isInstanceMethod;
+            for (let i = 0; i < nonInstanceArgc; i++, j++) {
                 setJavaType(this.vm, argsPtr + j * 8, parsed.parameterTypes[i], args[j]);
             }
-            executionRecord = await this.vm.scheduleMethod(this, method, argsPtr);
-            this.throwThreadException();
-            if (parsed.returnType.kind !== 'V') {
-                const resultPtr = module._bjvm_ffi_get_execution_record_result_pointer(executionRecord);
-                return readJavaType(this.vm, resultPtr, parsed.returnType);
+            const scheduled = this.vm.scheduleMethod(this, method, argsPtr);
+            const readResult = () => {
+                if (parsed.returnType.kind !== 'V') {
+                    const resultPtr = module._bjvm_ffi_get_execution_record_result_pointer(executionRecord);
+                    return readJavaType(this.vm, resultPtr, parsed.returnType);
+                }
             }
-        } finally {
-            if (executionRecord)
-                module._bjvm_ffi_free_execution_record(executionRecord);
-            module._free(argsPtr);
+
+            const promise = (async () => {
+                if (!await scheduled.waitForResolution) {
+                    return;  // cancelled
+                }
+                this.throwThreadException();
+                freeData();
+                return readResult();
+            })() as ForceablePromise<any>;
+
+            promise.__forceSync = (raiseIllegalState: boolean) => {
+                const status = module._bjvm_ffi_execute_immediately(scheduled.record);
+                if (status == 0 /* DONE */) {
+                    const ret: ReturnType<typeof promise.__forceSync> = { success: true, value: readResult() };
+                    freeData();
+                    return ret;
+                } else {
+                    const ptr = module._bjvm_ffi_get_current_exception(this.ptr);
+                    const handle = this.vm.createHandle(ptr);
+                    return { success: false, illegalStateException: handle };
+                }
+            };
+
+            return promise;
+        } catch (e: any) {
+            freeData();
+            throw e;
         }
     }
 
@@ -522,16 +592,17 @@ class VM {
     }
 
     scheduleTimeout(waitUs: number = 0) {
+        if (this.waitingForYield > waitUs && this.timeout !== -1) {
+            clearTimeout(this.timeout);
+            this.timeout = -1;
+        }
         if (this.timeout === -1) {
-            if (this.waitingForYield > waitUs) {
-                clearTimeout(this.timeout);
-            }
             this.timeout = setTimeout(() => {
                 this.timeout = -1;
                 const status = module._bjvm_ffi_rr_scheduler_step(this.scheduler);
                 if (status !== 0) {
                     const waitUs = module._bjvm_ffi_rr_scheduler_wait_for_us(this.scheduler);
-                    this.scheduleTimeout(waitUs);
+                    this.scheduleTimeout(this.waitingForYield = waitUs);
                 }
                 for (let i = 0; i < this.pending.length; i++) {
                     this.pending[i]();
@@ -541,15 +612,40 @@ class VM {
         }
     }
 
-    async scheduleMethod(thread: Thread, method: MethodInfo, argsPtr: number) {
-        let executionRecord = module._bjvm_ffi_rr_schedule(thread.ptr, method.methodPointer, argsPtr);
-        while (!module._bjvm_ffi_rr_record_is_ready(executionRecord)) {
-            this.scheduleTimeout();
-            await new Promise((resolve) => {
-                this.pending.push(resolve);
-            });
-        }
-        return executionRecord;
+    // Low-level method scheduling apparatus
+   scheduleMethod(thread: Thread, method: MethodInfo, argsPtr: number):
+        { record: number, waitForResolution: Promise<boolean>, cancelResolution: () => void } {
+        let record = module._bjvm_ffi_rr_schedule(thread.ptr, method.methodPointer, argsPtr);
+        let cancelled = false;
+        let resolve_: Function;
+
+        const waitForResolution = (async () => {
+            while (!module._bjvm_ffi_rr_record_is_ready(record)) {
+                if (cancelled) {
+                    return false;
+                }
+
+                this.scheduleTimeout();
+                await new Promise((resolve) => {
+                    resolve_ = resolve;
+                    this.pending.push(resolve);
+                });
+            }
+
+            return true;
+        })();
+
+        const cancelResolution = () => {
+            cancelled = true;
+            for (let i = 0; i < this.pending.length; i++) {
+                if (this.pending[i] === resolve_) {
+                    this.pending.splice(i, 1);
+                    break;
+                }
+            }
+        };
+
+        return { record, waitForResolution, cancelResolution };
     }
 
     static async create(options: VMOptions) {
@@ -567,7 +663,7 @@ class VM {
         return made;
     }
 
-    createHandle(ptr: number) {
+    createHandle(ptr: number): BaseHandle | null {
         if (ptr === 0) return null;
 
         let handleIndex = module._bjvm_make_js_handle(this.ptr, ptr);
@@ -688,9 +784,6 @@ async function installRuntimeFiles(baseUrl: string, progress?: (loaded: number, 
             loaded += value.length;
             totalLoaded += value.length;
             progress?.(totalLoaded, TOTAL_BYTES);
-        }
-        if (data.length < 1000) {
-            console.log(file, String.fromCharCode(...data));
         }
         // Insert into the DB
         await addFile(db, file, data);

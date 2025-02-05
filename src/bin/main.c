@@ -128,6 +128,11 @@ bjvm_stack_value *bjvm_ffi_get_execution_record_result_pointer(execution_record 
 }
 
 EMSCRIPTEN_KEEPALIVE
+scheduler_status_t bjvm_ffi_execute_immediately(execution_record *record) {
+  return rr_scheduler_execute_immediately(record);
+}
+
+EMSCRIPTEN_KEEPALIVE
 void bjvm_ffi_free_execution_record(execution_record *record) {
   free_execution_record(record);
 }

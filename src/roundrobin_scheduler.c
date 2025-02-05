@@ -4,6 +4,8 @@
 
 #include "roundrobin_scheduler.h"
 
+#include "exceptions.h"
+
 typedef struct {
   call_interpreter_t call;
   execution_record *record;
@@ -102,7 +104,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   bjvm_thread *thread = info->thread;
   const int MICROSECONDS_TO_RUN = 30000;
 
-  thread->fuel = 100000;
+  thread->fuel = 50000;
 
   // If the thread is sleeping, check if it's time to wake up
   if (is_sleeping(info)) {
@@ -125,7 +127,6 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     execution_record *rec = call->record;
     rec->status = SCHEDULER_RESULT_DONE;
     rec->returned = call->call._result;
-    rec->vm = scheduler->vm;
 
     if (field_to_kind(&call->call.args.method->descriptor->return_type) == BJVM_TYPE_KIND_REFERENCE &&
       rec->returned.obj) {
@@ -162,6 +163,42 @@ static thread_info *get_or_create_thread_info(impl *impl, bjvm_thread *thread) {
   return info;
 }
 
+scheduler_status_t rr_scheduler_execute_immediately(execution_record *record) {
+  // Find the thread in question and synchronously execute all pending calls up to this record
+  rr_scheduler *scheduler = record->vm->scheduler;
+  impl *I = scheduler->_impl;
+
+  for (int i = 0; i < arrlen(I->round_robin); ++i) {
+    if (I->round_robin[i]->thread == record->thread) {
+      thread_info *info = I->round_robin[i];
+      while (arrlen(info->call_queue) > 0) {
+        pending_call *call = &info->call_queue[0];
+        info->thread->synchronous_depth++;  // force it to be synchronous
+        future_t fut = call_interpreter(&call->call);
+        info->thread->synchronous_depth--;
+
+        if (fut.status == FUTURE_NOT_READY) {
+          // Raise IllegalStateException
+          bjvm_raise_vm_exception(record->thread, STR("java/lang/IllegalStateException"),
+            STR("Cannot synchronously execute this method"));
+          return SCHEDULER_RESULT_INVAL;
+        }
+
+        memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
+        arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);
+
+        if (call->record == record) {
+          return SCHEDULER_RESULT_DONE;
+        }
+      }
+
+      break;
+    }
+  }
+
+  return SCHEDULER_RESULT_DONE;
+}
+
 execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t call) {
   bjvm_thread *thread = call.args.thread;
   thread_info *info = get_or_create_thread_info(scheduler->_impl, thread);
@@ -172,7 +209,11 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
   call.args.args = args_copy;
 
   pending_call pending = {.call = call, .record = calloc(1, sizeof(execution_record))};
-  pending.record->status = SCHEDULER_RESULT_MORE;
+  execution_record *rec = pending.record;
+  rec->status = SCHEDULER_RESULT_MORE;
+  rec->vm = scheduler->vm;
+  rec->thread = thread;
+
   arrput(info->call_queue, pending);
   return pending.record;
 }

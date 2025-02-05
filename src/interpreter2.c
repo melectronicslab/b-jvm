@@ -95,6 +95,37 @@ const static bytecode_handler_t *bytecode_tables[4] = {
     [TOS_DOUBLE] = jmp_table_double,
 };
 
+extern int64_t __interpreter_intrinsic_next_void(ARGS_VOID, int index);
+extern int64_t __interpreter_intrinsic_next_int(ARGS_INT, int index);
+extern int64_t __interpreter_intrinsic_next_double(ARGS_DOUBLE, int index);
+extern int64_t __interpreter_intrinsic_next_float(ARGS_FLOAT, int index);
+
+// These point into .rodata and are used to recover the function pointers for the funcref jump tables.
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_void_table_base() {
+  return jmp_table_void;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_int_table_base() {
+  return jmp_table_int;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_float_table_base() {
+  return jmp_table_float;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_double_table_base() {
+  return jmp_table_double;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int32_t __interpreter_intrinsic_max_insn() {
+  return MAX_INSN_KIND;
+}
+
 #if DO_TAILS
 
 #ifdef EMSCRIPTEN
@@ -104,7 +135,7 @@ const static bytecode_handler_t *bytecode_tables[4] = {
     [[maybe_unused]] s64 a_undef = 0;                                                                                                   \
     [[maybe_unused]] float b_undef = 0;                                                                                                     \
     [[maybe_unused]] double c_undef = 0;                                                                                                    \
-    MUSTTAIL return (expr);                                                                                                               \
+    expr                                                                                                               \
   } while (0);
 #else
 #define WITH_UNDEF(expr)                                                                                               \
@@ -117,6 +148,35 @@ const static bytecode_handler_t *bytecode_tables[4] = {
   } while (0);
 #endif
 
+#ifdef EMSCRIPTEN
+
+#define JMP_INT(tos)                                                                                                   \
+  int k = insns[0].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef, k);)
+#define JMP_FLOAT(tos)                                                                                                 \
+  int k = insns[0].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef, k);)
+#define JMP_DOUBLE(tos)                                                                                                \
+  int k = insns[0].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos, k);)
+
+#define NEXT_INT(tos)                                                                                                  \
+  int k = insns[1].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef, k);)
+#define NEXT_FLOAT(tos)                                                                                                \
+  int k = insns[1].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef, k);)
+#define NEXT_DOUBLE(tos)                                                                                               \
+  int k = insns[1].kind;                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos, k);)
+
+#define JMP_VOID                                                                                                       \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef, insns[0].kind);)
+// Jump to the instruction at pc + 1, with nothing in the top of the stack.
+#define NEXT_VOID                                                                                                      \
+WITH_UNDEF(                                                                                                          \
+MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef, insns[1].kind);)
+#else // !ifdef EMSCRIPTEN
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
   s64 __tos = (s64)(tos);                                                                                      \
@@ -149,8 +209,8 @@ const static bytecode_handler_t *bytecode_tables[4] = {
 #define NEXT_VOID                                                                                                      \
   WITH_UNDEF(                                                                                                          \
       jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef));
-#else
-#endif
+#endif  // ifdef EMSCRIPTEN
+#endif  // DO_TAILS
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos)                                                                                                     \
@@ -405,7 +465,7 @@ static async_wakeup_info *async_stack_top(bjvm_thread *thread) {
 
 
 __attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
-  const int REFUEL = 100000;
+  const int REFUEL = 50000;
   thread->fuel = REFUEL;
 
   if (thread->synchronous_depth)  // we're in a synchronous call, don't try to yield
@@ -560,7 +620,6 @@ force_inline static s64 putstatic_impl_void(ARGS_VOID) {
   if (thread->current_exception) {
     return 0;
   }
-
   STACK_POLYMORPHIC_JMP(*(sp - 1));
 }
 FORWARD_TO_NULLARY(putstatic)
