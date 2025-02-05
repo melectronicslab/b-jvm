@@ -770,11 +770,11 @@ TEST_CASE("Thread interruption") {
   TestCaseResult result { };
 
   bjvm_vm_options options = bjvm_default_vm_options();
-  options.write_stdout = +[](int ch, void *param) {
+  options.write_stdout = +[](char *buf, int len, void *param) {
     auto *result = (TestCaseResult *) param;
-    result->stdout_ += (char)ch;
+    result->stdout_.append(buf, len);
   };
-  options.write_byte_param = &result;
+  options.stdio_override_param = &result;
   options.classpath = STR("test_files/thread_interrupt/");
   bjvm_vm *vm = bjvm_create_vm(options);
 
