@@ -8,16 +8,17 @@ class MultithreadingDemo implements Runnable {
         System.out.println("Thread " + id + " is now alive!");
 
         long sleepFor = (int)(Math.random() * 10) * 20;
-        System.out.println("Thread " + Thread.currentThread().getId() + " sleeps for " + sleepFor + "ms");
+        System.out.println("Thread " + (int)Thread.currentThread().getId() + " sleeps for " + sleepFor + "ms");
         try {
             Thread.sleep(sleepFor);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+        System.out.println("Thread " + (int)Thread.currentThread().getId() + " wakes up after " + sleepFor + "ms");
+        System.out.println("List is null: " + (list == null));
         list.add((int)sleepFor);
 
         System.out.println("Thread " + id + " is exiting!");
-        System.out.println("List: ");
         for (int i = 0; i < list.size(); i++) {
             System.out.print(list.get(i) + " ");
         }
@@ -31,6 +32,7 @@ public class Multithreading {
         for (int i = 0; i < n; i++) {
             Thread object = new Thread(new MultithreadingDemo());
             object.start();
+            System.out.println("Done!\n");
         }
     }
 }

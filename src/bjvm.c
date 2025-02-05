@@ -773,7 +773,11 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 
   thr->tid = vm->next_tid++;
 
-  if (!vm->vm_initialized) {
+  bool initializing = !vm->vm_initialized;
+
+  if (initializing) {
+    vm->vm_initialized = true;
+
     bjvm_vm_init_primitive_classes(thr);
     init_unsafe_constants(thr);
 
@@ -789,29 +793,29 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   thr->out_of_mem_error = new_object(thr, vm->cached_classdescs->oom_error);
   thr->stack_overflow_error = new_object(thr, vm->cached_classdescs->stack_overflow_error);
 
-    bjvm_handle *java_thread = bjvm_make_handle(thr, new_object(thr, vm->cached_classdescs->thread));
+  bjvm_handle *java_thread = bjvm_make_handle(thr, new_object(thr, vm->cached_classdescs->thread));
 #define java_thr ((struct bjvm_native_Thread *)java_thread->obj)
-    thr->thread_obj = java_thr;
+  thr->thread_obj = java_thr;
 
-    java_thr->vm_thread = thr;
-    java_thr->name = MakeJStringFromCString(thr, "main", true);
+  java_thr->vm_thread = thr;
+  java_thr->name = MakeJStringFromCString(thr, "main", true);
 
-    // Call (Ljava/lang/ThreadGroup;Ljava/lang/String;)V
-    bjvm_cp_method *make_thread = bjvm_method_lookup(vm->cached_classdescs->thread, STR("<init>"),
-                                                     STR("(Ljava/lang/ThreadGroup;Ljava/lang/String;)V"), false, false);
+  // Call (Ljava/lang/ThreadGroup;Ljava/lang/String;)V
+  bjvm_cp_method *make_thread = bjvm_method_lookup(vm->cached_classdescs->thread, STR("<init>"),
+                                                   STR("(Ljava/lang/ThreadGroup;Ljava/lang/String;)V"), false, false);
 
-    bjvm_obj_header *main_thread_group = options.thread_group;
-    if (!main_thread_group) {
-      main_thread_group = get_main_thread_group(thr);
-    }
+  bjvm_obj_header *main_thread_group = options.thread_group;
+  if (!main_thread_group) {
+    main_thread_group = get_main_thread_group(thr);
+  }
 
-    call_interpreter_synchronous(thr, make_thread,
-                         (bjvm_stack_value[]){{.obj = (void *)java_thr}, {.obj = main_thread_group}, {.obj = java_thr->name}});
+  call_interpreter_synchronous(thr, make_thread,
+                       (bjvm_stack_value[]){{.obj = (void *)java_thr}, {.obj = main_thread_group}, {.obj = java_thr->name}});
 
 #undef java_thr
-    bjvm_drop_handle(thr, java_thread);
+  bjvm_drop_handle(thr, java_thread);
 
-  if (!vm->vm_initialized) {
+  if (initializing) {
     slice const phases[3] = {STR("initPhase1"), STR("initPhase2"), STR("initPhase3")};
     slice const signatures[3] = {STR("()V"), STR("(ZZ)I"), STR("()V")};
 
@@ -850,8 +854,6 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
       BJVM_CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
       free_heap_str(java_home);
     }
-
-    vm->vm_initialized = true;
   }
 
   thr->current_exception = nullptr;

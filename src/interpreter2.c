@@ -405,7 +405,7 @@ static async_wakeup_info *async_stack_top(bjvm_thread *thread) {
 
 
 __attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
-  const int REFUEL = 10000;
+  const int REFUEL = 100000;
   thread->fuel = REFUEL;
 
   if (thread->synchronous_depth)  // we're in a synchronous call, don't try to yield
@@ -2519,11 +2519,8 @@ static s64 checkcast_resolved_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   if (obj && unlikely(!bjvm_instanceof(obj->descriptor, insn->classdesc))) {
-    INIT_STACK_STRING(complaint, 1000);
-    complaint = bprintf(complaint, "Expected instance of %.*s, got %.*s", fmt_slice(insn->classdesc->name),
-                        fmt_slice(obj->descriptor->name));
     SPILL(tos)
-    bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
+    raise_class_cast_exception(thread, obj->descriptor, insn->classdesc);
     return 0;
   }
   NEXT_INT(tos)
@@ -2611,6 +2608,8 @@ static s64 async_resume(ARGS_VOID) {
     break;
 
   case CONT_RESUME_INSN: {
+    fut.status = FUTURE_READY;
+    needs_polymorphic_jump = true;
     break;
   }
 

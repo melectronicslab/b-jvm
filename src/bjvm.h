@@ -358,7 +358,7 @@ typedef struct bjvm_vm {
   /// Struct containing cached classdescs
   struct bjvm_cached_classdescs *cached_classdescs;
 
-  int next_thread_id;
+  s64 next_thread_id;  // MUST BE 64 BITS
 
   // Vector of allocations done via Unsafe.allocateMemory0, to be freed in case
   // the finalizers aren't run

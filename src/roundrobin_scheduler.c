@@ -29,10 +29,33 @@ void rr_scheduler_uninit(rr_scheduler *scheduler){
   free(scheduler->_impl);
 }
 
+static bool is_sleeping(thread_info * info) {
+  return info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP;
+}
+
 static thread_info * get_next_thr(impl *impl) {
   assert(impl->round_robin && "No threads to run");
-  thread_info *info = impl->round_robin[0];
-  memmove(impl->round_robin, impl->round_robin + 1, sizeof(thread_info *) * (arrlen(impl->round_robin) - 1));
+  thread_info *info = impl->round_robin[0], *first = info;
+  do {
+    memmove(impl->round_robin, impl->round_robin + 1, sizeof(thread_info *) * (arrlen(impl->round_robin) - 1));
+    impl->round_robin[arrlen(impl->round_robin) - 1] = info;
+    if (!is_sleeping(info)) {
+      return info;
+    }
+  } while (info != first);
+
+  // all are sleeping, find the one with the minimum sleep time
+  int best_i = 0;
+  u64 closest = UINT64_MAX;
+  for (int i = 0; i < arrlen(impl->round_robin); i++) {
+    if (impl->round_robin[i]->wakeup_info->wakeup_us < closest) {
+      info = impl->round_robin[i];
+      best_i = i;
+      closest = info->wakeup_info->wakeup_us;
+    }
+  }
+
+  memmove(impl->round_robin + best_i, impl->round_robin + best_i + 1, sizeof(thread_info *) * (arrlen(impl->round_robin) - 1 - best_i));
   impl->round_robin[arrlen(impl->round_robin) - 1] = info;
   return info;
 }
@@ -52,7 +75,7 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
   for (int i = 0; i < arrlen(I->round_robin); i++) {
     thread_info *info = I->round_robin[i];
     if (arrlen(info->call_queue) > 0) {
-      if (info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP) {
+      if (is_sleeping(info)) {
         if ((s64)info->wakeup_info->wakeup_us < min) {
           min = (s64)info->wakeup_info->wakeup_us;
         }
@@ -71,18 +94,18 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   if (arrlen(impl->round_robin) == 0)
     return SCHEDULER_RESULT_DONE;
 
+  u64 time = get_unix_us();
   thread_info *info = get_next_thr(impl);
   if (!info)
     return SCHEDULER_RESULT_DONE;
 
   bjvm_thread *thread = info->thread;
-  const int MICROSECONDS_TO_RUN = 10000;
+  const int MICROSECONDS_TO_RUN = 30000;
 
   thread->fuel = 100000;
-  u64 time = get_unix_us();
 
   // If the thread is sleeping, check if it's time to wake up
-  if (info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP) {
+  if (is_sleeping(info)) {
     if (time < info->wakeup_info->wakeup_us) {
       return SCHEDULER_RESULT_MORE;
     }
@@ -149,6 +172,7 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
   call.args.args = args_copy;
 
   pending_call pending = {.call = call, .record = calloc(1, sizeof(execution_record))};
+  pending.record->status = SCHEDULER_RESULT_MORE;
   arrput(info->call_queue, pending);
   return pending.record;
 }
