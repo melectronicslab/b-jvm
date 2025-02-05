@@ -22,12 +22,12 @@ typedef struct {
   thread_info **round_robin; // Threads are cycled here
 } impl;
 
-void rr_scheduler_init(rr_scheduler *scheduler, bjvm_vm *vm){
+void rr_scheduler_init(rr_scheduler *scheduler, bjvm_vm *vm) {
   scheduler->vm = vm;
   scheduler->_impl = calloc(1, sizeof(impl));
 }
 
-void rr_scheduler_uninit(rr_scheduler *scheduler){
+void rr_scheduler_uninit(rr_scheduler *scheduler) {
   free(scheduler->_impl);
 }
 
@@ -143,8 +143,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
       arrpop(impl->round_robin);
     }
   } else {
-    free(info->wakeup_info);
-    info->wakeup_info = (void*)fut.wakeup;
+    info->wakeup_info = (void*) fut.wakeup;
   }
 
   return arrlen(impl->round_robin) ? SCHEDULER_RESULT_MORE : SCHEDULER_RESULT_DONE;
