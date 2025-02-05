@@ -765,7 +765,7 @@ TEST_CASE("Multithreading") {
   }
 }
 
-TEST_CASE("Thread interruption") {
+TEST_CASE("Single thread interruption") {
   // todo: figure out how to schedule this so that we don't run into an assertion error
   TestCaseResult result { };
 
@@ -775,7 +775,7 @@ TEST_CASE("Thread interruption") {
     result->stdout_.append(buf, len);
   };
   options.stdio_override_param = &result;
-  options.classpath = STR("test_files/thread_interrupt/");
+  options.classpath = STR("test_files/single_thread_interrupt/");
   bjvm_vm *vm = bjvm_create_vm(options);
 
   auto thread = bjvm_create_thread(vm, bjvm_default_thread_options());
