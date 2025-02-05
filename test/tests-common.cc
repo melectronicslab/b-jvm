@@ -16,6 +16,9 @@
 #include <string>
 #include <vector>
 
+#include <roundrobin_scheduler.h>
+#include <unistd.h>
+
 using std::ifstream;
 using std::optional;
 using std::string;
@@ -199,6 +202,92 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   result.stdin_ = input;
 
   options.classpath = (slice){.chars = (char *)classpath.c_str(),
+                              .len = static_cast<u16>(classpath.size())};
+
+  options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    int remaining = result->stdin_.length();
+    int num_bytes = std::min(len, remaining);
+    result->stdin_.copy(buf, num_bytes);
+    result->stdin_ = result->stdin_.substr(num_bytes);
+    return num_bytes;
+  } : nullptr;
+  options.poll_available_stdin = capture_stdio ? +[](void *param) {
+    auto *result = (TestCaseResult *) param;
+    return (int) result->stdin_.length();
+  } : nullptr;
+  options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stdout_.append(buf, len);
+  } : nullptr;
+  options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
+    auto *result = (TestCaseResult *) param;
+    result->stderr_.append(buf, len);
+  } : nullptr;
+  options.stdio_override_param = &result;
+
+  bjvm_vm *vm = bjvm_create_vm(options);
+  if (!vm) {
+    fprintf(stderr, "Failed to create VM");
+    return result;
+  }
+  bjvm_thread *thread = bjvm_create_thread(vm, bjvm_default_thread_options());
+
+  slice m{.chars = (char *)main_class.c_str(),
+          .len = static_cast<u16>(main_class.size())};
+
+  bjvm_classdesc *desc = bootstrap_lookup_class(thread, m);
+  if (!desc) {
+    fprintf(stderr, "Failed to find main class %.*s\n", fmt_slice(m));
+    throw std::runtime_error("Failed to find main class");
+  }
+  bjvm_stack_value args[1] = {{.obj = nullptr}};
+
+  bjvm_cp_method *method;
+
+  bjvm_initialize_class_t pox = { .args = {thread, desc}};
+  future_t f = bjvm_initialize_class(&pox);
+  BJVM_CHECK(f.status == FUTURE_READY);
+
+  method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),
+                              false, false);
+
+  call_interpreter_synchronous(thread, method, args); // void, no result
+
+  if (thread->current_exception) {
+    method =
+        bjvm_method_lookup(thread->current_exception->descriptor, STR("toString"),
+                           STR("()Ljava/lang/String;"), true, false);
+    bjvm_stack_value to_string_args[1] = {{.obj = thread->current_exception}};
+    thread->current_exception = nullptr;
+
+    bjvm_stack_value to_string_invoke_args = call_interpreter_synchronous(thread, method, to_string_args);
+    heap_string read;
+    REQUIRE(!read_string_to_utf8(thread, &read, to_string_invoke_args.obj));
+
+    std::cout << "Exception thrown!\n" << read.chars << '\n' << '\n';
+    free_heap_str(read);
+
+    // Then call printStackTrace ()V
+    method = bjvm_method_lookup(to_string_args[0].obj->descriptor, STR("printStackTrace"),
+                                STR("()V"), true, false);
+    call_interpreter_synchronous(thread, method, to_string_args);
+  }
+
+  bjvm_free_thread(thread);
+  bjvm_free_vm(vm);
+
+  return result;
+}
+
+TestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio,
+                             std::string main_class, std::string input) {
+  bjvm_vm_options options = bjvm_default_vm_options();
+
+  TestCaseResult result { };
+  result.stdin_ = input;
+
+  options.classpath = (slice){.chars = (char *)classpath.c_str(),
                                   .len = static_cast<u16>(classpath.size())};
 
   options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
@@ -238,7 +327,6 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
     fprintf(stderr, "Failed to find main class %.*s\n", fmt_slice(m));
     throw std::runtime_error("Failed to find main class");
   }
-  bjvm_stack_value args[1] = {{.obj = nullptr}};
 
   bjvm_cp_method *method;
 
@@ -249,7 +337,27 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),
                               false, false);
 
-  call_interpreter_synchronous(thread, method, args); // void, no result
+  rr_scheduler scheduler;
+  rr_scheduler_init(&scheduler, vm);
+  vm->scheduler = &scheduler;
+
+  bjvm_stack_value args[1] = {{.obj = nullptr}};
+
+  call_interpreter_t ctx = {{ thread, method, args }};
+  rr_scheduler_run(&scheduler, ctx);
+
+  while (true) {
+    auto result = rr_scheduler_step(&scheduler);
+    if (result == SCHEDULER_RESULT_DONE) {
+      break;
+    }
+
+    u64 sleep_for = rr_scheduler_may_sleep_us(&scheduler);
+    if (sleep_for) {
+      printf("Sleeping for: %llu µs\n", sleep_for);
+      usleep(sleep_for);
+    }
+  }
 
   if (thread->current_exception) {
     method =

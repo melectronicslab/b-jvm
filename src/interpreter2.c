@@ -395,7 +395,7 @@ typedef enum {
 } continuation_point;
 
 typedef struct {
-  async_wakeup_info *wakeup;
+  void *wakeup;
   continuation_point pnt;
 
   union {
@@ -456,7 +456,7 @@ static continuation_frame *async_stack_pop(bjvm_thread *thread) {
   return &thread->async_stack->frames[--thread->async_stack->height];
 }
 
-static async_wakeup_info *async_stack_top(bjvm_thread *thread) {
+static void *async_stack_top(bjvm_thread *thread) {
   assert(thread->async_stack->height > 0);
   return thread->async_stack->frames[thread->async_stack->height - 1].wakeup;
 }
@@ -2649,7 +2649,6 @@ static bjvm_exception_table_entry *find_exception_handler(bjvm_thread *thread, b
 static s64 async_resume(ARGS_VOID) {
   // we need to pop (not peek) because if we re-enter this method, it'll need to pop its fram
   continuation_frame cont = *async_stack_pop(thread);
-  free(cont.wakeup);
 
   bjvm_stack_value result;
   future_t fut;
@@ -2725,7 +2724,6 @@ static inline bjvm_stack_value interpret_native_frame(future_t *fut, bjvm_thread
   } else {
     continuation_frame *cont = async_stack_pop(thread);
     assert(cont->pnt == CONT_RUN_NATIVE);
-    free(cont->wakeup);
     ctx = cont->ctx.run_native;
   }
 
@@ -2762,7 +2760,7 @@ static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *
     // we really should just have all the methods return a future_t via a pointer, but whatever
     if (unlikely(frame_->is_async_suspended)) {
       // reconstruct future to return
-      async_wakeup_info *wk = async_stack_top(thread);
+      void *wk = async_stack_top(thread);
       *fut = (future_t){FUTURE_NOT_READY, wk};
       return (bjvm_stack_value){0};
     }

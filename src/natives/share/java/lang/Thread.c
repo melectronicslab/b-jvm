@@ -58,7 +58,7 @@ DECLARE_NATIVE("java/lang", Thread, interrupt0, "()V") {
   return value_null();
 }
 
-DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_info *wakeup_info), invoked_methods()) {
+DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_info wakeup_info), invoked_methods()) {
   assert(argc == 1);
   s64 nanos = args[0].l;
   assert(nanos >= 0); // this is always checked before calling this private method
@@ -74,11 +74,9 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_
   u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
   u64 end = time + nanos / 1000;
 
-  self->wakeup_info = malloc(sizeof(rr_wakeup_info));
-  self->wakeup_info->kind = RR_WAKEUP_SLEEP;
-  self->wakeup_info->wakeup_us = end;
-  ASYNC_YIELD((void*) self->wakeup_info);
-  free(self->wakeup_info);
+  self->wakeup_info.kind = RR_WAKEUP_SLEEP;
+  self->wakeup_info.wakeup_us = end;
+  ASYNC_YIELD((void*) &self->wakeup_info);
   ASYNC_END_VOID();
 }
 

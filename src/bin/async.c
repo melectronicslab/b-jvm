@@ -1,9 +1,9 @@
 #include <async.h>
 #include <stdio.h>
 
-struct async_wakeup_info {
+typedef struct {
   int delay;
-};
+} async_wakeup_info;
 
 DECLARE_ASYNC(
   int, my_inner_future,
@@ -68,7 +68,7 @@ int main(void) {
       break;
     } else {
       printf("FUTURE is NOT READY. (poll %d), delay %d\n", i,
-             fut.wakeup->delay);
+             ((async_wakeup_info *) fut.wakeup)->delay);
     }
   }
 

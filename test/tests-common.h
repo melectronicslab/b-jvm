@@ -53,6 +53,7 @@ struct TestCaseResult {
 };
 
 TestCaseResult run_test_case(std::string classpath, bool capture_stdio = true, std::string main_class = "Main", std::string input = "");
+TestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio = true, std::string main_class = "Main", std::string input = "");
 }
 
 #endif // BJVM_TESTS_COMMON_H
