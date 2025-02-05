@@ -2649,6 +2649,8 @@ static bjvm_exception_table_entry *find_exception_handler(bjvm_thread *thread, b
 static s64 async_resume(ARGS_VOID) {
   // we need to pop (not peek) because if we re-enter this method, it'll need to pop its fram
   continuation_frame cont = *async_stack_pop(thread);
+  free(cont.wakeup);
+
   bjvm_stack_value result;
   future_t fut;
 
@@ -2723,6 +2725,7 @@ static inline bjvm_stack_value interpret_native_frame(future_t *fut, bjvm_thread
   } else {
     continuation_frame *cont = async_stack_pop(thread);
     assert(cont->pnt == CONT_RUN_NATIVE);
+    free(cont->wakeup);
     ctx = cont->ctx.run_native;
   }
 
