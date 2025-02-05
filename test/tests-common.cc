@@ -280,18 +280,18 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   return result;
 }
 
-TestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio,
+ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio,
                              std::string main_class, std::string input) {
   bjvm_vm_options options = bjvm_default_vm_options();
 
-  TestCaseResult result { };
+  ScheduledTestCaseResult result { };
   result.stdin_ = input;
 
   options.classpath = (slice){.chars = (char *)classpath.c_str(),
                                   .len = static_cast<u16>(classpath.size())};
 
   options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
-    auto *result = (TestCaseResult *) param;
+    auto *result = (ScheduledTestCaseResult *) param;
     int remaining = result->stdin_.length();
     int num_bytes = std::min(len, remaining);
     result->stdin_.copy(buf, num_bytes);
@@ -299,15 +299,15 @@ TestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio
     return num_bytes;
   } : nullptr;
   options.poll_available_stdin = capture_stdio ? +[](void *param) {
-    auto *result = (TestCaseResult *) param;
+    auto *result = (ScheduledTestCaseResult *) param;
     return (int) result->stdin_.length();
   } : nullptr;
   options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
-    auto *result = (TestCaseResult *) param;
+    auto *result = (ScheduledTestCaseResult *) param;
     result->stdout_.append(buf, len);
   } : nullptr;
   options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
-    auto *result = (TestCaseResult *) param;
+    auto *result = (ScheduledTestCaseResult *) param;
     result->stderr_.append(buf, len);
   } : nullptr;
   options.stdio_override_param = &result;
@@ -347,13 +347,17 @@ TestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio
   rr_scheduler_run(&scheduler, ctx);
 
   while (true) {
-    auto result = rr_scheduler_step(&scheduler);
-    if (result == SCHEDULER_RESULT_DONE) {
+    auto status = rr_scheduler_step(&scheduler);
+    if (status == SCHEDULER_RESULT_DONE) {
       break;
     }
 
+    result.yield_count++;
+
     u64 sleep_for = rr_scheduler_may_sleep_us(&scheduler);
     if (sleep_for) {
+      result.sleep_count++;
+      result.ms_slept += sleep_for;
       printf("Sleeping for: %llu µs\n", sleep_for);
       usleep(sleep_for);
     }
