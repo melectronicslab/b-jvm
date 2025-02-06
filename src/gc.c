@@ -199,8 +199,6 @@ static void bjvm_major_gc_enumerate_gc_roots(bjvm_gc_ctx *ctx) {
   }
 }
 
-u64 REACHABLE_BIT = 1ULL << 33;
-
 static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
   return (uintptr_t)field - (uintptr_t)ctx->vm->heap <
          ctx->vm->true_heap_capacity;
@@ -208,20 +206,21 @@ static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
 
 static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bitsets,
                          int *capacities, int depth) {
-  obj->mark_word |= REACHABLE_BIT;
+  u32 *flags = &get_mark_word(obj)->data[0];
+  *flags |= IS_REACHABLE;
   *VECTOR_PUSH(ctx->objs, ctx->objs_count, ctx->objs_cap) = obj;
 
   // Visit all instance fields
   bjvm_classdesc *desc = obj->descriptor;
-  int len = 0;
   if (desc->kind == BJVM_CD_KIND_ORDINARY) {
+    int len = 0;
     bjvm_compressed_bitset bits = desc->instance_references;
     int **bitset = &bitsets[depth];
     *bitset = bjvm_list_compressed_bitset_bits(bits, *bitset, &len,
                                                &capacities[depth]);
     for (int i = 0; i < len; ++i) {
       bjvm_obj_header *field = *((bjvm_obj_header **)obj + (*bitset)[i]);
-      if (field && !(field->mark_word & REACHABLE_BIT) && in_heap(ctx, field)) {
+      if (field && !(*flags & IS_REACHABLE) && in_heap(ctx, field)) {
         // Visiting instance field at offset on class
         bjvm_mark_reachable(ctx, field, bitsets, capacities, depth + 1);
       }
@@ -230,10 +229,10 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
              (desc->kind == BJVM_CD_KIND_PRIMITIVE_ARRAY &&
               desc->dimensions > 1)) {
     // Visit all components
-    int len = *ArrayLength(obj);
-    for (int i = 0; i < len; ++i) {
+    int arr_len = *ArrayLength(obj);
+    for (int i = 0; i < arr_len; ++i) {
       bjvm_obj_header *field = *((bjvm_obj_header **)ArrayData(obj) + i);
-      if (field && !(field->mark_word & REACHABLE_BIT) && in_heap(ctx, field)) {
+      if (field && !(*flags & IS_REACHABLE) && in_heap(ctx, field)) {
         bjvm_mark_reachable(ctx, field, bitsets, capacities, depth + 1);
       }
     }
@@ -300,7 +299,7 @@ static void relocate_static_fields(bjvm_gc_ctx *ctx) {
 
 void relocate_instance_fields(bjvm_gc_ctx *ctx) {
   int len = 0, cap = 0;
-  int *bitset = NULL;
+  int *bitset = nullptr;
   for (int i = 0; i < ctx->objs_count; ++i) {
     bjvm_obj_header *obj = ctx->new_location[i];
     if (obj->descriptor->kind == BJVM_CD_KIND_ORDINARY) {
@@ -308,16 +307,16 @@ void relocate_instance_fields(bjvm_gc_ctx *ctx) {
       bjvm_compressed_bitset bits = desc->instance_references;
       len = 0;
       bitset = bjvm_list_compressed_bitset_bits(bits, bitset, &len, &cap);
-      for (int i = 0; i < len; ++i) {
-        bjvm_obj_header **field = (bjvm_obj_header **)obj + bitset[i];
+      for (int j = 0; j < len; ++j) {
+        bjvm_obj_header **field = (bjvm_obj_header **)obj + bitset[j];
         relocate_object(ctx, field);
       }
     } else if (obj->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY ||
                (obj->descriptor->kind == BJVM_CD_KIND_PRIMITIVE_ARRAY &&
                 obj->descriptor->dimensions > 1)) {
-      int len = *ArrayLength(obj);
-      for (int i = 0; i < len; ++i) {
-        bjvm_obj_header **field = (bjvm_obj_header **)ArrayData(obj) + i;
+      int arr_len = *ArrayLength(obj);
+      for (int j = 0; j < arr_len; ++j) {
+        bjvm_obj_header **field = (bjvm_obj_header **)ArrayData(obj) + j;
         relocate_object(ctx, field);
       }
     }
@@ -336,7 +335,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
   for (int i = 0; i < ctx.roots_count; ++i) {
     bjvm_obj_header *root = *ctx.roots[i];
     // printf("Pushing roots: %p\n", root);
-    if (!(root->mark_word & REACHABLE_BIT))
+    if (!(get_mark_word(root)->data[0] & IS_REACHABLE))
       bjvm_mark_reachable(&ctx, root, bitset_list, capacity, 0);
   }
   for (int i = 0; i < 1000; ++i) {
@@ -362,7 +361,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
 
     assert(write_ptr + sz <= end);
 
-    obj->mark_word &= ~REACHABLE_BIT;
+    get_mark_word(obj)->data[0] &= ~IS_REACHABLE; // clear the reachable flag
     memcpy(write_ptr, obj, sz);
 
 

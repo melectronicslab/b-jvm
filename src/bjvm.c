@@ -83,6 +83,18 @@ DEFINE_ASYNC(init_cached_classdescs) {
   ASYNC_END(0);
 }
 
+inline bool has_expanded_data(bjvm_obj_header *obj) {
+  return !(obj->mark_word.data[0] & IS_MARK_WORD);
+}
+
+inline bjvm_mark_word_t *get_mark_word(bjvm_obj_header *obj) {
+  return has_expanded_data(obj) ? &obj->expanded_data->mark_word : &obj->mark_word;
+}
+
+inline monitor_data *inspect_monitor(bjvm_obj_header *obj) {
+  return has_expanded_data(obj) ? obj->expanded_data : nullptr;
+}
+
 #define MAX_CF_NAME_LENGTH 1000
 
 u16 stack_depth(const bjvm_stack_frame *frame) {

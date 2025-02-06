@@ -114,16 +114,33 @@ typedef struct {
   bjvm_native_callback callback;
 } bjvm_native_t;
 
-typedef u64 bjvm_mark_word_t;
+//      struct { flags, hash? }
+typedef struct { u32 data[2]; } bjvm_mark_word_t;
+
+typedef struct {
+  u64 tid;
+  u32 count;
+  bjvm_mark_word_t mark_word;
+} monitor_data;
 
 // Appears at the top of every object -- corresponds to HotSpot's oopDesc
 typedef struct bjvm_obj_header {
-#ifdef BJVM_MULTITHREADED
-
-#endif
-  volatile bjvm_mark_word_t mark_word;
+  volatile union { // least significant flag bit set if it's a mark_word
+    bjvm_mark_word_t mark_word;
+    monitor_data *expanded_data;
+  };
   bjvm_classdesc *descriptor;
 } bjvm_obj_header;
+
+typedef enum : u32 {
+  IS_MARK_WORD = 1 << 0,
+  IS_REACHABLE = 1 << 1,
+} bjvm_mark_word_flags;
+
+bool has_expanded_data(bjvm_obj_header *obj);
+bjvm_mark_word_t *get_mark_word(bjvm_obj_header *obj);
+// nullptr if the object has never been locked, otherwise a pointer to a lock_record.
+monitor_data *inspect_monitor(bjvm_obj_header *obj);
 
 void read_string(bjvm_thread *thread, bjvm_obj_header *obj, s8 **buf,
                  size_t *len); // todo: get rid of
