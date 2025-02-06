@@ -206,8 +206,7 @@ static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
 
 static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bitsets,
                          int *capacities, int depth) {
-  u32 *flags = &get_mark_word(obj)->data[0];
-  *flags |= IS_REACHABLE;
+  get_mark_word(obj)->data[0] |= IS_REACHABLE;
   *VECTOR_PUSH(ctx->objs, ctx->objs_count, ctx->objs_cap) = obj;
 
   // Visit all instance fields
@@ -219,10 +218,10 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
     *bitset = bjvm_list_compressed_bitset_bits(bits, *bitset, &len,
                                                &capacities[depth]);
     for (int i = 0; i < len; ++i) {
-      bjvm_obj_header *field = *((bjvm_obj_header **)obj + (*bitset)[i]);
-      if (field && !(*flags & IS_REACHABLE) && in_heap(ctx, field)) {
+      bjvm_obj_header *field_obj = *((bjvm_obj_header **)obj + (*bitset)[i]);
+      if (field_obj && !(get_mark_word(field_obj)->data[0] & IS_REACHABLE) && in_heap(ctx, field_obj)) {
         // Visiting instance field at offset on class
-        bjvm_mark_reachable(ctx, field, bitsets, capacities, depth + 1);
+        bjvm_mark_reachable(ctx, field_obj, bitsets, capacities, depth + 1);
       }
     }
   } else if (desc->kind == BJVM_CD_KIND_ORDINARY_ARRAY ||
@@ -231,9 +230,9 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
     // Visit all components
     int arr_len = *ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
-      bjvm_obj_header *field = *((bjvm_obj_header **)ArrayData(obj) + i);
-      if (field && !(*flags & IS_REACHABLE) && in_heap(ctx, field)) {
-        bjvm_mark_reachable(ctx, field, bitsets, capacities, depth + 1);
+      bjvm_obj_header *arr_element = *((bjvm_obj_header **)ArrayData(obj) + i);
+      if (arr_element && !(get_mark_word(arr_element)->data[0] & IS_REACHABLE) && in_heap(ctx, arr_element)) {
+        bjvm_mark_reachable(ctx, arr_element, bitsets, capacities, depth + 1);
       }
     }
   }
