@@ -18,16 +18,15 @@ DECLARE_NATIVE("java/lang/ref", Reference, clear0, "()V") {
   return value_null();
 }
 
-DECLARE_ASYNC_NATIVE("java/lang/ref", Reference, waitForReferencePendingList, "()V", locals(), invoked_methods()) {
+DECLARE_ASYNC_NATIVE("java/lang/ref", Reference, waitForReferencePendingList, "()V", locals(rr_wakeup_info wakeup_info;), invoked_methods()) {
   struct timeval tv;
   gettimeofday(&tv, NULL);
   u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
   u64 end = time + 1e10;
 
-  rr_wakeup_info *wakeup_info = malloc(sizeof(rr_wakeup_info));
-  wakeup_info->kind = RR_WAKEUP_SLEEP;
-  wakeup_info->wakeup_us = end;
-  ASYNC_YIELD((void*)wakeup_info);
+  self->wakeup_info.kind = RR_WAKEUP_SLEEP;
+  self->wakeup_info.wakeup_us = end;
+  ASYNC_YIELD((void*) &self->wakeup_info);
   ASYNC_END_VOID();
 }
 

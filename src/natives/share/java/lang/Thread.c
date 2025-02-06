@@ -84,10 +84,13 @@ DECLARE_NATIVE("java/lang", Thread, clearInterruptEvent, "()V") {
   return value_null(); // openjdk only does something here on Windows devices
 }
 
-DECLARE_ASYNC_NATIVE("java/lang", Thread, yield0, "()V", locals(), invoked_methods()) {
+DECLARE_ASYNC_NATIVE("java/lang", Thread, yield0, "()V", locals(rr_wakeup_info wakeup_info), invoked_methods()) {
   // Thread.yield has no synchronization semantics (JLS 17.9);
   // the JVM is free to implement it as a no-op or treat it as a scheduling hint.
   // This is usually used to "encourage" more context switches to improve throughput, but
   // "It is rarely appropriate to use this method" (OpenJDK).
+//
+//  self->wakeup_info.kind = RR_WAKEUP_YIELDING;
+//  ASYNC_YIELD((void *) &self->wakeup_info);
   ASYNC_END_VOID();
 }

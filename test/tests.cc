@@ -650,6 +650,24 @@ TEST_CASE("Scheduled sudoku solver") {
   std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
+TEST_CASE("Scheduled worker sudoku solver") {
+  int num_puzzles = 33761;
+  std::cout << "Starting sudoku solver with a worker thread" << std::endl;
+  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+  auto now = std::chrono::system_clock::now();
+
+  auto result = run_scheduled_test_case("test_files/sudoku/", true, "WorkerThreadSudoku");
+  // last puzzle
+  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+  REQUIRE(result.sleep_count == 0); // chop chop
+
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+}
+
 TEST_CASE("Autodiff") {
   int num_derivatives = 10000 * 10 + 3;
   std::cout << "Testing Autodiff" << std::endl;
