@@ -799,7 +799,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 #define java_thr ((struct bjvm_native_Thread *)java_thread->obj)
   thr->thread_obj = java_thr;
 
-  java_thr->vm_thread = thr;
+  java_thr->eetop = (intptr_t)thr;
   java_thr->name = MakeJStringFromCString(thr, "main", true);
 
   // Call (Ljava/lang/ThreadGroup;Ljava/lang/String;)V

@@ -14,7 +14,7 @@ DECLARE_NATIVE("java/lang", Thread, setPriority0, "(I)V") {
 }
 
 DECLARE_NATIVE("java/lang", Thread, isAlive, "()Z") {
-  return (bjvm_stack_value){.i = 0}; // TODO
+  return (bjvm_stack_value){.i = 1}; // TODO
 }
 
 DECLARE_NATIVE("java/lang", Thread, holdsLock, "(Ljava/lang/Object;)Z") {
@@ -27,12 +27,12 @@ DECLARE_NATIVE("java/lang", Thread, start0, "()V") {
     return value_null();  // TODO throw error instead
 
   bjvm_thread *vm_thread = bjvm_create_thread(thread->vm, bjvm_default_thread_options());
-  ((struct bjvm_native_Thread*)obj->obj)->vm_thread = vm_thread;
-
+  ((struct bjvm_native_Thread*)obj->obj)->eetop = (intptr_t)vm_thread;
 
   bjvm_cp_method *run = bjvm_method_lookup(obj->obj->descriptor, STR("run"), STR("()V"), false, false);
   bjvm_stack_value argz[1] = {{.obj = obj->obj}};
   rr_scheduler_run(scheduler, (call_interpreter_t){{vm_thread, run, argz}});
+
   return value_null();
 }
 

@@ -656,7 +656,7 @@ TEST_CASE("Scheduled worker sudoku solver") {
   std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
   auto now = std::chrono::system_clock::now();
 
-  auto result = run_scheduled_test_case("test_files/sudoku/", true, "WorkerThreadSudoku");
+  auto result = run_scheduled_test_case("test_files/sudoku/", false, "WorkerThreadSudoku");
   // last puzzle
   REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
   REQUIRE(result.sleep_count == 0); // chop chop

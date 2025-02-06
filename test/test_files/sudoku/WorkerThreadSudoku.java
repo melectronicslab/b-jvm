@@ -48,13 +48,19 @@ public class WorkerThreadSudoku {
         try (BufferedReader reader = new BufferedReader(new FileReader("test_files/sudoku/sudoku.txt"))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                    System.out.println("Main thread executed!");
                 if (line.length() < 81) continue;
+                    System.out.println("Main thread continued here!");
 
                 Board board = Board.parseFrom(line);
                 while (!unsafe.compareAndSetReference(base, puzzleOffset, null, board)) {
+                    System.out.println("Main thread spins here!");
 //                 while (!puzzle.compareAndSet(null, board)) {
                     Thread.yield(); // spin lock lol
-                    if (!worker.isAlive()) throw new IllegalStateException("worker thread died");
+                    if (!worker.isAlive()) {
+                        System.out.println("wtf");
+                        throw new IllegalStateException("worker thread died");
+                    }
                 }
             }
 
@@ -66,5 +72,6 @@ public class WorkerThreadSudoku {
         } finally {
             worker.join();
         }
+        System.out.println("Other thread executed!");
 	}
 }

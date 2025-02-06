@@ -76,6 +76,7 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
   // Check all infos for wakeup times
   for (int i = 0; i < arrlen(I->round_robin); i++) {
     thread_info *info = I->round_robin[i];
+
     if (arrlen(info->call_queue) > 0) {
       if (is_sleeping(info)) {
         if ((s64)info->wakeup_info->wakeup_us < min) {
@@ -88,6 +89,23 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
   }
   min -= (s64)get_unix_us();
   return min >= 0 ? min : 0;
+}
+
+void unshift(impl* I, thread_info * info) {
+  if (arrlen(info->call_queue) > 0) {
+    memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
+    arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);
+  }
+  if (arrlen(info->call_queue) == 0) {
+    // Look for the thread in the round robin and remove it
+    for (int i = 0; i < arrlen(I->round_robin); i++) {
+      if (I->round_robin[i] == info) {
+        memmove(I->round_robin + i, I->round_robin + i + 1, sizeof(thread_info *) * (arrlen(I->round_robin) - 1 - i));
+        arrsetlen(I->round_robin, arrlen(I->round_robin) - 1);
+        break;
+      }
+    }
+  }
 }
 
 scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
@@ -136,12 +154,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
       rec->js_handle = -1;  // no handle here
     }
 
-    memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
-    arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);
-
-    if (arrlen(info->call_queue) == 0) {
-      arrpop(impl->round_robin);
-    }
+    unshift(impl, info);
   } else {
     info->wakeup_info = (void*) fut.wakeup;
   }

@@ -446,6 +446,8 @@ static continuation_frame *async_stack_push(bjvm_thread *thread) {
     }
   }
 
+  printf("Async stack push!\n");
+
   return &thread->async_stack->frames[thread->async_stack->height++];
 
 #undef stk
@@ -2697,11 +2699,10 @@ static s64 async_resume(ARGS_VOID) {
     return 0;
   }
 
+  frame->is_async_suspended = false;
   if (unlikely(thread->current_exception)) {
     return 0;
   }
-
-  frame->is_async_suspended = false;
 
   if (has_result) {
     *sp++ = result;
@@ -2760,6 +2761,7 @@ static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *
     // we really should just have all the methods return a future_t via a pointer, but whatever
     if (unlikely(frame_->is_async_suspended)) {
       // reconstruct future to return
+      printf("Hereeeee\n");
       void *wk = async_stack_top(thread);
       *fut = (future_t){FUTURE_NOT_READY, wk};
       return (bjvm_stack_value){0};
