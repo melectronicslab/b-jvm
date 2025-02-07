@@ -18,5 +18,7 @@ DECLARE_ASYNC(int, monitor_acquire,
 //                    locals(), arguments(bjvm_thread *thread; bjvm_obj_header *obj;),
 //                    invoked_methods());
 
+int monitor_release(bjvm_thread *thread, bjvm_obj_header *obj);
+
 
 #endif // BJVM_MONITORS_H

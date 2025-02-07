@@ -1592,22 +1592,10 @@ static s64 monitorexit_impl_int(ARGS_INT) {
     return 0;
   }
 
-  // since this is a single-threaded vm, we don't need atomic operations
   bjvm_obj_header *obj = (bjvm_obj_header *) tos;
-  monitor_data *data = inspect_monitor(&obj->header_word);
+  [[maybe_unused]] int result = monitor_release(thread, obj);
 
-  assert(data); // surely this has been initialized if you're releasing it
-  assert(data->tid == thread->tid); // todo: should this throw an exception/error instead?
-
-  assert(data->hold_count > 0);
-
-  u32 new_hold_count = --data->hold_count;
-  printf("decremented hold count: %d\n", data->hold_count);
-
-  if (new_hold_count == 0) {
-    data->tid = -1;
-    printf("released monitor\n");
-  }
+  assert(!result); // todo: should throw InternalError
 
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
