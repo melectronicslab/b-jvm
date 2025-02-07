@@ -70,6 +70,7 @@
 #endif
 
 #define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
+#include "monitors.h"
 #include "reflection.h"
 
 #include <instrumentation.h>
@@ -391,6 +392,7 @@ typedef enum {
   CONT_INVOKE,
   CONT_INVOKESIGPOLY, // tos must be reloaded
   CONT_RUN_NATIVE,
+  CONT_MONITOR_ENTER,
   CONT_RESUME_INSN,
 } continuation_point;
 
@@ -402,6 +404,7 @@ typedef struct {
     resolve_insn_t resolve_insn;
     bjvm_invokevirtual_signature_polymorphic_t sigpoly;
     bjvm_run_native_t run_native;
+    monitor_acquire_t acquire_monitor;
     struct {
       bjvm_stack_frame *frame;
       u8 argc;
@@ -1566,37 +1569,19 @@ static s64 monitorenter_impl_int(ARGS_INT) {
     return 0;
   }
 
-  // since this is a single-threaded vm, we don't need atomic operations
-  bjvm_obj_header *obj = (bjvm_obj_header *) tos;
-  monitor_data *data = inspect_monitor(obj);
-  if (unlikely(!data)) {
-    data = allocate_monitor(thread, obj);
-    if (unlikely(!data)) {
-      return 0; // oom
+  do {
+    monitor_acquire_t ctx = { .args = {thread, (bjvm_obj_header *)tos} };
+    future_t fut = monitor_acquire(&ctx);
+    if (fut.status == FUTURE_NOT_READY) {
+      continuation_frame *cont = async_stack_push(thread);
+      frame->is_async_suspended = true;
+      *cont = (continuation_frame) { .pnt = CONT_MONITOR_ENTER, .ctx.acquire_monitor = ctx };
+      return 0;
     }
-    data->tid = -1;
-    data->hold_count = 0;
+  } while (0);
 
-    obj->expanded_data = data; // should compare and swap atomically on multiple threads
-  }
-
-  // now we're guaranteed to have a monitor_data
-  // should compare and swap tid from -1 to thread->tid
-  if (data->tid == -1) {
-    data->tid = thread->tid;
-    data->hold_count = 0;
-    printf("acquired monitor\n");
-  }
-
-  if (data->tid == thread->tid) {
-    data->hold_count++;
-    printf("incremented hold count: %d\n", data->hold_count);
-    sp--;
-    STACK_POLYMORPHIC_NEXT(*(sp - 1));
-  } else {
-    // todo: tell scheduler to wait for this monitor to be available
-    UNREACHABLE(); // not implemented yet!
-  }
+  sp--;
+  STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
 
 static s64 monitorexit_impl_int(ARGS_INT) {
@@ -1609,15 +1594,15 @@ static s64 monitorexit_impl_int(ARGS_INT) {
 
   // since this is a single-threaded vm, we don't need atomic operations
   bjvm_obj_header *obj = (bjvm_obj_header *) tos;
-  monitor_data *data = inspect_monitor(obj);
+  monitor_data *data = inspect_monitor(&obj->header_word);
 
   assert(data); // surely this has been initialized if you're releasing it
   assert(data->tid == thread->tid); // todo: should this throw an exception/error instead?
 
+  assert(data->hold_count > 0);
+
   u32 new_hold_count = --data->hold_count;
   printf("decremented hold count: %d\n", data->hold_count);
-
-  assert(new_hold_count >= 0);
 
   if (new_hold_count == 0) {
     data->tid = -1;
@@ -2721,6 +2706,12 @@ static s64 async_resume(ARGS_VOID) {
     result = bjvm_interpret_2(&fut, thread, cont.ctx.interp_call.frame);
     sp -= cont.ctx.interp_call.argc; // todo: wrong union member
     has_result = cont.ctx.interp_call.returns;
+    advance_pc = true;
+    break;
+
+  case CONT_MONITOR_ENTER:
+    fut = monitor_acquire(&cont.ctx.acquire_monitor);
+    sp--; // todo: why are we doing this unconditionally
     advance_pc = true;
     break;
 

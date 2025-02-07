@@ -83,25 +83,20 @@ DEFINE_ASYNC(init_cached_classdescs) {
   ASYNC_END(0);
 }
 
-inline bool has_expanded_data(bjvm_obj_header *obj) {
-  return !(obj->mark_word.data[0] & IS_MARK_WORD);
+inline bool has_expanded_data(bjvm_header_word *data) {
+  return !(data->mark_word.data[0] & IS_MARK_WORD);
 }
 
-inline bjvm_mark_word_t *get_mark_word(bjvm_obj_header *obj) {
-  return has_expanded_data(obj) ? &obj->expanded_data->mark_word : &obj->mark_word;
+inline bjvm_mark_word_t *get_mark_word(bjvm_header_word *data) {
+  return has_expanded_data(data) ? &data->expanded_data->mark_word : &data->mark_word;
 }
 
-inline monitor_data *inspect_monitor(bjvm_obj_header *obj) {
-  return has_expanded_data(obj) ? obj->expanded_data : nullptr;
+inline monitor_data *inspect_monitor(bjvm_header_word *data) {
+  return has_expanded_data(data) ? data->expanded_data : nullptr;
 }
 
-inline monitor_data *allocate_monitor(bjvm_thread *thread, bjvm_obj_header *obj) {
-  assert(!has_expanded_data(obj));
+inline monitor_data *allocate_monitor(bjvm_thread *thread) {
   monitor_data *data = bump_allocate(thread, sizeof(monitor_data));
-  if (likely(data)) {
-    data->mark_word = obj->mark_word;
-    // obj->expanded_data = data; // this should be done explicitly by the caller afterwards
-  }
   return data;
 }
 

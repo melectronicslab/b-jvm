@@ -119,16 +119,18 @@ typedef struct { u32 data[2]; } bjvm_mark_word_t;
 
 typedef struct {
   s32 tid;
-  u32 hold_count;
+  volatile u32 hold_count; // only changed by owner thread; therefore volatile is safe here
   bjvm_mark_word_t mark_word;
 } monitor_data;
 
+typedef union { // least significant flag bit set if it's a mark_word
+  bjvm_mark_word_t mark_word;
+  monitor_data *expanded_data;
+} bjvm_header_word;
+
 // Appears at the top of every object -- corresponds to HotSpot's oopDesc
 typedef struct bjvm_obj_header {
-  volatile union { // least significant flag bit set if it's a mark_word
-    bjvm_mark_word_t mark_word;
-    monitor_data *expanded_data;
-  };
+  bjvm_header_word header_word; // accessed atomically, except during a full GC pause
   bjvm_classdesc *descriptor;
 } bjvm_obj_header;
 
@@ -137,13 +139,13 @@ typedef enum : u32 {
   IS_REACHABLE = 1 << 1,
 } bjvm_mark_word_flags;
 
-bool has_expanded_data(bjvm_obj_header *obj);
-bjvm_mark_word_t *get_mark_word(bjvm_obj_header *obj);
+bool has_expanded_data(bjvm_header_word *data);
+bjvm_mark_word_t *get_mark_word(bjvm_header_word *data);
 // nullptr if the object has never been locked, otherwise a pointer to a lock_record.
-monitor_data *inspect_monitor(bjvm_obj_header *obj);
+monitor_data *inspect_monitor(bjvm_header_word *data);
 // only call this if inspect_monitor returns nullptr
 // doesn't store this allocated data onto the object, because that should later be done atomically by someone else
-monitor_data *allocate_monitor(bjvm_thread *thread, bjvm_obj_header *obj); // doesn't initialize any monitor data
+monitor_data *allocate_monitor(bjvm_thread *thread); // doesn't initialize any monitor data
 
 void read_string(bjvm_thread *thread, bjvm_obj_header *obj, s8 **buf,
                  size_t *len); // todo: get rid of

@@ -206,7 +206,7 @@ static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
 
 static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bitsets,
                          int *capacities, int depth) {
-  get_mark_word(obj)->data[0] |= IS_REACHABLE;
+  get_mark_word(&obj->header_word)->data[0] |= IS_REACHABLE;
   *VECTOR_PUSH(ctx->objs, ctx->objs_count, ctx->objs_cap) = obj;
 
   // Visit all instance fields
@@ -219,7 +219,7 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
                                                &capacities[depth]);
     for (int i = 0; i < len; ++i) {
       bjvm_obj_header *field_obj = *((bjvm_obj_header **)obj + (*bitset)[i]);
-      if (field_obj && !(get_mark_word(field_obj)->data[0] & IS_REACHABLE) && in_heap(ctx, field_obj)) {
+      if (field_obj && !(get_mark_word(&field_obj->header_word)->data[0] & IS_REACHABLE) && in_heap(ctx, field_obj)) {
         // Visiting instance field at offset on class
         bjvm_mark_reachable(ctx, field_obj, bitsets, capacities, depth + 1);
       }
@@ -231,7 +231,7 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
     int arr_len = *ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
       bjvm_obj_header *arr_element = *((bjvm_obj_header **)ArrayData(obj) + i);
-      if (arr_element && !(get_mark_word(arr_element)->data[0] & IS_REACHABLE) && in_heap(ctx, arr_element)) {
+      if (arr_element && !(get_mark_word(&arr_element->header_word)->data[0] & IS_REACHABLE) && in_heap(ctx, arr_element)) {
         bjvm_mark_reachable(ctx, arr_element, bitsets, capacities, depth + 1);
       }
     }
@@ -334,7 +334,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
   for (int i = 0; i < ctx.roots_count; ++i) {
     bjvm_obj_header *root = *ctx.roots[i];
     // printf("Pushing roots: %p\n", root);
-    if (!(get_mark_word(root)->data[0] & IS_REACHABLE))
+    if (!(get_mark_word(&root->header_word)->data[0] & IS_REACHABLE))
       bjvm_mark_reachable(&ctx, root, bitset_list, capacity, 0);
   }
   for (int i = 0; i < 1000; ++i) {
@@ -360,22 +360,21 @@ void bjvm_major_gc(bjvm_vm *vm) {
 
     assert(write_ptr + sz <= end);
 
-    get_mark_word(obj)->data[0] &= ~IS_REACHABLE; // clear the reachable flag
+    get_mark_word(&obj->header_word)->data[0] &= ~IS_REACHABLE; // clear the reachable flag
     memcpy(write_ptr, obj, sz);
-
 
     // printf("Mapping %p -> %p\n", obj, write_ptr);
     bjvm_obj_header *new_obj = (bjvm_obj_header *) write_ptr;
     new_location[i] = new_obj;
     write_ptr += sz;
 
-    if (has_expanded_data(new_obj)) {
+    if (has_expanded_data(&new_obj->header_word)) {
       // Copy the expanded data (align to 4 bytes)
       write_ptr = (u8 *) (align_up((uintptr_t) write_ptr, 4));
-      const size_t mutex_data_size = sizeof(*new_obj->expanded_data);
+      const size_t mutex_data_size = sizeof(*new_obj->header_word.expanded_data);
       assert(write_ptr + mutex_data_size <= end);
-      memcpy(write_ptr, new_obj->expanded_data, mutex_data_size);
-      new_obj->expanded_data = (monitor_data *) write_ptr;
+      memcpy(write_ptr, new_obj->header_word.expanded_data, mutex_data_size);
+      new_obj->header_word.expanded_data = (monitor_data *) write_ptr;
       write_ptr += mutex_data_size;
     }
   }

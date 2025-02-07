@@ -45,8 +45,8 @@ static inline object AllocateObject(bjvm_thread *thread,
          BJVM_CD_STATE_LINKED); // important to know the size
   object obj = (object) bump_allocate(thread, sizeof(bjvm_obj_header) + data_size);
   if (obj) {
-    obj->mark_word.data[0] = IS_MARK_WORD;
-    obj->mark_word.data[1] = ObjNextHashCode();
+    obj->header_word.mark_word.data[0] = IS_MARK_WORD;
+    obj->header_word.mark_word.data[1] = ObjNextHashCode();
     obj->descriptor = descriptor;
   }
   return obj;

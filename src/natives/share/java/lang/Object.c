@@ -1,7 +1,7 @@
 #include <natives-dsl.h>
 
 DECLARE_NATIVE("java/lang", Object, hashCode, "()I") {
-  return (bjvm_stack_value) { .i = (s32) get_mark_word(obj->obj)->data[1] };
+  return (bjvm_stack_value) { .i = (s32) get_mark_word(&obj->obj->header_word)->data[1] };
 }
 
 DECLARE_NATIVE("java/lang", Object, registerNatives, "()V") {
