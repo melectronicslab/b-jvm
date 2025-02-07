@@ -77,19 +77,20 @@ DEFINE_ASYNC(monitor_acquire) {
 int monitor_release(bjvm_thread *thread, bjvm_obj_header *obj) {
   // since this is a single-threaded vm, we don't need atomic operations
   // no handles necessary because no GC (i hope)
-  monitor_data *data = inspect_monitor(&obj->header_word);
+  bjvm_header_word fetched_header;
+  __atomic_load(&obj->header_word, &fetched_header, __ATOMIC_ACQUIRE);
+  monitor_data *lock = inspect_monitor(&fetched_header);
 
-  // todo: these should return -1 instead
-  assert(data); // surely this has been initialized if you're releasing it
-  assert(data->tid == thread->tid); // todo: should this throw an exception/error instead?
+  // todo: error code enum? or just always cause an InternalError/IllegalMonitorStateException
+  if (unlikely(!lock)) return -1;
+  if (unlikely(lock->tid != thread->tid)) return -1;
+  if (unlikely(lock->hold_count == 0)) return -1;
 
-  assert(data->hold_count > 0);
-
-  u32 new_hold_count = --data->hold_count;
-  printf("decremented hold count: %d\n", data->hold_count);
+  u32 new_hold_count = --lock->hold_count;
+  printf("decremented hold count: %d\n", lock->hold_count);
 
   if (new_hold_count == 0) {
-    data->tid = -1;
+    lock->tid = -1;
     printf("released monitor\n");
   }
   return 0;
