@@ -141,6 +141,8 @@ bool has_expanded_data(bjvm_obj_header *obj);
 bjvm_mark_word_t *get_mark_word(bjvm_obj_header *obj);
 // nullptr if the object has never been locked, otherwise a pointer to a lock_record.
 monitor_data *inspect_monitor(bjvm_obj_header *obj);
+// only call this if inspect_monitor returns nullptr
+monitor_data *allocate_monitor(bjvm_thread *thread, bjvm_obj_header *obj); // doesn't initialize any monitor data
 
 void read_string(bjvm_thread *thread, bjvm_obj_header *obj, s8 **buf,
                  size_t *len); // todo: get rid of

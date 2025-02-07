@@ -95,6 +95,16 @@ inline monitor_data *inspect_monitor(bjvm_obj_header *obj) {
   return has_expanded_data(obj) ? obj->expanded_data : nullptr;
 }
 
+inline monitor_data *allocate_monitor(bjvm_thread *thread, bjvm_obj_header *obj) {
+  assert(!has_expanded_data(obj));
+  monitor_data *data = bump_allocate(thread, sizeof(monitor_data));
+  if (likely(data)) {
+    data->mark_word = obj->mark_word;
+    obj->expanded_data = data;
+  }
+  return data;
+}
+
 #define MAX_CF_NAME_LENGTH 1000
 
 u16 stack_depth(const bjvm_stack_frame *frame) {

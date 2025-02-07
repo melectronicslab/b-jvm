@@ -131,7 +131,7 @@ static void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
     PUSH_ROOT(&thr->handles[i].obj);
   }
 
-  // Preallocated exceptions
+  // Pred exceptions
   PUSH_ROOT(&thr->out_of_mem_error);
   PUSH_ROOT(&thr->stack_overflow_error);
 
@@ -365,8 +365,19 @@ void bjvm_major_gc(bjvm_vm *vm) {
 
 
     // printf("Mapping %p -> %p\n", obj, write_ptr);
-    new_location[i] = (bjvm_obj_header *)write_ptr;
+    bjvm_obj_header *new_obj = (bjvm_obj_header *) write_ptr;
+    new_location[i] = new_obj;
     write_ptr += sz;
+
+    if (has_expanded_data(new_obj)) {
+      // Copy the expanded data (align to 4 bytes)
+      write_ptr = (u8 *) (align_up((uintptr_t) write_ptr, 4));
+      const size_t mutex_data_size = sizeof(*new_obj->expanded_data);
+      assert(write_ptr + mutex_data_size <= end);
+      memcpy(write_ptr, new_obj->expanded_data, mutex_data_size);
+      new_obj->expanded_data = (monitor_data *) write_ptr;
+      write_ptr += mutex_data_size;
+    }
   }
 
   // Go through all static and instance fields and rewrite in place

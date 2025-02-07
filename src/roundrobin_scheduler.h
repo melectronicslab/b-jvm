@@ -45,8 +45,10 @@ typedef struct {
 scheduler_status_t rr_scheduler_execute_immediately(execution_record *record);
 
 typedef enum {
-  RR_WAKEUP_YIELDING,
-  RR_WAKEUP_SLEEP
+  RR_WAKEUP_YIELDING, // timeslice yielded, continue immediately
+  RR_WAKEUP_SLEEP, // Thread.sleep
+  RR_MONITOR_ENTER_WAITING, // wants to acquire mutex, but it's contended
+  RR_MONITOR_WAIT, // isn't holding, but is waiting for notify
 } rr_wakeup_kind;
 
 typedef struct {
