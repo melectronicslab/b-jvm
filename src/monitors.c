@@ -58,6 +58,7 @@ DEFINE_ASYNC(monitor_acquire) {
                                   false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE)) {
       printf("acquiring from thread %d\n", args->thread->tid);
       lock->hold_count = 1;
+      printf("(tid %d) set hold count: %d\n", args->thread->tid, lock->hold_count);
       break; // success
     }
 

@@ -767,8 +767,20 @@ TEST_CASE("Multithreading") {
   (void) result; // use this var fr
 }
 
+TEST_CASE("Monitor reentrancy") {
+  auto result = run_scheduled_test_case("test_files/reentrant_monitor/", true, "Main");
+  REQUIRE(result.stdout_ == R"(ReentrantFactorialCalculator: {}
+5! = 120
+ReentrantFactorialCalculator: {1=1, 2=2, 3=6, 4=24, 5=120}
+3! = 6
+ReentrantFactorialCalculator: {1=1, 2=2, 3=6, 4=24, 5=120}
+100! = 2432902008176640000
+ReentrantFactorialCalculator: {1=1, 2=2, 3=6, 4=24, 5=120, 6=720, 7=5040, 8=40320, 9=362880, 10=3628800, 11=39916800, 12=479001600, 13=6227020800, 14=87178291200, 15=1307674368000, 16=20922789888000, 17=355687428096000, 18=6402373705728000, 19=121645100408832000, 20=2432902008176640000}
+caching correctly: true
+)");
+}
+
 TEST_CASE("Single thread interruption") {
-  // todo: figure out how to schedule this so that we don't run into an assertion error
   auto result = run_scheduled_test_case("test_files/single_thread_interrupt/", true);
 
   REQUIRE(result.stdout_ == R"(initially interrupted: false
