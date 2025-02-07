@@ -90,7 +90,7 @@ int monitor_release(bjvm_thread *thread, bjvm_obj_header *obj) {
   printf("decremented hold count: %d\n", lock->hold_count);
 
   if (new_hold_count == 0) {
-    lock->tid = -1;
+    __atomic_store_n(&lock->tid, -1, __ATOMIC_RELEASE);
     printf("released monitor\n");
   }
   return 0;
