@@ -118,8 +118,8 @@ typedef struct {
 typedef struct { u32 data[2]; } bjvm_mark_word_t;
 
 typedef struct {
-  u64 tid;
-  u32 count;
+  s32 tid;
+  u32 hold_count;
   bjvm_mark_word_t mark_word;
 } monitor_data;
 
@@ -142,6 +142,7 @@ bjvm_mark_word_t *get_mark_word(bjvm_obj_header *obj);
 // nullptr if the object has never been locked, otherwise a pointer to a lock_record.
 monitor_data *inspect_monitor(bjvm_obj_header *obj);
 // only call this if inspect_monitor returns nullptr
+// doesn't store this allocated data onto the object, because that should later be done atomically by someone else
 monitor_data *allocate_monitor(bjvm_thread *thread, bjvm_obj_header *obj); // doesn't initialize any monitor data
 
 void read_string(bjvm_thread *thread, bjvm_obj_header *obj, s8 **buf,
@@ -391,7 +392,7 @@ typedef struct bjvm_vm {
   mmap_allocation *mmap_allocations;
 
   // Latest TID
-  u32 next_tid;
+  s32 next_tid;
 
   bool vm_initialized;
   void *scheduler;  // rr_scheduler or null
@@ -566,7 +567,7 @@ typedef struct bjvm_thread {
   // Current number of active synchronous calls
   u32 synchronous_depth;
 
-  u64 tid;
+  s32 tid;
 
   // Thread-local allocation buffer (objects are first created here)
 } bjvm_thread;

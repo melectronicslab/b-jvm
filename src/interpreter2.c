@@ -1558,10 +1558,7 @@ static s64 if_acmpne_impl_int(ARGS_INT) {
 }
 
 /** Monitors */
-
-// TODO actually implement this stuff
 static s64 monitorenter_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL(tos);
@@ -1569,17 +1566,62 @@ static s64 monitorenter_impl_int(ARGS_INT) {
     return 0;
   }
 
-  sp--;
-  STACK_POLYMORPHIC_NEXT(*(sp - 1));
+  // since this is a single-threaded vm, we don't need atomic operations
+  bjvm_obj_header *obj = (bjvm_obj_header *) tos;
+  monitor_data *data = inspect_monitor(obj);
+  if (unlikely(!data)) {
+    data = allocate_monitor(thread, obj);
+    if (unlikely(!data)) {
+      return 0; // oom
+    }
+    data->tid = -1;
+    data->hold_count = 0;
+
+    obj->expanded_data = data; // should compare and swap atomically on multiple threads
+  }
+
+  // now we're guaranteed to have a monitor_data
+  // should compare and swap tid from -1 to thread->tid
+  if (data->tid == -1) {
+    data->tid = thread->tid;
+    data->hold_count = 0;
+    printf("acquired monitor\n");
+  }
+
+  if (data->tid == thread->tid) {
+    data->hold_count++;
+    printf("incremented hold count: %d\n", data->hold_count);
+    sp--;
+    STACK_POLYMORPHIC_NEXT(*(sp - 1));
+  } else {
+    // todo: tell scheduler to wait for this monitor to be available
+    UNREACHABLE(); // not implemented yet!
+  }
 }
 
 static s64 monitorexit_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL(tos);
     raise_null_pointer_exception(thread);
     return 0;
+  }
+
+  // since this is a single-threaded vm, we don't need atomic operations
+  bjvm_obj_header *obj = (bjvm_obj_header *) tos;
+  monitor_data *data = inspect_monitor(obj);
+
+  assert(data); // surely this has been initialized if you're releasing it
+  assert(data->tid == thread->tid); // todo: should this throw an exception/error instead?
+
+  u32 new_hold_count = --data->hold_count;
+  printf("decremented hold count: %d\n", data->hold_count);
+
+  assert(new_hold_count >= 0);
+
+  if (new_hold_count == 0) {
+    data->tid = -1;
+    printf("released monitor\n");
   }
 
   sp--;

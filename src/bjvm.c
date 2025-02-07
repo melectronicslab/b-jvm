@@ -100,7 +100,7 @@ inline monitor_data *allocate_monitor(bjvm_thread *thread, bjvm_obj_header *obj)
   monitor_data *data = bump_allocate(thread, sizeof(monitor_data));
   if (likely(data)) {
     data->mark_word = obj->mark_word;
-    obj->expanded_data = data;
+    // obj->expanded_data = data; // this should be done explicitly by the caller afterwards
   }
   return data;
 }
