@@ -13,19 +13,14 @@
 #include <ranges>
 #include <unordered_map>
 
-#include "../src/adt.h"
-#include "../src/analysis.h"
-#include "../src/bjvm.h"
-#include "../src/util.h"
+#include <adt.h>
+#include <analysis.h>
+#include <bjvm.h>
+#include <util.h>
 #include "catch2/matchers/catch_matchers_container_properties.hpp"
 #include "catch2/matchers/catch_matchers_string.hpp"
 #include "catch2/matchers/catch_matchers_vector.hpp"
 #include "tests-common.h"
-
-#ifdef EMSCRIPTEN
-#include <wasm/wasm_jit.h>
-#endif
-
 #include <numeric>
 
 using namespace Bjvm::Tests;
@@ -614,6 +609,8 @@ As a char: A
   REQUIRE(result_many.stdin_ == ""); // BufferedReader tries to consume 8192 bytes, but we only provide 7
 }
 
+#ifndef EMSCRIPTEN  // these tests are sloooowwww
+
 TEST_CASE("Sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver" << std::endl;
@@ -646,6 +643,8 @@ TEST_CASE("Autodiff") {
   std::cout << "Done in " << elapsed << " ms!" << std::endl;
   std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
 }
+
+#endif
 
 TEST_CASE("Method parameters reflection API") {
   auto result = run_test_case("test_files/method_parameters/", true, "MethodParameters");

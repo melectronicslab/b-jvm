@@ -1,8 +1,9 @@
-#include "../src/classpath.h"
+#include <classpath.h>
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("Basic classpath operations", "[classpath]") {
+
   bjvm_classpath cp;
   char *error =
       bjvm_init_classpath(&cp, STR("test_files/broken_jar1/this_is_a_jar.jar"));

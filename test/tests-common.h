@@ -5,7 +5,7 @@
 #ifndef BJVM_TESTS_COMMON_H
 #define BJVM_TESTS_COMMON_H
 
-#include "../src/bjvm.h"
+#include <bjvm.h>
 
 #include <memory>
 #include <filesystem>
@@ -13,10 +13,6 @@
 #include <string>
 #include <optional>
 
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
-
-#include <catch2/matchers/catch_matchers_container_properties.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <catch2/matchers/catch_matchers_vector.hpp>
 
@@ -36,10 +32,8 @@ static inline std::string_view to_string_view(heap_string str) {
         return {str.chars, (size_t)str.len};
     }
 
-int load_classfile(slice filename, void *param, u8 **bytes,
-                          size_t *len);
+
     std::unique_ptr<bjvm_vm, void(*)(bjvm_vm*)> CreateTestVM(bjvm_vm_options options = bjvm_default_vm_options());
-  optional<vector<u8>> ResolveClassPath(string const& filename, vector<string> const& extra_paths);
   std::vector<std::string> ListDirectory(const std::string &path,
                                          bool recursive);
   bool EndsWith(const std::string &s, const std::string &suffix);
