@@ -732,9 +732,9 @@ void bjvm_free_vm(bjvm_vm *vm) {
   bjvm_free_classpath(&vm->classpath);
 
   free(vm->cached_classdescs);
-  // Free all threads
-  for (int i = 0; i < arrlen(vm->active_threads); ++i) {
-    free(vm->active_threads[i]);
+  // Free all threads, iterate backwards because they remove themselves
+  for (int i = arrlen(vm->active_threads) - 1; i >= 0; --i) {
+    bjvm_free_thread(vm->active_threads[i]);
   }
   arrfree(vm->active_threads);
   free(vm->heap);
@@ -932,9 +932,7 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
 static void remove_thread_from_vm_list(bjvm_thread *thread) {
   for (int i = 0; i < arrlen(thread->vm->active_threads); ++i) {
     if (thread == thread->vm->active_threads[i]) {
-      ((thread->vm->active_threads)[i] =
-        stbds_arrlast(thread->vm->active_threads),
-        stbds_header(thread->vm->active_threads)->length -= 1);
+      arrdelswap(thread->vm->active_threads, i);
       break;
     }
   }

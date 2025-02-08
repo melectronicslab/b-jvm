@@ -1,6 +1,4 @@
-//
-// Created by Cowpox on 2/2/25.
-//
+// TODO better memory management. It's horrible rn
 
 #include "roundrobin_scheduler.h"
 
@@ -20,6 +18,7 @@ typedef struct {
 
 typedef struct {
   thread_info **round_robin; // Threads are cycled here
+  execution_record **executions;
 } impl;
 
 void free_thread_info(thread_info * info) {
@@ -37,6 +36,10 @@ void rr_scheduler_uninit(rr_scheduler *scheduler) {
   for (int i = 0; i < arrlen(I->round_robin); i++) {
     free_thread_info(I->round_robin[i]);
   }
+  for (int i = 0; i < arrlen(I->executions); i++) {
+    free(I->executions[i]);
+  }
+  arrfree(I->executions);
   arrfree(I->round_robin);
   free(I);
 }
@@ -165,6 +168,8 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
       rec->js_handle = -1;  // no handle here
     }
 
+    free(call->call.args.args);  // free the copied arguments
+
     unshift(impl, info);
   } else {
     info->wakeup_info = (void*) fut.wakeup;
@@ -236,14 +241,23 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
   rec->status = SCHEDULER_RESULT_MORE;
   rec->vm = scheduler->vm;
   rec->thread = thread;
+  rec->_impl = scheduler->_impl;
 
   arrput(info->call_queue, pending);
+  arrput(((impl*)scheduler->_impl)->executions, rec);
   return pending.record;
 }
 
 void free_execution_record(execution_record *record) {
   if (record->js_handle != -1) {
     bjvm_drop_js_handle(record->vm, record->js_handle);
+  }
+  impl *I = record->_impl;
+  for (int i = 0; i < arrlen(I->executions); i++) {
+    if (I->executions[i] == record) {
+      arrdelswap(I->executions, i);
+      break;
+    }
   }
   free(record);
 }

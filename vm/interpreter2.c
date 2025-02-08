@@ -1586,6 +1586,9 @@ static s64 monitorenter_impl_int(ARGS_INT) {
   do {
     monitor_acquire_t ctx = { .args = {thread, (bjvm_obj_header *)tos} };
     future_t fut = monitor_acquire(&ctx);
+    if (unlikely(thread->current_exception)) {  // oom
+      return 0;
+    }
     if (fut.status == FUTURE_NOT_READY) {
       push_async_monitor_enter(thread, frame, &ctx);
       return 0;
@@ -1606,9 +1609,12 @@ static s64 monitorexit_impl_int(ARGS_INT) {
 
   bjvm_obj_header *obj = (bjvm_obj_header *) tos;
   int result = monitor_release(thread, obj);
-  if (result) {
+  if (unlikely(result)) {
     SPILL_VOID
     raise_illegal_monitor_state_exception(thread);
+    return 0;
+  }
+  if (unlikely(thread->current_exception)) {
     return 0;
   }
 

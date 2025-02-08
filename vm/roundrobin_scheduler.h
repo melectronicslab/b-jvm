@@ -40,6 +40,7 @@ typedef struct {
 
   int js_handle;  // TEMPORARY, to prevent GC
   bjvm_vm *vm;
+  void *_impl;
 } execution_record;
 
 scheduler_status_t rr_scheduler_execute_immediately(execution_record *record);
