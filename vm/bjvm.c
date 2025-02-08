@@ -683,7 +683,6 @@ bjvm_vm *bjvm_create_vm(const bjvm_vm_options options) {
   vm->heap_capacity = options.heap_size;
   vm->true_heap_capacity = vm->heap_capacity + OOM_SLOP_BYTES;
   vm->active_threads = nullptr;
-  vm->active_thread_count = vm->active_thread_cap = 0;
 
   vm->read_stdin = options.read_stdin;
   vm->poll_available_stdin = options.poll_available_stdin;
@@ -733,9 +732,14 @@ void bjvm_free_vm(bjvm_vm *vm) {
   bjvm_free_classpath(&vm->classpath);
 
   free(vm->cached_classdescs);
-  free(vm->active_threads);
+  // Free all threads
+  for (int i = 0; i < arrlen(vm->active_threads); ++i) {
+    free(vm->active_threads[i]);
+  }
+  arrfree(vm->active_threads);
   free(vm->heap);
   free_unsafe_allocations(vm);
+
 
   free(vm);
 }
@@ -828,7 +832,7 @@ static void init_unsafe_constants(bjvm_thread *thread) {
 
 bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   bjvm_thread *thr = calloc(1, sizeof(bjvm_thread));
-  *VECTOR_PUSH(vm->active_threads, vm->active_thread_count, vm->active_thread_cap) = thr;
+  arrput(vm->active_threads, thr);
 
   thr->vm = vm;
   thr->frame_buffer = calloc(1, thr->frame_buffer_capacity = options.stack_space);
@@ -838,7 +842,6 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   thr->handles_capacity = HANDLES_CAPACITY;
 
   thr->async_stack = calloc(1, 0x20);
-
   thr->tid = vm->next_tid++;
 
   bool initializing = !vm->vm_initialized;
@@ -923,9 +926,18 @@ bjvm_thread *bjvm_create_thread(bjvm_vm *vm, bjvm_thread_options options) {
   }
 
   thr->current_exception = nullptr;
-
-
   return thr;
+}
+
+static void remove_thread_from_vm_list(bjvm_thread *thread) {
+  for (int i = 0; i < arrlen(thread->vm->active_threads); ++i) {
+    if (thread == thread->vm->active_threads[i]) {
+      ((thread->vm->active_threads)[i] =
+        stbds_arrlast(thread->vm->active_threads),
+        stbds_header(thread->vm->active_threads)->length -= 1);
+      break;
+    }
+  }
 }
 
 void bjvm_free_thread(bjvm_thread *thread) {
@@ -935,6 +947,8 @@ void bjvm_free_thread(bjvm_thread *thread) {
   free(thread->frames);
   free(thread->frame_buffer);
   free(thread->handles);
+  free(thread->refuel_wakeup_info);
+  remove_thread_from_vm_list(thread);
   free(thread);
 }
 

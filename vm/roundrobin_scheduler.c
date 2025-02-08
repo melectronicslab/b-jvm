@@ -22,13 +22,23 @@ typedef struct {
   thread_info **round_robin; // Threads are cycled here
 } impl;
 
+void free_thread_info(thread_info * info) {
+  arrfree(info->call_queue);
+  free(info);
+}
+
 void rr_scheduler_init(rr_scheduler *scheduler, bjvm_vm *vm) {
   scheduler->vm = vm;
   scheduler->_impl = calloc(1, sizeof(impl));
 }
 
 void rr_scheduler_uninit(rr_scheduler *scheduler) {
-  free(scheduler->_impl);
+  impl *I = scheduler->_impl;
+  for (int i = 0; i < arrlen(I->round_robin); i++) {
+    free_thread_info(I->round_robin[i]);
+  }
+  arrfree(I->round_robin);
+  free(I);
 }
 
 static bool is_sleeping(thread_info * info) {
@@ -105,6 +115,7 @@ void unshift(impl* I, thread_info * info) {
         break;
       }
     }
+    free_thread_info(info);
   }
 }
 

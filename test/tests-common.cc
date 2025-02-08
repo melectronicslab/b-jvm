@@ -344,6 +344,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
   bjvm_free_thread(thread);
   bjvm_free_vm(vm);
+  rr_scheduler_uninit(&scheduler);
 
   return result;
 }

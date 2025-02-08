@@ -355,10 +355,7 @@ typedef struct bjvm_vm {
   // Primitive classes (int.class, etc.)
   bjvm_classdesc *primitive_classes[9];
 
-  // Active threads (unused for now)
   bjvm_thread **active_threads;
-  int active_thread_count;
-  int active_thread_cap;
 
   // The first thread created, which will always be kept around so there as at least one thread
   // available (even if it isn't running anything)
@@ -562,6 +559,9 @@ typedef struct bjvm_thread {
   u32 synchronous_depth;
 
   s32 tid;
+
+  // Allocation for the refuel_check wakeup info
+  void *refuel_wakeup_info;
 
   // Thread-local allocation buffer (objects are first created here)
 } bjvm_thread;

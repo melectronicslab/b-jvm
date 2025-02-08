@@ -183,7 +183,7 @@ static void bjvm_major_gc_enumerate_gc_roots(bjvm_gc_ctx *ctx) {
   }
 
   // Stack and local variables on active threads
-  for (int thread_i = 0; thread_i < vm->active_thread_count; ++thread_i) {
+  for (int thread_i = 0; thread_i < arrlen(vm->active_threads); ++thread_i) {
     bjvm_thread *thr = vm->active_threads[thread_i];
     push_thread_roots(ctx, thr);
   }

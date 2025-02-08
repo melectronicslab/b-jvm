@@ -431,13 +431,14 @@ static s32 grow_async_stack(bjvm_thread *thread) {
   if (new_capacity == 0)
     new_capacity = 4;
 
-  thread->async_stack = stk =
+  stk =
       realloc(thread->async_stack, sizeof(struct async_stack) + new_capacity * sizeof(continuation_frame));
   ;
   if (unlikely(!stk)) {
     thread->current_exception = thread->stack_overflow_error;
     return -1;
   }
+  thread->async_stack = stk;
 
   stk->max_height = new_capacity;
   return 0;
@@ -486,7 +487,10 @@ __attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
     thread->frames[thread->frames_count - 1]->is_async_suspended = true;
 
     continuation_frame *cont = async_stack_push(thread);
-    rr_wakeup_info *wakeup = malloc(sizeof(rr_wakeup_info));
+    // Provide a way for us to free the wakeup info. There will never be multiple refuel checks in flight within a
+    // single thread.
+    rr_wakeup_info *wakeup = thread->refuel_wakeup_info ? thread->refuel_wakeup_info
+      : (thread->refuel_wakeup_info = malloc(sizeof(rr_wakeup_info)));
     wakeup->kind = RR_WAKEUP_YIELDING;
     *cont = (continuation_frame){.pnt = CONT_RESUME_INSN,
                                  .wakeup = (void*)wakeup};

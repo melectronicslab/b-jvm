@@ -614,72 +614,80 @@ As a char: A
 #ifndef EMSCRIPTEN  // these tests are sloooowwww
 
 TEST_CASE("Sudoku solver") {
-  int num_puzzles = 33761;
-  std::cout << "Starting sudoku solver" << std::endl;
-  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
-  auto now = std::chrono::system_clock::now();
+  BENCHMARK("Sudoku solver benchmark") {
+    int num_puzzles = 33761;
+    std::cout << "Starting sudoku solver" << std::endl;
+    std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+    auto now = std::chrono::system_clock::now();
 
-  auto result = run_test_case("test_files/sudoku/", true, "Main");
-  // last puzzle
-  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+    auto result = run_test_case("test_files/sudoku/", true, "Main");
+    // last puzzle
+    REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
 
-  auto end = std::chrono::system_clock::now();
-  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-  std::cout << "Done in " << elapsed << " ms!" << std::endl;
-  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+    auto end = std::chrono::system_clock::now();
+    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+    std::cout << "Done in " << elapsed << " ms!" << std::endl;
+    std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+  };
 }
 
 TEST_CASE("Scheduled sudoku solver") {
-  int num_puzzles = 33761;
-  std::cout << "Starting sudoku solver with a scheduler" << std::endl;
-  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
-  auto now = std::chrono::system_clock::now();
+  BENCHMARK("Sudoku solver benchmark") {
+    int num_puzzles = 33761;
+    std::cout << "Starting sudoku solver with a scheduler" << std::endl;
+    std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+    auto now = std::chrono::system_clock::now();
 
-  auto result = run_scheduled_test_case("test_files/sudoku/", true, "Main");
-  // last puzzle
-  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
-  REQUIRE(result.sleep_count == 0); // chop chop
+    auto result = run_scheduled_test_case("test_files/sudoku/", true, "Main");
+    // last puzzle
+    REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+    REQUIRE(result.sleep_count == 0); // chop chop
 
-  auto end = std::chrono::system_clock::now();
-  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-  std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
-  std::cout << "Done in " << elapsed << " ms!" << std::endl;
-  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+    auto end = std::chrono::system_clock::now();
+    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+    std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
+    std::cout << "Done in " << elapsed << " ms!" << std::endl;
+    std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+  };
 }
 
 TEST_CASE("Scheduled worker sudoku solver") {
-  int num_puzzles = 33761;
-  std::cout << "Starting sudoku solver with a worker thread" << std::endl;
-  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
-  auto now = std::chrono::system_clock::now();
+  BENCHMARK("Sudoku solver benchmark") {
+    int num_puzzles = 33761;
+    std::cout << "Starting sudoku solver with a worker thread" << std::endl;
+    std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+    auto now = std::chrono::system_clock::now();
 
-  auto result = run_scheduled_test_case("test_files/sudoku/", false, "WorkerThreadSudoku");
-  // last puzzle
-  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
-  REQUIRE(result.sleep_count == 0); // chop chop
+    auto result = run_scheduled_test_case("test_files/sudoku/", false, "WorkerThreadSudoku");
+    // last puzzle
+    REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+    REQUIRE(result.sleep_count == 0); // chop chop
 
-  auto end = std::chrono::system_clock::now();
-  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-  std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
-  std::cout << "Done in " << elapsed << " ms!" << std::endl;
-  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+    auto end = std::chrono::system_clock::now();
+    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+    std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
+    std::cout << "Done in " << elapsed << " ms!" << std::endl;
+    std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
+  };
 }
 
 TEST_CASE("Autodiff") {
-  int num_derivatives = 10000 * 10 + 3;
-  std::cout << "Testing Autodiff" << std::endl;
-  std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
-  auto now = std::chrono::system_clock::now();
+  BENCHMARK("Sudoku solver benchmark") {
+    int num_derivatives = 10000 * 10 + 3;
+    std::cout << "Testing Autodiff" << std::endl;
+    std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
+    auto now = std::chrono::system_clock::now();
 
-  auto result = run_test_case("test_files/autodiff/", true, "Main");
-  // last test
-  REQUIRE(result.stdout_.find("((84.02894029503324*(-(sin((x*y))*x)+1.0))+((84.02894029503324*x)*-(((cos((x*y))*x)*y)+sin((x*y))))) = -3209354.522523045 == -3209354.522523045")
-          != std::string::npos);
+    auto result = run_test_case("test_files/autodiff/", true, "Main");
+    // last test
+    REQUIRE(result.stdout_.find("((84.02894029503324*(-(sin((x*y))*x)+1.0))+((84.02894029503324*x)*-(((cos((x*y))*x)*y)+sin((x*y))))) = -3209354.522523045 == -3209354.522523045")
+            != std::string::npos);
 
-  auto end = std::chrono::system_clock::now();
-  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-  std::cout << "Done in " << elapsed << " ms!" << std::endl;
-  std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
+    auto end = std::chrono::system_clock::now();
+    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+    std::cout << "Done in " << elapsed << " ms!" << std::endl;
+    std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
+  };
 }
 
 #endif
