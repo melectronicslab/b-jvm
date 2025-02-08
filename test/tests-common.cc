@@ -26,27 +26,10 @@ using std::string_view;
 using std::vector;
 
 namespace Bjvm::Tests {
-
 std::unique_ptr<bjvm_vm, void (*)(bjvm_vm *)>
 CreateTestVM(bjvm_vm_options options) {
   bjvm_vm *vm = bjvm_create_vm(options);
   return {vm, bjvm_free_vm};
-}
-
-optional<vector<u8>>
-ResolveClassPath(string const &filename,
-                 std::vector<string> const &extra_paths) {
-  std::vector<string> paths = extra_paths;
-  paths.emplace_back("jdk23/"); // for testing
-
-  for (const auto &path : paths) {
-    optional<vector<u8>> file_data = ReadFile(path + filename);
-    if (file_data.has_value()) {
-      return file_data;
-    }
-  }
-
-  return {};
 }
 
 std::vector<std::string> ListDirectory(const std::string &path,
@@ -121,30 +104,6 @@ bool EndsWith(const std::string &s, const std::string &suffix) {
     return false;
   }
   return s.substr(s.size() - suffix.size()) == suffix;
-}
-
-int load_classfile(slice filename, void *param, u8 **bytes,
-                   size_t *len) {
-  const char **classpath = (const char **)param;
-  const char **classpath_end = classpath;
-
-  vector<string> extra_paths;
-  while (classpath && *classpath_end) {
-    extra_paths.emplace_back(*classpath_end);
-    classpath_end++;
-  }
-
-  string filename_sv(filename.chars, filename.len);
-
-  auto file_data = ResolveClassPath(filename_sv, extra_paths);
-  if (file_data.has_value()) {
-    *bytes = (u8 *)malloc(file_data->size());
-    memcpy(*bytes, file_data->data(), file_data->size());
-    *len = file_data->size();
-    return 0;
-  }
-
-  return -1;
 }
 
 std::optional<std::vector<u8>> ReadFile(const std::string &file) {
@@ -247,7 +206,7 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 
   bjvm_initialize_class_t pox = { .args = {thread, desc}};
   future_t f = bjvm_initialize_class(&pox);
-  BJVM_CHECK(f.status == FUTURE_READY);
+  CHECK(f.status == FUTURE_READY);
 
   method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),
                               false, false);
@@ -332,7 +291,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
   bjvm_initialize_class_t pox = { .args = {thread, desc}};
   future_t f = bjvm_initialize_class(&pox);
-  BJVM_CHECK(f.status == FUTURE_READY);
+  CHECK(f.status == FUTURE_READY);
 
   method = bjvm_method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),
                               false, false);
