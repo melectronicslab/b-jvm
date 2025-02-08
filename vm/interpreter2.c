@@ -1568,10 +1568,10 @@ static s64 if_acmpne_impl_int(ARGS_INT) {
 
 /** Monitors */
 
-void push_async_monitor_enter(bjvm_thread *thread, bjvm_stack_frame *frame, void* ctx_ /* monitor_acquire_t* */) {
+// Push the necessary continuation frame for a monitorenter instruction that is contended.
+void push_async_monitor_enter(bjvm_thread *thread, bjvm_stack_frame *frame, monitor_acquire_t *ctx) {
   continuation_frame *cont = async_stack_push(thread);
   frame->is_async_suspended = true;
-  monitor_acquire_t *ctx = ctx_;
   *cont = (continuation_frame) { .pnt = CONT_MONITOR_ENTER, .ctx.acquire_monitor = *ctx };
 }
 
@@ -1589,7 +1589,7 @@ static s64 monitorenter_impl_int(ARGS_INT) {
     if (unlikely(thread->current_exception)) {  // oom
       return 0;
     }
-    if (fut.status == FUTURE_NOT_READY) {
+    if (fut.status == FUTURE_NOT_READY) {  // monitor is contended
       push_async_monitor_enter(thread, frame, &ctx);
       return 0;
     }
@@ -1609,12 +1609,11 @@ static s64 monitorexit_impl_int(ARGS_INT) {
 
   bjvm_obj_header *obj = (bjvm_obj_header *) tos;
   int result = monitor_release(thread, obj);
+  assert(!thread->current_exception && "monitor_release raised an exception");
+
   if (unlikely(result)) {
     SPILL_VOID
     raise_illegal_monitor_state_exception(thread);
-    return 0;
-  }
-  if (unlikely(thread->current_exception)) {
     return 0;
   }
 

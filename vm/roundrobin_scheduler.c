@@ -52,8 +52,9 @@ static thread_info * get_next_thr(impl *impl) {
   assert(impl->round_robin && "No threads to run");
   thread_info *info = impl->round_robin[0], *first = info;
   do {
-    memmove(impl->round_robin, impl->round_robin + 1, sizeof(thread_info *) * (arrlen(impl->round_robin) - 1));
-    impl->round_robin[arrlen(impl->round_robin) - 1] = info;
+    info = impl->round_robin[0];
+    arrdel(impl->round_robin, 0);
+    arrput(impl->round_robin, info);
     if (!is_sleeping(info)) {
       return info;
     }
@@ -70,8 +71,9 @@ static thread_info * get_next_thr(impl *impl) {
     }
   }
 
-  memmove(impl->round_robin + best_i, impl->round_robin + best_i + 1, sizeof(thread_info *) * (arrlen(impl->round_robin) - 1 - best_i));
-  impl->round_robin[arrlen(impl->round_robin) - 1] = info;
+  thread_info *best = impl->round_robin[best_i];
+  arrdel(impl->round_robin, best_i);
+  arrput(impl->round_robin, best);
   return info;
 }
 
@@ -106,15 +108,13 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
 
 void unshift(impl* I, thread_info * info) {
   if (arrlen(info->call_queue) > 0) {
-    memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
-    arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);
+    arrdel(info->call_queue, 0);
   }
   if (arrlen(info->call_queue) == 0) {
     // Look for the thread in the round robin and remove it
     for (int i = 0; i < arrlen(I->round_robin); i++) {
       if (I->round_robin[i] == info) {
-        memmove(I->round_robin + i, I->round_robin + i + 1, sizeof(thread_info *) * (arrlen(I->round_robin) - 1 - i));
-        arrsetlen(I->round_robin, arrlen(I->round_robin) - 1);
+        arrdel(I->round_robin, i);
         break;
       }
     }
@@ -212,9 +212,7 @@ scheduler_status_t rr_scheduler_execute_immediately(execution_record *record) {
           return SCHEDULER_RESULT_INVAL;
         }
 
-        memmove(info->call_queue, info->call_queue + 1, sizeof(pending_call) * (arrlen(info->call_queue) - 1));
-        arrsetlen(info->call_queue, arrlen(info->call_queue) - 1);
-
+        arrdel(info->call_queue, 0);
         if (call->record == record) {
           return SCHEDULER_RESULT_DONE;
         }
