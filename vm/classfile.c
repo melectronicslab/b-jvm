@@ -1806,7 +1806,7 @@ parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len, bjvm_classdesc 
   // the actual value of the flag in the class file and the version of the
   // class file."
   // -> getModifiers doesn't return this bit
-  cf->access_flags &= ~BJVM_ACCESS_SYNCHRONIZED;
+  cf->access_flags &= ~BJVM_ACCESS_SYNCHRONIZED; // not a typo, this is the ACC_SUPER bit
 
   bjvm_cp_class_info *this_class =
       &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"), BJVM_CP_KIND_CLASS, "this class")->class_info;

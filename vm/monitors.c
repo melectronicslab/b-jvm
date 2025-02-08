@@ -30,7 +30,7 @@ DEFINE_ASYNC(monitor_acquire) {
 
       bjvm_header_word proposed_header = { .expanded_data = allocated_data };
 
-      printf("putting monitor data at %p\n", shared_header);
+      // printf("putting monitor data at %p\n", shared_header);
 
       // try to put it in- loop again if CAS fails
       if (__atomic_compare_exchange(shared_header, &fetched_header, &proposed_header,
@@ -49,16 +49,16 @@ DEFINE_ASYNC(monitor_acquire) {
     if (__atomic_load_n(&lock->tid, __ATOMIC_ACQUIRE) == args->thread->tid) {
       // we already own the monitor
       lock->hold_count++; // I think (?) this works under the C memory model, but if not, just use volatile
-      printf("(tid %d) incremented hold count: %d\n", args->thread->tid, lock->hold_count);
+      // printf("(tid %d) incremented hold count: %d\n", args->thread->tid, lock->hold_count);
       break;
     }
 
     // try to acquire mutex- loop again if CAS fails
     if (__atomic_compare_exchange_n(&lock->tid, &freed, args->thread->tid,
                                   false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE)) {
-      printf("acquiring from thread %d\n", args->thread->tid);
+      // printf("acquiring from thread %d\n", args->thread->tid);
       lock->hold_count = 1;
-      printf("(tid %d) set hold count: %d\n", args->thread->tid, lock->hold_count);
+      // printf("(tid %d) set hold count: %d\n", args->thread->tid, lock->hold_count);
       break; // success
     }
 
@@ -88,11 +88,11 @@ int monitor_release(bjvm_thread *thread, bjvm_obj_header *obj) {
   if (unlikely(lock->hold_count == 0)) return -1;
 
   u32 new_hold_count = --lock->hold_count;
-  printf("decremented hold count: %d\n", lock->hold_count);
+  //printf("decremented hold count: %d\n", lock->hold_count);
 
   if (new_hold_count == 0) {
     __atomic_store_n(&lock->tid, -1, __ATOMIC_RELEASE);
-    printf("released monitor\n");
+    //printf("released monitor\n");
   }
   return 0;
 }

@@ -416,7 +416,6 @@ typedef struct {
       bool returns;
     } interp_call;
   } ctx;
-
 } continuation_frame;
 
 struct async_stack {
@@ -1564,6 +1563,14 @@ static s64 if_acmpne_impl_int(ARGS_INT) {
 }
 
 /** Monitors */
+
+void push_async_monitor_enter(bjvm_thread *thread, bjvm_stack_frame *frame, void* ctx_ /* monitor_acquire_t* */) {
+  continuation_frame *cont = async_stack_push(thread);
+  frame->is_async_suspended = true;
+  monitor_acquire_t *ctx = ctx_;
+  *cont = (continuation_frame) { .pnt = CONT_MONITOR_ENTER, .ctx.acquire_monitor = *ctx };
+}
+
 static s64 monitorenter_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   if (unlikely(!tos)) {
@@ -1576,9 +1583,7 @@ static s64 monitorenter_impl_int(ARGS_INT) {
     monitor_acquire_t ctx = { .args = {thread, (bjvm_obj_header *)tos} };
     future_t fut = monitor_acquire(&ctx);
     if (fut.status == FUTURE_NOT_READY) {
-      continuation_frame *cont = async_stack_push(thread);
-      frame->is_async_suspended = true;
-      *cont = (continuation_frame) { .pnt = CONT_MONITOR_ENTER, .ctx.acquire_monitor = ctx };
+      push_async_monitor_enter(thread, frame, &ctx);
       return 0;
     }
   } while (0);
@@ -1590,15 +1595,18 @@ static s64 monitorenter_impl_int(ARGS_INT) {
 static s64 monitorexit_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   if (unlikely(!tos)) {
-    SPILL(tos);
+    SPILL_VOID
     raise_null_pointer_exception(thread);
     return 0;
   }
 
   bjvm_obj_header *obj = (bjvm_obj_header *) tos;
-  [[maybe_unused]] int result = monitor_release(thread, obj);
-
-  assert(!result); // todo: should throw InternalError
+  int result = monitor_release(thread, obj);
+  if (result) {
+    SPILL_VOID
+    raise_illegal_monitor_state_exception(thread);
+    return 0;
+  }
 
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -2641,9 +2649,9 @@ static bjvm_exception_table_entry *find_exception_handler(bjvm_thread *thread, b
   if (!table)
     return nullptr;
 
-  u16 const pc = frame->plain.program_counter;
+  int const pc = frame->plain.program_counter;
 
-  for (u16 i = 0; i < table->entries_count; ++i) {
+  for (int i = 0; i < table->entries_count; ++i) {
     bjvm_exception_table_entry *ent = &table->entries[i];
 
     if (ent->start_insn <= pc && pc < ent->end_insn) {
@@ -2810,9 +2818,33 @@ static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *
   return result;
 }
 
+object get_sync_object(bjvm_thread *thread, bjvm_stack_frame* frame) {
+  u16 flags = frame->method->access_flags;
+  object synchronized_on = nullptr;
+  if (unlikely(flags & BJVM_ACCESS_SYNCHRONIZED)) {
+    if (flags & BJVM_ACCESS_STATIC) {  // synchronize on the .class
+      synchronized_on = (void*)bjvm_get_class_mirror(thread, frame->method->my_class);
+    } else {  // synchronize on "this"
+      synchronized_on = frame_locals(frame)[0].obj;
+    }
+    assert(synchronized_on && "is null");
+  }
+  return synchronized_on;
+}
+
 // NOLINTNEXTLINE(misc-no-recursion)
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
   InstrumentMethodEntry(thread, frame_);
+
+  object synchronized_on = get_sync_object(thread, frame_);
+  if (unlikely(synchronized_on)) {
+    monitor_acquire_t ctx = { .args = {thread, synchronized_on} };
+    future_t fut = monitor_acquire(&ctx);
+    if (fut.status == FUTURE_NOT_READY) {
+      push_async_monitor_enter(thread, frame_, &ctx);
+      return value_null();
+    }
+  }
 
   bjvm_stack_value result;
   if (unlikely(bjvm_is_frame_native(frame_))) {
@@ -2822,6 +2854,15 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
   }
 
   if (likely(fut->status == FUTURE_READY)) {
+    synchronized_on = get_sync_object(thread, frame_);  // re-compute in case of intervening GC
+    if (unlikely(synchronized_on)) {
+      int err = monitor_release(thread, synchronized_on);
+      if (err) {
+        raise_illegal_monitor_state_exception(thread);
+        return value_null();
+      }
+    }
+
     InstrumentMethodReturn(thread, frame_);
   }
 

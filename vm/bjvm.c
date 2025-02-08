@@ -29,6 +29,7 @@
 #include "cached_classdescs.h"
 #include <errno.h>
 #include <linkage.h>
+#include <monitors.h>
 #include <sys/mman.h>
 
 /// Looks up a class and initializes it if it needs to be initialized.

@@ -204,9 +204,14 @@ static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
          ctx->vm->true_heap_capacity;
 }
 
+static u32 *get_flags(object o) {
+  assert(o != nullptr);
+  return &get_mark_word(&o->header_word)->data[0];
+}
+
 static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bitsets,
                          int *capacities, int depth) {
-  get_mark_word(&obj->header_word)->data[0] |= IS_REACHABLE;
+  *get_flags(obj) |= IS_REACHABLE;
   *VECTOR_PUSH(ctx->objs, ctx->objs_count, ctx->objs_cap) = obj;
 
   // Visit all instance fields
@@ -219,7 +224,7 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
                                                &capacities[depth]);
     for (int i = 0; i < len; ++i) {
       bjvm_obj_header *field_obj = *((bjvm_obj_header **)obj + (*bitset)[i]);
-      if (field_obj && !(get_mark_word(&field_obj->header_word)->data[0] & IS_REACHABLE) && in_heap(ctx, field_obj)) {
+      if (field_obj && !(*get_flags(field_obj) & IS_REACHABLE) && in_heap(ctx, field_obj)) {
         // Visiting instance field at offset on class
         bjvm_mark_reachable(ctx, field_obj, bitsets, capacities, depth + 1);
       }
@@ -231,7 +236,7 @@ static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bi
     int arr_len = *ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
       bjvm_obj_header *arr_element = *((bjvm_obj_header **)ArrayData(obj) + i);
-      if (arr_element && !(get_mark_word(&arr_element->header_word)->data[0] & IS_REACHABLE) && in_heap(ctx, arr_element)) {
+      if (arr_element && !(*get_flags(arr_element) & IS_REACHABLE) && in_heap(ctx, arr_element)) {
         bjvm_mark_reachable(ctx, arr_element, bitsets, capacities, depth + 1);
       }
     }
@@ -334,7 +339,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
   for (int i = 0; i < ctx.roots_count; ++i) {
     bjvm_obj_header *root = *ctx.roots[i];
     // printf("Pushing roots: %p\n", root);
-    if (!(get_mark_word(&root->header_word)->data[0] & IS_REACHABLE))
+    if (!(*get_flags(root) & IS_REACHABLE))
       bjvm_mark_reachable(&ctx, root, bitset_list, capacity, 0);
   }
   for (int i = 0; i < 1000; ++i) {
@@ -360,7 +365,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
 
     DCHECK(write_ptr + sz <= end);
 
-    get_mark_word(&obj->header_word)->data[0] &= ~IS_REACHABLE; // clear the reachable flag
+    *get_flags(obj) &= ~IS_REACHABLE; // clear the reachable flag
     memcpy(write_ptr, obj, sz);
 
     // printf("Mapping %p -> %p\n", obj, write_ptr);

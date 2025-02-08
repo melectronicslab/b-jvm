@@ -46,10 +46,13 @@ static inline object AllocateObject(bjvm_thread *thread,
   object obj = (object) bump_allocate(thread, sizeof(bjvm_obj_header) + data_size);
   if (obj) {
     obj->header_word.mark_word.data[0] = IS_MARK_WORD;
-    obj->header_word.mark_word.data[1] = ObjNextHashCode();
+    obj->header_word.mark_word.data[1] = 0;  // compute hash code lazily
     obj->descriptor = descriptor;
   }
   return obj;
 }
+
+// Get the hash code of the object, computing it if it is not already computed.
+s32 get_object_hash_code(object o);
 
 #endif

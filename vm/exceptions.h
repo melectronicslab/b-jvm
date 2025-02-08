@@ -73,4 +73,8 @@ static inline void raise_class_cast_exception(bjvm_thread *thread, const bjvm_cl
   bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
 }
 
+static inline void raise_illegal_monitor_state_exception(bjvm_thread *thread) {
+  bjvm_raise_vm_exception(thread, STR("java/lang/IllegalMonitorStateException"), null_str());
+}
+
 #endif

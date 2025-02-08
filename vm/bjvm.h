@@ -126,7 +126,8 @@ typedef struct {
   bjvm_mark_word_t mark_word;
 } monitor_data;
 
-typedef union { // least significant flag bit set if it's a mark_word
+typedef union {
+  // least significant flag bit set if it's a mark_word, using the fact that expanded_data will be aligned
   bjvm_mark_word_t mark_word;
   monitor_data *expanded_data;
 } bjvm_header_word;
@@ -687,6 +688,7 @@ static inline bjvm_stack_value *frame_locals(const bjvm_stack_frame *frame) {
 bjvm_classdesc *bjvm_primitive_classdesc(bjvm_thread *thread, bjvm_type_kind prim_kind);
 void bjvm_out_of_memory(bjvm_thread *thread);
 void *bump_allocate(bjvm_thread *thread, size_t bytes);
+void push_async_monitor_enter(bjvm_thread *thread, bjvm_stack_frame *frame, void *ctx /* monitor_acquire_t */);
 
 #ifdef __cplusplus
 }

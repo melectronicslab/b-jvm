@@ -33,6 +33,7 @@
   X(io_exception, "java/io/IOException") \
   X(interrupted_exception, "java/lang/InterruptedException") \
   X(clone_not_supported_exception, "java/lang/CloneNotSupportedException") \
+  X(illegal_monitor_state_exception, "java/lang/IllegalMonitorStateException") \
   X(illegal_state_exception, "java/lang/IllegalStateException")
 
 

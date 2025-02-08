@@ -804,3 +804,22 @@ slept for at least 1000 ms? false
   REQUIRE(result.ms_slept <= 1000000); // 1 second
   REQUIRE(1000000 - result.ms_slept <= 100000); // give or take 0.1 seconds
 }
+
+TEST_CASE("IllegalMonitorStateException") {
+  auto result = run_test_case("test_files/illegal_monitor/", true, "IllegalMonitors");
+  REQUIRE_THAT(result.stdout_, Equals(R"(Caught exception1
+null
+Caught exception2
+null
+Caught exception3
+null
+Caught exception4
+null
+Caught exception5
+null
+Caught exception6
+Cannot enter synchronized block because "<local0>" is null
+Caught exception7
+Cannot exit synchronized block because "<local0>" is null
+)"));
+}
