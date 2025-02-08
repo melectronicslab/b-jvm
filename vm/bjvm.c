@@ -1,9 +1,5 @@
 #define AGGRESSIVE_DEBUG 0
 
-// Skip the memset(...) call to clear each frame's locals/stack. This messes
-// up the debug dumps, but makes setting up frames faster.
-#define SKIP_CLEARING_FRAME 1
-
 #include <assert.h>
 #include <limits.h>
 #include <math.h>
@@ -1579,14 +1575,12 @@ DEFINE_ASYNC(bjvm_initialize_class) {
                                                // awaits
 
   DCHECK(classdesc);
-  if (classdesc->state >= BJVM_CD_STATE_INITIALIZING) {
-    // Class is already initialized, or currently being initialized.
-    // TODO In a multithreaded model, we would need to wait for the other
-    // thread to finish initializing the class.
+  if (likely(classdesc->state == BJVM_CD_STATE_INITIALIZED)) {
+    // Class is already initialized
     ASYNC_RETURN(0);
   }
 
-  if (classdesc->state != BJVM_CD_STATE_LINKED) {
+  if (classdesc->state < BJVM_CD_STATE_LINKED) {
     error = bjvm_link_class(thread, classdesc);
     if (error) {
       DCHECK(thread->current_exception);
@@ -1594,7 +1588,30 @@ DEFINE_ASYNC(bjvm_initialize_class) {
     }
   }
 
+  if (classdesc->state == BJVM_CD_STATE_INITIALIZING) {
+    if (classdesc->initializing_thread == thread->tid) {
+      // The class is currently being initialized by this thread, so we can just return
+      ASYNC_RETURN(0);
+    }
+
+    // The class is being initialized by a different thread, and we need to wait for it to finish.
+    // This effectively busy waits, but this is an edge case so it doesn't matter for now.
+    while (classdesc->state == BJVM_CD_STATE_INITIALIZING) {
+      self->wakeup_info = malloc(sizeof(rr_wakeup_info));
+      ((rr_wakeup_info*)self->wakeup_info)->kind = RR_WAKEUP_YIELDING;
+      ASYNC_YIELD(&self->wakeup_info);
+      classdesc = args->classdesc; // reload!
+      free(self->wakeup_info);
+    }
+
+    ASYNC_RETURN(0);  // the class is done
+  }
+
+  // TODO handle linkage error
+
   classdesc->state = BJVM_CD_STATE_INITIALIZING;
+  classdesc->initializing_thread = thread->tid;  // mark this thread as initializing the class
+
   self->recursive_call_space = calloc(1, sizeof(bjvm_initialize_class_t));
   if (!self->recursive_call_space) {
     bjvm_out_of_memory(thread);

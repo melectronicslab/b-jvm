@@ -213,7 +213,7 @@ DECLARE_ASYNC(bjvm_stack_value, bjvm_run_native,
 
 DECLARE_ASYNC(
     int, bjvm_initialize_class,
-    locals(bjvm_initialize_class_t *recursive_call_space; u16 i),
+    locals(bjvm_initialize_class_t *recursive_call_space; void *wakeup_info; u16 i),
     arguments(bjvm_thread *thread; bjvm_classdesc *classdesc),
     invoked_methods(
         invoked_method(call_interpreter)

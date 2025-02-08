@@ -44,18 +44,26 @@ void rr_scheduler_uninit(rr_scheduler *scheduler) {
   free(I);
 }
 
-static bool is_sleeping(thread_info * info) {
-  return info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP;
+static bool is_sleeping(thread_info * info, s64 time) {
+  return info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP && (s64)info->wakeup_info->wakeup_us > time;
+}
+
+u64 get_unix_us(void) {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
+  return time;
 }
 
 static thread_info * get_next_thr(impl *impl) {
   assert(impl->round_robin && "No threads to run");
   thread_info *info = impl->round_robin[0], *first = info;
+  s64 time = (s64)get_unix_us();
   do {
     info = impl->round_robin[0];
     arrdel(impl->round_robin, 0);
     arrput(impl->round_robin, info);
-    if (!is_sleeping(info)) {
+    if (!is_sleeping(info, time)) {
       return info;
     }
   } while (info != first);
@@ -77,23 +85,17 @@ static thread_info * get_next_thr(impl *impl) {
   return info;
 }
 
-
-u64 get_unix_us(void) {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
-  return time;
-}
-
 u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
   s64 min = INT64_MAX;
   impl *I = scheduler->_impl;
+  s64 time = (s64)get_unix_us();
+
   // Check all infos for wakeup times
   for (int i = 0; i < arrlen(I->round_robin); i++) {
     thread_info *info = I->round_robin[i];
 
     if (arrlen(info->call_queue) > 0) {
-      if (is_sleeping(info)) {
+      if (is_sleeping(info, time)) {
         if ((s64)info->wakeup_info->wakeup_us < min) {
           min = (s64)info->wakeup_info->wakeup_us;
         }
@@ -102,7 +104,7 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
       }
     }
   }
-  min -= (s64)get_unix_us();
+  min -= time;
   return min >= 0 ? min : 0;
 }
 
@@ -139,7 +141,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   thread->fuel = 50000;
 
   // If the thread is sleeping, check if it's time to wake up
-  if (is_sleeping(info)) {
+  if (is_sleeping(info, (s64)time)) {
     if (time < info->wakeup_info->wakeup_us) {
       return SCHEDULER_RESULT_MORE;
     }

@@ -831,3 +831,10 @@ Caught exception7
 Cannot exit synchronized block because "<local0>" is null
 )"));
 }
+
+TEST_CASE("Concurrent initialisation") {
+  auto result = run_scheduled_test_case("test_files/concurrent_initialisation/", true, "ConcurrentInitialization");
+  REQUIRE(result.stdout_ == R"(Initializing...
+Finished initializing!
+)");
+}
