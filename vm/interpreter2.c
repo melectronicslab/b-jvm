@@ -17,7 +17,15 @@
 // before loading the value from the stack and using the appropriate jump table.
 //
 // The general signature is (thread, frame, insns, pc, sp, tos). At appropriate points (whenever the frame might be
-// read back, e.g. for GC purposes, or when interrupting), the TOS value and
+// read back, e.g. for GC purposes, or when interrupting), the TOS value and program counter are written to the stack.
+//
+// JS CASE
+//
+// To force the tail calls to use a funcref table instead of a normal call_indirect to an untyped table, we use
+// intrinsics that are lowered in a separate post-processing pass. This reads the jump tables and builds a single
+// funcref table, in which kind * 4 + tos_before is the index of the implementation for bytecode "kind" with starting
+// tos-type "tos_before". Non-existent entries are replaced with nop_impl_*, so that the funcref table is non-nullable
+// and the only check that occurs is a bounds check against the table size.
 
 [[maybe_unused]] static int cow = 0;
 
@@ -32,12 +40,12 @@
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
-  dump_frame(stdout, frame);                                                                                           \
+  dump_frame(stdout, frame);
   /* DCHECK(stack_depth(frame) == sp - frame->plain.stack); */
 #endif
 
-// If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
-// the code reasonably generic to handle both cases efficiently.
+// If true, use a sequence of tail calls rather than computed goto. We try to make the code reasonably generic to handle
+// both cases efficiently.
 #define DO_TAILS 1
 
 #if DO_TAILS
@@ -47,7 +55,7 @@
 
 #define ARGS_BASE                                                                                                      \
   [[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] bjvm_stack_frame *frame,                                      \
-      [[maybe_unused]] bjvm_bytecode_insn *insns, [[maybe_unused]] u16 pc_,                                       \
+      [[maybe_unused]] bjvm_bytecode_insn *insns, [[maybe_unused]] int pc_,                                       \
       [[maybe_unused]] bjvm_stack_value *sp_
 
 #define ARGS_VOID ARGS_BASE, [[maybe_unused]] s64 arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
@@ -103,10 +111,11 @@ static bytecode_handler_t jmp_table_double[MAX_INSN_KIND];
     [TOS_DOUBLE] = jmp_table_double,
 };
 
-extern int64_t __interpreter_intrinsic_next_void(ARGS_VOID, int index);
-extern int64_t __interpreter_intrinsic_next_int(ARGS_INT, int index);
-extern int64_t __interpreter_intrinsic_next_double(ARGS_DOUBLE, int index);
-extern int64_t __interpreter_intrinsic_next_float(ARGS_FLOAT, int index);
+extern int64_t __interpreter_intrinsic_next_polymorphic(ARGS_VOID);
+extern int64_t __interpreter_intrinsic_next_void(ARGS_VOID);
+extern int64_t __interpreter_intrinsic_next_int(ARGS_INT);
+extern int64_t __interpreter_intrinsic_next_double(ARGS_DOUBLE);
+extern int64_t __interpreter_intrinsic_next_float(ARGS_FLOAT);
 
 // These point into .rodata and are used to recover the function pointers for the funcref jump tables.
 EMSCRIPTEN_KEEPALIVE
@@ -159,42 +168,36 @@ int32_t __interpreter_intrinsic_max_insn() {
 #ifdef EMSCRIPTEN
 
 #define JMP_INT(tos)                                                                                                   \
-  int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef, k);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
 #define JMP_FLOAT(tos)                                                                                                 \
-  int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef, k);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
 #define JMP_DOUBLE(tos)                                                                                                \
-  int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos, k);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
 
 #define NEXT_INT(tos)                                                                                                  \
-  int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef, k);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef);)
 #define NEXT_FLOAT(tos)                                                                                                \
-  int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef, k);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef);)
 #define NEXT_DOUBLE(tos)                                                                                               \
-  int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos, k);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos);)
 
 #define JMP_VOID                                                                                                       \
-  WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef, insns[0].kind);)
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef);)
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
 #define NEXT_VOID                                                                                                      \
-WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef, insns[1].kind);)
+WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef);)
 
 // Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.
 #define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
 bjvm_stack_value __tos = (tos);                                                                                      \
-MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d, calc(insns[1].kind, insn->tos_after));
+MUSTTAIL return __interpreter_intrinsic_next_polymorphic(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
 
 // Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
 bjvm_stack_value __tos = (tos);                                                                                      \
-MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d, calc(insns[0].kind, insn->tos_before));
+MUSTTAIL return __interpreter_intrinsic_next_polymorphic(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d);
 
 #else // !ifdef EMSCRIPTEN
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \

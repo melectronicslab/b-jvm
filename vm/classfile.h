@@ -590,6 +590,8 @@ struct bjvm_bc_iinc_data {
 };
 
 typedef struct bjvm_bytecode_insn {
+  // Please don't change the offsets of "kind" and "tos_before" as the interpreter intrinsic rewriter uses these offsets
+  // directly.
   bjvm_insn_code_kind kind;
   u8 args;
   bjvm_reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
