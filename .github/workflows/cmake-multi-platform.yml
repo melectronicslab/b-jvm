@@ -112,6 +112,6 @@ jobs:
           nvm use --lts
           nvm alias default 'lts/*'
           node -v
-          node ${{ github.workspace }}/build/tests/test.js --skip-benchmarks
+          node ${{ github.workspace }}/build/test/tests.js --skip-benchmarks
         env:
           BOOT_CLASSPATH: ${{ github.workspace }}/test/jdk23.jar
