@@ -19,9 +19,11 @@ endif()
 
 if (NOT EMSCRIPTEN)
     target_link_libraries(tests PRIVATE z)
+    target_link_libraries(tests PRIVATE bjvm_static)
+else()
+    target_link_libraries(tests PRIVATE "-Wl,--whole-archive" bjvm_static)
 endif()
 
-target_link_libraries(tests PRIVATE "-Wl,--whole-archive" bjvm_static)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 
 if(OpenMP_CXX_FOUND)

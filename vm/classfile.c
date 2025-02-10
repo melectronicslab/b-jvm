@@ -1722,7 +1722,7 @@ char *parse_method_descriptor(const slice entry, bjvm_method_descriptor *result,
   const char *chars = entry.chars, *end = chars + len;
   if (len < 1 || *chars++ != '(')
     return strdup("Expected '('");
-  result->args_cap = result->args_count = 0;
+  result->args_count = 0;
   bjvm_field_descriptor *fields = nullptr;
   while (chars < end && *chars != ')') {
     bjvm_field_descriptor arg;
@@ -1733,13 +1733,14 @@ char *parse_method_descriptor(const slice entry, bjvm_method_descriptor *result,
       return error ? error : strdup("void as method parameter");
     }
 
-    *VECTOR_PUSH(fields, result->args_count, result->args_cap) = arg;
+    arrput(fields, arg);
+    result->args_count++;
   }
   result->args = arena_alloc(arena, result->args_count, sizeof(bjvm_field_descriptor));
   if (result->args_count) {
     memcpy(result->args, fields, result->args_count * sizeof(bjvm_field_descriptor));
   }
-  free(fields);
+  arrfree(fields);
   if (chars >= end) {
     return strdup("missing ')' in method descriptor");
   }

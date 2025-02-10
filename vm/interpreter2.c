@@ -183,6 +183,19 @@ int32_t __interpreter_intrinsic_max_insn() {
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
 #define NEXT_VOID                                                                                                      \
 WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef, insns[1].kind);)
+
+// Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
+// look it up from the analyzed tos type.
+#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d, calc(insns[1].kind, insn->tos_after));
+
+// Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
+// look it up from the analyzed tos type.
+#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d, calc(insns[0].kind, insn->tos_before));
+
 #else // !ifdef EMSCRIPTEN
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
@@ -216,6 +229,16 @@ WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc
 #define NEXT_VOID                                                                                                      \
   WITH_UNDEF(                                                                                                          \
       jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef));
+
+#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return bytecode_tables[insn->tos_after][insns[1].kind](thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
+
+#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return bytecode_tables[insn->tos_before][insns[0].kind](thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d);
+
+
 #endif  // ifdef EMSCRIPTEN
 #endif  // DO_TAILS
 
@@ -243,18 +266,6 @@ WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc
 int calc(bjvm_insn_code_kind kind, bjvm_reduced_tos_kind tos_) {
   return kind + tos_ * MAX_INSN_KIND;
 }
-
-// Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
-// look it up from the analyzed tos type.
-#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
-  bjvm_stack_value __tos = (tos);                                                                                      \
-  MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d, calc(insns[1].kind, insn->tos_after));
-
-// Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
-// look it up from the analyzed tos type.
-#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
-  bjvm_stack_value __tos = (tos);                                                                                      \
-  MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d, calc(insns[0].kind, insn->tos_before));
 
 // For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsptions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
@@ -483,7 +494,7 @@ __attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
   gettimeofday(&tv, NULL);
   u64 now = tv.tv_sec * 1000000 + tv.tv_usec;
   if (thread->yield_at_time != 0 && now >= thread->yield_at_time) {
-    thread->frames[thread->frames_count - 1]->is_async_suspended = true;
+    arrlast(thread->frames)->is_async_suspended = true;
 
     continuation_frame *cont = async_stack_push(thread);
     // Provide a way for us to free the wakeup info. There will never be multiple refuel checks in flight within a

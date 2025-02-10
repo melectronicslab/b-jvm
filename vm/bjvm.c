@@ -256,8 +256,7 @@ bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *me
   bjvm_stack_frame *frame = (bjvm_stack_frame *)(locals + argc);
 
   DCHECK((uintptr_t)frame % 8 == 0, "Frame is aligned");
-
-  *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
+  arrput(thread->frames, frame);
 
   thread->frame_buffer_used = (char *)frame + sizeof(*frame) - thread->frame_buffer;
 
@@ -295,7 +294,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
   bjvm_stack_frame *frame = (bjvm_stack_frame *)(args + code->max_locals);
 
   thread->frame_buffer_used = (char *)(frame->plain.stack + code->max_stack) - thread->frame_buffer;
-  *VECTOR_PUSH(thread->frames, thread->frames_count, thread->frames_cap) = frame;
+  arrput(thread->frames, frame);
   frame->is_native = 0;
   frame->num_locals = code->max_locals;
   frame->plain.program_counter = 0;
@@ -375,15 +374,14 @@ void dump_frame(FILE *stream, const bjvm_stack_frame *frame) {
 }
 
 void bjvm_pop_frame(bjvm_thread *thr, [[maybe_unused]] const bjvm_stack_frame *reference) {
-  DCHECK(thr->frames_count > 0);
-  bjvm_stack_frame *frame = thr->frames[thr->frames_count - 1];
+  DCHECK(arrlen(thr->frames) > 0);
+  bjvm_stack_frame *frame = arrpop(thr->frames);
   DCHECK(reference == nullptr || reference == frame);
   if (bjvm_is_frame_native(frame)) {
     drop_handles_array(thr, frame->method, frame->native.method_shape, bjvm_get_native_args(frame));
   }
-  thr->frames_count--;
   thr->frame_buffer_used =
-      thr->frames_count == 0 ? 0 : (char *)(frame->plain.stack + frame->plain.max_stack) - thr->frame_buffer;
+      arrlen(thr->frames) == 0 ? 0 : (char *)(frame->plain.stack + frame->plain.max_stack) - thr->frame_buffer;
 }
 
 // Symmetry with make_primitive_classdesc
@@ -405,15 +403,13 @@ typedef struct {
 
 typedef struct {
   native_entry *entries;
-  int entries_count;
-  int entries_cap;
 } native_entries;
 
 void free_native_entries(void *entries_) {
   if (!entries_)
     return;
 
-  free(((native_entries *)entries_)->entries);
+  arrfree(((native_entries *)entries_)->entries);
   free(entries_);
 }
 
@@ -439,11 +435,8 @@ void bjvm_register_native(bjvm_vm *vm, slice class, const slice method_name, con
     (void)bjvm_hash_table_insert(&vm->natives, class.chars, class.len, existing);
   }
 
-  native_entry *ent = VECTOR_PUSH(existing->entries, existing->entries_count, existing->entries_cap);
-  ent->name = method_name;
-  ent->descriptor = method_descriptor;
-  ent->callback = callback;
-
+  native_entry ent = (native_entry) { method_name, method_descriptor, callback };
+  arrput(existing->entries, ent);
   free_heap_str(heap_class);
 }
 
@@ -938,7 +931,7 @@ void bjvm_free_thread(bjvm_thread *thread) {
   // TODO remove from the VM
 
   free(thread->async_stack);
-  free(thread->frames);
+  arrfree(thread->frames);
   free(thread->frame_buffer);
   free(thread->handles);
   free(thread->refuel_wakeup_info);
@@ -1011,20 +1004,17 @@ typedef struct {
   bjvm_classdesc *rtype;
   bjvm_classdesc **ptypes;
   u32 ptypes_count;
-  u32 ptypes_capacity;
 } mh_type_info_t;
 
 static int compute_mh_type_info(bjvm_thread *thread, bjvm_cp_method_handle_info *info, mh_type_info_t *result) {
   bjvm_classdesc *rtype = nullptr;
   bjvm_classdesc **ptypes = nullptr;
-  int ptypes_count = 0;
-  int ptypes_capacity = 0;
 
   switch (info->handle_kind) {
   case BJVM_MH_KIND_GET_FIELD: {
     // MT should be of the form (C)T, where C is the class the field is found on
     bjvm_cp_field_info *field = &info->reference->field;
-    *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = field->class_info->classdesc;
+    arrput(ptypes, field->class_info->classdesc);
     rtype = load_class_of_field(thread, field->parsed_descriptor);
     break;
   }
@@ -1041,12 +1031,12 @@ static int compute_mh_type_info(bjvm_thread *thread, bjvm_cp_method_handle_info 
     bjvm_cp_method_info *method = &info->reference->methodref;
 
     if (info->handle_kind != BJVM_MH_KIND_INVOKE_STATIC) {
-      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = method->class_info->classdesc;
+      arrput(ptypes, method->class_info->classdesc);
     }
 
     for (int i = 0; i < method->descriptor->args_count; ++i) {
       bjvm_field_descriptor *arg = method->descriptor->args + i;
-      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = load_class_of_field(thread, arg);
+      arrput(ptypes, load_class_of_field(thread, arg));
     }
 
     rtype = load_class_of_field(thread, &method->descriptor->return_type);
@@ -1058,7 +1048,7 @@ static int compute_mh_type_info(bjvm_thread *thread, bjvm_cp_method_handle_info 
 
     for (int i = 0; i < method->descriptor->args_count; ++i) {
       bjvm_field_descriptor *arg = method->descriptor->args + i;
-      *VECTOR_PUSH(ptypes, ptypes_count, ptypes_capacity) = load_class_of_field(thread, arg);
+      arrput(ptypes, load_class_of_field(thread, arg));
     }
 
     rtype = method->class_info->classdesc;
@@ -1070,7 +1060,7 @@ static int compute_mh_type_info(bjvm_thread *thread, bjvm_cp_method_handle_info 
   }
 
   *result = (mh_type_info_t){
-      .rtype = rtype, .ptypes = ptypes, .ptypes_count = ptypes_count, .ptypes_capacity = ptypes_capacity};
+      .rtype = rtype, .ptypes = ptypes, .ptypes_count = arrlen(ptypes)};
   return 0;
 }
 
@@ -1100,7 +1090,7 @@ DEFINE_ASYNC(resolve_mh_mt) {
     *((bjvm_obj_header **)ArrayData(self->ptypes_array->obj) + i) =
         (void *)bjvm_get_class_mirror(args->thread, info.ptypes[i]);
   }
-  free(info.ptypes);
+  arrfree(info.ptypes);
 
   AWAIT(call_interpreter, args->thread, make,
         (bjvm_stack_value[]){{.obj = (void *)bjvm_get_class_mirror(args->thread, info.rtype)},
@@ -1323,7 +1313,7 @@ bjvm_classdesc *bjvm_define_bootstrap_class(bjvm_thread *thread, slice chars, co
   // Look up in the native methods list and add native handles as appropriate
   native_entries *entries = bjvm_hash_table_lookup(&vm->natives, chars.chars, chars.len);
   if (entries) {
-    for (int i = 0; i < entries->entries_count; i++) {
+    for (int i = 0; i < arrlen(entries->entries); i++) {
       native_entry *entry = entries->entries + i;
 
       for (int j = 0; j < class->methods_count; ++j) {
@@ -1387,7 +1377,7 @@ bjvm_classdesc *bootstrap_lookup_class_impl(bjvm_thread *thread, const slice nam
   if (!class) {
     // Maybe it's an anonymous class, read the thread stack looking for a
     // class with a matching name
-    for (int i = thread->frames_count - 1; i >= 0; --i) {
+    for (int i = (int)arrlen(thread->frames) - 1; i >= 0; --i) {
       bjvm_classdesc *d = bjvm_get_frame_method(thread->frames[i])->my_class;
       if (utf8_equals_utf8(hslc(d->name), chars)) {
         class = d;
@@ -2336,7 +2326,7 @@ DEFINE_ASYNC(bjvm_run_native) {
 DEFINE_ASYNC(bjvm_interpret) {
 #define thread args->thread
 #define raw_frame args->raw_frame
-  DCHECK(*(thread->frames + thread->frames_count - 1) == raw_frame, "Frame is not last frame on stack");
+  DCHECK(arrlast(thread->frames) == raw_frame, "Frame is not last frame on stack");
 
   for (;;) {
     future_t f;

@@ -7,8 +7,8 @@ void bjvm_raise_exception_object(bjvm_thread *thread, bjvm_obj_header *obj) {
 #endif
 
 #define T ((struct bjvm_native_Throwable *)obj)
-  if (thread->frames_count > 0) {
-    bjvm_stack_frame *frame = thread->frames[thread->frames_count - 1];
+  if (arrlen(thread->frames) > 0) {
+    bjvm_stack_frame *frame = arrlast(thread->frames);
     if (!bjvm_is_frame_native(frame)) {
       T->faulting_insn = frame->plain.program_counter;
       T->method = frame->method;

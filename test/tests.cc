@@ -56,14 +56,13 @@ TEST_CASE("Compressed bitset") {
       int index = rand() % size;
       switch (rand() % 4) {
       case 0: {
-        int *set_bits = nullptr, length = 0, capacity = 0;
-        set_bits = bjvm_list_compressed_bitset_bits(bitset, set_bits, &length,
-                                                    &capacity);
-        for (int i = 0; i < length; ++i) {
+        int *set_bits = nullptr;
+        bjvm_list_compressed_bitset_bits(bitset, &set_bits);
+        for (int i = 0; i < arrlen(set_bits); ++i) {
           if (!reference[set_bits[i]])
             REQUIRE(false);
         }
-        free(set_bits);
+        arrfree(set_bits);
         break;
       }
       case 1: {

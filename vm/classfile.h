@@ -509,7 +509,6 @@ typedef enum {
 typedef struct bjvm_method_descriptor {
   bjvm_field_descriptor *args;
   int args_count;
-  int args_cap;
   bjvm_field_descriptor return_type;
 } bjvm_method_descriptor;
 

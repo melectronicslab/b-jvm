@@ -524,8 +524,6 @@ typedef struct bjvm_thread {
 
   // Pointers into the frame_buffer
   bjvm_stack_frame **frames;
-  int frames_count;
-  u32 frames_cap;
 
   // Currently propagating exception
   bjvm_obj_header *current_exception;
