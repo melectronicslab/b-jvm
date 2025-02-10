@@ -30,8 +30,15 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(tests PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
+if (NOT EMSCRIPTEN)
 add_test(NAME tests
         COMMAND tests --skip-benchmarks
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+else()
+add_test(NAME tests
+        COMMAND node ${CMAKE_SOURCE_DIR}/build/test/tests.js --skip-benchmarks
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
 set_tests_properties(tests PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1,detect_container_overflow=0")
 set_tests_properties(tests PROPERTIES ENVIRONMENT "BOOT_CLASSPATH=${CMAKE_CURRENT_SOURCE_DIR}/jdk23.jar")
