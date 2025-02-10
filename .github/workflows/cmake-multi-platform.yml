@@ -37,6 +37,15 @@ jobs:
         with:
           version: 4.0.2
 
+      - name: Set up latest Node
+        if: matrix.compiler == 'emscripten'
+        run: |
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          nvm install --lts
+          nvm use --lts
+
       - name: Cache JDK
         id: cache_jdk
         uses: actions/cache@v4
