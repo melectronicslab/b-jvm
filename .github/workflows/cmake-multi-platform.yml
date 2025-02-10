@@ -45,6 +45,7 @@ jobs:
           [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
           nvm install --lts
           nvm use --lts
+          nvm alias default 'lts/*'
           node -v
 
       - name: Cache JDK
