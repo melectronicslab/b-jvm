@@ -106,7 +106,15 @@ jobs:
           node -v
           
       - name: Test
+        if: matrix.compiler != 'emscripten'
         working-directory: ${{ github.workspace }}/build
         run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure
+        env:
+          BOOT_CLASSPATH: ${{ github.workspace }}/test/jdk23.jar
+          
+      - name: Test
+        if: matrix.compiler == 'emscripten'
+        working-directory: ${{ github.workspace }}/test
+        run: node ${{ github.workspace }}/build/tests/test.js --skip-benchmarks
         env:
           BOOT_CLASSPATH: ${{ github.workspace }}/test/jdk23.jar
