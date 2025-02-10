@@ -55,7 +55,7 @@
 
 #define ARGS_BASE                                                                                                      \
   [[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] bjvm_stack_frame *frame,                                      \
-      [[maybe_unused]] bjvm_bytecode_insn *insns, [[maybe_unused]] u32 pc_,                                       \
+      [[maybe_unused]] bjvm_bytecode_insn *insns, [[maybe_unused]] u16 pc_,                                       \
       [[maybe_unused]] bjvm_stack_value *sp_
 
 #define ARGS_VOID ARGS_BASE, [[maybe_unused]] s64 arg_1, [[maybe_unused]] float arg_2, [[maybe_unused]] double arg_3
