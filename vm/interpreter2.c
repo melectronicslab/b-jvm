@@ -79,6 +79,7 @@
 #define MUSTTAIL
 #endif
 
+#define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
 #include "monitors.h"
 #include "reflection.h"
 
