@@ -150,7 +150,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   thread->yield_at_time = time + MICROSECONDS_TO_RUN;
 
   if (arrlen(info->call_queue) == 0) {
-    arrpop(impl->round_robin);
+    (void)arrpop(impl->round_robin);
     return rr_scheduler_step(scheduler);
   }
 
