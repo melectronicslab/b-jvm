@@ -36,7 +36,7 @@ add_test(NAME tests
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 else()
 add_test(NAME tests
-        COMMAND node ${CMAKE_SOURCE_DIR}/build/test/tests.js --skip-benchmarks
+        COMMAND source "$HOME/.nvm/nvm.sh" && nvm use --lts && node ${CMAKE_SOURCE_DIR}/build/test/tests.js --skip-benchmarks
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
