@@ -19,6 +19,8 @@
 // The general signature is (thread, frame, insns, pc, sp, tos). At appropriate points (whenever the frame might be
 // read back, e.g. for GC purposes, or when interrupting), the TOS value and
 
+[[maybe_unused]] static int cow = 0;
+
 #define DEBUG_CHECK();
 #if 0
 #undef DEBUG_CHECK
@@ -94,7 +96,7 @@ static bytecode_handler_t jmp_table_float[MAX_INSN_KIND];
 // Used when the TOS is double (wasm signature: f64)
 static bytecode_handler_t jmp_table_double[MAX_INSN_KIND];
 
-const static bytecode_handler_t *bytecode_tables[4] = {
+[[maybe_unused]] const static bytecode_handler_t *bytecode_tables[4] = {
     [TOS_VOID] = jmp_table_void,
     [TOS_INT] = jmp_table_int,
     [TOS_FLOAT] = jmp_table_float,
@@ -158,30 +160,29 @@ int32_t __interpreter_intrinsic_max_insn() {
 
 #define JMP_INT(tos)                                                                                                   \
   int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef, k);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef, k);)
 #define JMP_FLOAT(tos)                                                                                                 \
   int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef, k);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef, k);)
 #define JMP_DOUBLE(tos)                                                                                                \
   int k = insns[0].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos, k);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos, k);)
 
 #define NEXT_INT(tos)                                                                                                  \
   int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef, k);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef, k);)
 #define NEXT_FLOAT(tos)                                                                                                \
   int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef, k);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef, k);)
 #define NEXT_DOUBLE(tos)                                                                                               \
   int k = insns[1].kind;                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos, k);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos, k);)
 
 #define JMP_VOID                                                                                                       \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef, insns[0].kind);)
+  WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef, insns[0].kind);)
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
 #define NEXT_VOID                                                                                                      \
-WITH_UNDEF(                                                                                                          \
-MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef, insns[1].kind);)
+WITH_UNDEF(return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef, insns[1].kind);)
 #else // !ifdef EMSCRIPTEN
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
@@ -239,32 +240,21 @@ MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc +
       double: (*(sp - 1)).d,                                                                                           \
       bjvm_obj_header *: (*(sp - 1)).obj);
 
+int calc(bjvm_insn_code_kind kind, bjvm_reduced_tos_kind tos_) {
+  return kind + tos_ * MAX_INSN_KIND;
+}
+
 // Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.
 #define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
-  bytecode_handler_t handler = bytecode_tables[insn->tos_after][insns[1].kind];                                        \
   bjvm_stack_value __tos = (tos);                                                                                      \
-  MUSTTAIL return handler(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
+  MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d, calc(insns[1].kind, insn->tos_after));
 
 // Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
 // look it up from the analyzed tos type.
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
-  switch (insn->tos_before) {                                                                                          \
-  case TOS_VOID: {                                                                                                     \
-    JMP_VOID                                                                                                           \
-  }                                                                                                                    \
-  case TOS_INT: {                                                                                                      \
-    JMP_INT((tos).l)                                                                                                   \
-  }                                                                                                                    \
-  case TOS_FLOAT: {                                                                                                    \
-    JMP_FLOAT((tos).f)                                                                                                 \
-  }                                                                                                                    \
-  case TOS_DOUBLE: {                                                                                                   \
-    JMP_DOUBLE((tos).d)                                                                                                \
-  }                                                                                                                    \
-  default:                                                                                                             \
-    __builtin_unreachable();                                                                                           \
-  }
+  bjvm_stack_value __tos = (tos);                                                                                      \
+  MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d, calc(insns[0].kind, insn->tos_before));
 
 // For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsptions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
@@ -1803,6 +1793,9 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
   future_t fut = resolve_methodref(&ctx);
+  if (fut.status != FUTURE_READY) {
+    printf("Method: %.*s on %.*s\n", fmt_slice(ctx.args.info->nat->name), fmt_slice(ctx.args.info->class_info->name));
+  }
   CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
@@ -2417,22 +2410,23 @@ static s64 swap_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(swap)
 
-static s64 nop_impl_void(ARGS_VOID) {
+EMSCRIPTEN_KEEPALIVE  // read by the intrinsic converter
+s64 nop_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   NEXT_VOID
 }
 
-static s64 nop_impl_double(ARGS_DOUBLE) {
+s64 nop_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
   NEXT_DOUBLE(tos)
 }
 
-static s64 nop_impl_float(ARGS_FLOAT) {
+s64 nop_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK();
   NEXT_FLOAT(tos)
 }
 
-static s64 nop_impl_int(ARGS_INT) {
+s64 nop_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   NEXT_INT(tos)
 }
@@ -2520,7 +2514,7 @@ static s64 dup2_x2_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(dup2_x2)
 
-force_inline static s64 entry(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
+static s64 entry_impl_void(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
 
 /** Misc. */
 static s64 athrow_impl_int(ARGS_INT) {
@@ -2614,7 +2608,7 @@ static bjvm_exception_table_entry *find_exception_handler(bjvm_thread *thread, b
 }
 
 // NOLINTNEXTLINE(misc-no-recursion)
-static s64 async_resume(ARGS_VOID) {
+static s64 async_resume_impl_void(ARGS_VOID) {
   // we need to pop (not peek) because if we re-enter this method, it'll need to pop its fram
   continuation_frame cont = *async_stack_pop(thread);
 
@@ -2714,7 +2708,8 @@ static inline bjvm_stack_value interpret_native_frame(future_t *fut, bjvm_thread
   }
 }
 
-static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
+__attribute__((noinline))
+static bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
   bjvm_stack_value result;
 
   do {
@@ -2725,9 +2720,9 @@ static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *
     bjvm_bytecode_insn *insns = frame_->method->code->code;
 
     if (unlikely(frame_->is_async_suspended)) {
-      result.l = async_resume(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
+      result.l = async_resume_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
     } else {
-      result.l = entry(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
+      result.l = entry_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
     }
 
     // we really should just have all the methods return a future_t via a pointer, but whatever
@@ -2798,6 +2793,8 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
     if (unlikely(synchronized_on)) {
       int err = monitor_release(thread, synchronized_on);
       if (err) {
+        // the current exception is replaced with an IllegalMonitorStateException
+        thread->current_exception = nullptr;
         raise_illegal_monitor_state_exception(thread);
         return value_null();
       }

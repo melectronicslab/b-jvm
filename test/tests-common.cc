@@ -155,6 +155,7 @@ std::optional<std::vector<u8>> ReadFile(const std::string &file) {
 
 TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
                              std::string main_class, std::string input) {
+  printf("Classpath: %s\n", classpath.c_str());
   bjvm_vm_options options = bjvm_default_vm_options();
 
   TestCaseResult result { };
@@ -239,8 +240,16 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   return result;
 }
 
+#ifdef EMSCRIPTEN
+static void busy_wait(double us) {
+  EM_ASM("const endAt = Date.now() + $0 / 1000; while (Date.now() < endAt) {}", us);
+}
+#endif
+
 ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio,
                              std::string main_class, std::string input) {
+
+  printf("Classpath: %s\n", classpath.c_str());
   bjvm_vm_options options = bjvm_default_vm_options();
 
   ScheduledTestCaseResult result { };
@@ -317,8 +326,12 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
     if (sleep_for) {
       result.sleep_count++;
       result.ms_slept += sleep_for;
-      printf("Sleeping for: %llu µs\n", sleep_for);
+#ifdef EMSCRIPTEN
+      // long-term, we will use the JS scheduler instead of this hack
+      busy_wait(sleep_for);
+#else
       usleep(sleep_for);
+#endif
     }
   }
 

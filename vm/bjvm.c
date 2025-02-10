@@ -82,7 +82,7 @@ DEFINE_ASYNC(init_cached_classdescs) {
 }
 
 inline bool has_expanded_data(bjvm_header_word *data) {
-  return !(data->mark_word.data[0] & IS_MARK_WORD);
+  return !((uintptr_t)data->expanded_data & IS_MARK_WORD);
 }
 
 inline bjvm_mark_word_t *get_mark_word(bjvm_header_word *data) {
@@ -332,7 +332,7 @@ bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, b
   if (method->access_flags & BJVM_ACCESS_NATIVE) {
     return bjvm_push_native_frame(thread, method, method->descriptor, args, argc);
   }
-  return bjvm_push_plain_frame(thread, method, args, argc);
+  [[clang::musttail]] return bjvm_push_plain_frame(thread, method, args, argc);
 }
 
 const char *infer_type(bjvm_code_analysis *analysis, int insn, int index) {
@@ -1654,6 +1654,11 @@ DEFINE_ASYNC(bjvm_initialize_class) {
 done:
   free(self->recursive_call_space);
   args->classdesc->state = error ? BJVM_CD_STATE_LINKAGE_ERROR : BJVM_CD_STATE_INITIALIZED;
+  // Mark all array classes with the same state
+  bjvm_classdesc *arr = args->classdesc;
+  while ((arr = arr->array_type)) {
+    arr->state = args->classdesc->state;
+  }
   ASYNC_END(error);
 
 #undef thread

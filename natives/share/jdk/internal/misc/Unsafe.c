@@ -289,8 +289,6 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, defineClass,
   INIT_STACK_STRING(cf_name, 1000);
   cf_name = bprintf(cf_name, "%.*s.class", fmt_slice(name_str));
 
-  printf("Defining class %.*s\n", fmt_slice(name_str));
-
   bjvm_classdesc *result =
       bjvm_define_bootstrap_class(thread, hslc(name_str), bytes, length);
 

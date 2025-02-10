@@ -20,11 +20,16 @@ typedef struct bjvm_gc_ctx {
   bjvm_obj_header **new_location;
 } bjvm_gc_ctx;
 
+static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
+  return (uintptr_t)field - (uintptr_t)ctx->vm->heap <
+         ctx->vm->true_heap_capacity;
+}
+
 #define lengthof(x) (sizeof(x) / sizeof(x[0]))
 #define PUSH_ROOT(x)                                                           \
   {                                                                            \
     __typeof(x) v = (x);                                                       \
-    if (*v) {                                                                  \
+    if (*v && in_heap(ctx, (void*)*v)) {                                            \
       *VECTOR_PUSH(ctx->roots, ctx->roots_count, ctx->roots_cap) =             \
           (bjvm_obj_header **)v;                                               \
     }                                                                          \
@@ -162,7 +167,8 @@ static void bjvm_major_gc_enumerate_gc_roots(bjvm_gc_ctx *ctx) {
     bitset_list = bjvm_list_compressed_bitset_bits(
         desc->static_references, bitset_list, &bs_list_len, &bs_list_cap);
     for (int i = 0; i < bs_list_len; ++i) {
-      PUSH_ROOT(((bjvm_obj_header **)desc->static_fields) + bitset_list[i]);
+      bjvm_obj_header **root = ((bjvm_obj_header **)desc->static_fields) + bitset_list[i];
+      PUSH_ROOT(root);
     }
 
     // Also, push things like Class, Method and Constructors
@@ -197,11 +203,6 @@ static void bjvm_major_gc_enumerate_gc_roots(bjvm_gc_ctx *ctx) {
     PUSH_ROOT(&it.current->data);
     bjvm_hash_table_iterator_next(&it);
   }
-}
-
-static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
-  return (uintptr_t)field - (uintptr_t)ctx->vm->heap <
-         ctx->vm->true_heap_capacity;
 }
 
 static u32 *get_flags(object o) {
@@ -338,7 +339,6 @@ void bjvm_major_gc(bjvm_vm *vm) {
   int *bitset_list[1000] = {nullptr}, capacity[1000] = {0};
   for (int i = 0; i < ctx.roots_count; ++i) {
     bjvm_obj_header *root = *ctx.roots[i];
-    // printf("Pushing roots: %p\n", root);
     if (!(*get_flags(root) & IS_REACHABLE))
       bjvm_mark_reachable(&ctx, root, bitset_list, capacity, 0);
   }
@@ -368,19 +368,19 @@ void bjvm_major_gc(bjvm_vm *vm) {
     *get_flags(obj) &= ~IS_REACHABLE; // clear the reachable flag
     memcpy(write_ptr, obj, sz);
 
-    // printf("Mapping %p -> %p\n", obj, write_ptr);
     bjvm_obj_header *new_obj = (bjvm_obj_header *) write_ptr;
     new_location[i] = new_obj;
     write_ptr += sz;
 
-    if (has_expanded_data(&new_obj->header_word)) {
-      // Copy the expanded data (align to 4 bytes)
-      write_ptr = (u8 *) (align_up((uintptr_t) write_ptr, 4));
-      const size_t mutex_data_size = sizeof(*new_obj->header_word.expanded_data);
-      assert(write_ptr + mutex_data_size <= end);
-      memcpy(write_ptr, new_obj->header_word.expanded_data, mutex_data_size);
+    if (has_expanded_data(&obj->header_word)) {
+      // Copy the expanded data (align to 8 bytes for atomic ops to be happy)
+      write_ptr = (u8 *) align_up((uintptr_t) write_ptr, 8);
+      constexpr size_t monitor_data_size = sizeof(*obj->header_word.expanded_data);
+      DCHECK(write_ptr + monitor_data_size <= end);
+
+      memcpy(write_ptr, obj->header_word.expanded_data, monitor_data_size);
       new_obj->header_word.expanded_data = (monitor_data *) write_ptr;
-      write_ptr += mutex_data_size;
+      write_ptr += monitor_data_size;
     }
   }
 

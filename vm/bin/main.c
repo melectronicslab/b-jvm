@@ -114,7 +114,7 @@ bool bjvm_ffi_rr_record_is_ready(execution_record *record) {
 EMSCRIPTEN_KEEPALIVE
 execution_record *bjvm_ffi_rr_schedule(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args) {
   call_interpreter_t call = {.args = {thread, method, args}};
-  BJVM_CHECK(thread->vm->scheduler && "No scheduler set");
+  CHECK(thread->vm->scheduler && "No scheduler set");
   return rr_scheduler_run(thread->vm->scheduler, call);
 }
 

@@ -82,7 +82,7 @@ static char *map_jar(const char *filename, bjvm_mapped_jar *jar) {
   close(fd);
   return nullptr;
 #elif EMSCRIPTEN
-  int is_node = EM_ASM_INT({ return ENVIRONMENT_IS_NODE; });
+  int is_node = EM_ASM_INT({ return typeof window === 'undefined'; });
   if (is_node) {
     struct loaded_bytes load = node_read_file(filename);
     if (!load.bytes)

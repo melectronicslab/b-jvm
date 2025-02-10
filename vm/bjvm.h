@@ -126,6 +126,8 @@ typedef struct {
   bjvm_mark_word_t mark_word;
 } monitor_data;
 
+static_assert(offsetof(monitor_data, mark_word) % 8 == 0);
+
 typedef union {
   // least significant flag bit set if it's a mark_word, using the fact that expanded_data will be aligned
   bjvm_mark_word_t mark_word;
@@ -575,10 +577,13 @@ void bjvm_drop_handle(bjvm_thread *thread, bjvm_handle *handle);
  * Create an uninitialized frame with space sufficient for the given method.
  * Raises a StackOverflowError if the frames are exhausted.
  */
+__attribute__((noinline))
 bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, u8 argc);
 
+__attribute__((noinline))
 bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args,
                                         u8 argc);
+__attribute__((noinline))
 bjvm_stack_frame *bjvm_push_native_frame(bjvm_thread *thread, bjvm_cp_method *method,
                                          const bjvm_method_descriptor *descriptor, bjvm_stack_value *args,
                                          u8 argc);
