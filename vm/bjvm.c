@@ -331,7 +331,7 @@ bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, b
   if (method->access_flags & BJVM_ACCESS_NATIVE) {
     return bjvm_push_native_frame(thread, method, method->descriptor, args, argc);
   }
-  [[clang::musttail]] return bjvm_push_plain_frame(thread, method, args, argc);
+  return bjvm_push_plain_frame(thread, method, args, argc);
 }
 
 const char *infer_type(bjvm_code_analysis *analysis, int insn, int index) {
