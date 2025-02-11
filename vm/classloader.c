@@ -5,4 +5,4 @@
 #include "classloader.h"
 
 
-bjvm_classloader bjvm_bootstrap_classloader = {};
+classloader bootstrap_classloader = {};

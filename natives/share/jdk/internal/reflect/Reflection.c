@@ -6,22 +6,22 @@ DECLARE_NATIVE("jdk/internal/reflect", Reflection, getCallerClass,
   if (arrlen(thread->frames) < 3) {
     return value_null();
   }
-  bjvm_stack_frame *frame = thread->frames[arrlen(thread->frames) - 3];
-  return (bjvm_stack_value){
-      .obj = (void *)bjvm_get_class_mirror(
-          thread, bjvm_get_frame_method(frame)->my_class)};
+  stack_frame *frame = thread->frames[arrlen(thread->frames) - 3];
+  return (stack_value){
+      .obj = (void *)get_class_mirror(
+          thread, get_frame_method(frame)->my_class)};
 }
 
 DECLARE_NATIVE("jdk/internal/reflect", Reflection, getClassAccessFlags,
                "(Ljava/lang/Class;)I") {
-  bjvm_obj_header *obj_ = args[0].handle->obj;
-  bjvm_classdesc *classdesc = bjvm_unmirror_class(obj_);
-  return (bjvm_stack_value){.i = classdesc->access_flags};
+  obj_header *obj_ = args[0].handle->obj;
+  classdesc *classdesc = unmirror_class(obj_);
+  return (stack_value){.i = classdesc->access_flags};
 }
 
 DECLARE_NATIVE("jdk/internal/reflect", Reflection, areNestMates,
                "(Ljava/lang/Class;Ljava/lang/Class;)Z") {
   // TODO
-  return (bjvm_stack_value){
+  return (stack_value){
       .i =1};
 }

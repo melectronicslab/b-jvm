@@ -11,7 +11,7 @@
 #if defined(__linux__) || defined(__APPLE__)
 #include <sys/mman.h>
 #include <sys/stat.h>
-#define BJVM_USE_MMAP
+#define USE_MMAP
 #endif
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
@@ -62,9 +62,9 @@ struct loaded_bytes node_read_file(const char *filename) {
 }
 #endif
 
-static char *map_jar(const char *filename, bjvm_mapped_jar *jar) {
+static char *map_jar(const char *filename, mapped_jar *jar) {
   char error[256];
-#ifdef BJVM_USE_MMAP
+#ifdef USE_MMAP
   int fd = open(filename, O_RDONLY);
   if (fd == -1)
     goto missing;
@@ -144,9 +144,9 @@ struct central_directory_record {
 #define CDR_SIZE_BYTES 46
 #define CDR_HEADER 0x02014b50
 
-char *parse_central_directory(bjvm_mapped_jar *jar, u64 cd_offset,
+char *parse_central_directory(mapped_jar *jar, u64 cd_offset,
                               u32 expected) {
-  bjvm_hash_table_reserve(&jar->entries, expected);
+  hash_table_reserve(&jar->entries, expected);
   struct central_directory_record cdr = {0};
   char error[256];
   for (u32 i = 0; i < expected; i++) {
@@ -176,13 +176,13 @@ char *parse_central_directory(bjvm_mapped_jar *jar, u64 cd_offset,
     cd_offset +=
         CDR_SIZE_BYTES + cdr.filename_len + cdr.extra_len + cdr.comment_len;
 
-    bjvm_jar_entry *ent = malloc(sizeof(bjvm_jar_entry));
+    jar_entry *ent = malloc(sizeof(jar_entry));
     ent->header = jar->data + header_offset;
     ent->compressed_size = cdr.compressed_size;
     ent->claimed_uncompressed_size = cdr.uncompressed_size;
     ent->is_compressed = is_compressed;
 
-    void *old = bjvm_hash_table_insert(&jar->entries, filename.chars,
+    void *old = hash_table_insert(&jar->entries, filename.chars,
                                        filename.len, ent);
     if (old) {
       free(old);
@@ -194,13 +194,13 @@ char *parse_central_directory(bjvm_mapped_jar *jar, u64 cd_offset,
   return nullptr;
 }
 
-static void free_jar(bjvm_mapped_jar *jar) {
-  bjvm_free_hash_table(jar->entries);
+static void free_jar(mapped_jar *jar) {
+  free_hash_table(jar->entries);
   if (!jar->is_mmap) {
     free(jar->data);
     jar->data = nullptr;
   } else {
-#ifdef BJVM_USE_MMAP
+#ifdef USE_MMAP
     munmap(jar->data, jar->size_bytes);
     jar->is_mmap = false;
 #else
@@ -210,7 +210,7 @@ static void free_jar(bjvm_mapped_jar *jar) {
   free(jar);
 }
 
-static char *load_filesystem_jar(const char *filename, bjvm_mapped_jar *jar) {
+static char *load_filesystem_jar(const char *filename, mapped_jar *jar) {
   char error[256];
   char *specific_error;
   bool error_needs_free = false;
@@ -253,11 +253,11 @@ inval:
   return strdup(error);
 }
 
-static char *add_classpath_entry(bjvm_classpath *cp, slice entry) {
+static char *add_classpath_entry(classpath *cp, slice entry) {
   // If entry ends in .jar, load it as a JAR, otherwise treat it as a folder
   if (entry.len >= 4 && memcmp(entry.chars + entry.len - 4, ".jar", 4) == 0) {
-    bjvm_mapped_jar *jar = calloc(1, sizeof(bjvm_mapped_jar));
-    jar->entries = bjvm_make_hash_table(free, 0.75, 1);
+    mapped_jar *jar = calloc(1, sizeof(mapped_jar));
+    jar->entries = make_hash_table(free, 0.75, 1);
 
     char *filename = calloc(1, entry.len + 1);
     memcpy(filename, entry.chars, entry.len);
@@ -269,17 +269,17 @@ static char *add_classpath_entry(bjvm_classpath *cp, slice entry) {
       return error;
     }
 
-    bjvm_classpath_entry ent = (bjvm_classpath_entry){.name = make_heap_str_from(entry), .jar = jar};
+    classpath_entry ent = (classpath_entry){.name = make_heap_str_from(entry), .jar = jar};
     arrput(cp->entries, ent);
 
     return nullptr;
   }
-  bjvm_classpath_entry ent = (bjvm_classpath_entry){.name = make_heap_str_from(entry), .jar = nullptr};
+  classpath_entry ent = (classpath_entry){.name = make_heap_str_from(entry), .jar = nullptr};
   arrput(cp->entries, ent);
   return nullptr;
 }
 
-char *bjvm_init_classpath(bjvm_classpath *cp, slice path) {
+char *init_classpath(classpath *cp, slice path) {
   cp->entries = nullptr;
   cp->as_colon_separated = make_heap_str_from(path);
   int start = 0;
@@ -289,7 +289,7 @@ char *bjvm_init_classpath(bjvm_classpath *cp, slice path) {
       if (entry.len > 0) {
         char *err = add_classpath_entry(cp, entry);
         if (err) {
-          bjvm_free_classpath(cp);
+          free_classpath(cp);
           return err;
         }
       }
@@ -299,7 +299,7 @@ char *bjvm_init_classpath(bjvm_classpath *cp, slice path) {
   return nullptr;
 }
 
-void bjvm_free_classpath(bjvm_classpath *cp) {
+void free_classpath(classpath *cp) {
   for (int i = 0; i < arrlen(cp->entries); i++) {
     free_heap_str(cp->entries[i].name);
     if (cp->entries[i].jar) {
@@ -314,10 +314,10 @@ void bjvm_free_classpath(bjvm_classpath *cp) {
 enum jar_lookup_result { NOT_FOUND, FOUND, CORRUPT };
 
 // Returns true if found
-enum jar_lookup_result jar_lookup(bjvm_mapped_jar *jar, slice filename,
+enum jar_lookup_result jar_lookup(mapped_jar *jar, slice filename,
                                   u8 **bytes, size_t *len) {
-  bjvm_jar_entry *jar_entry =
-      bjvm_hash_table_lookup(&jar->entries, filename.chars, filename.len);
+  jar_entry *jar_entry =
+      hash_table_lookup(&jar->entries, filename.chars, filename.len);
   if (jar_entry) {
     // Check header at jar_entry->header
     if (memcmp(jar_entry->header, "PK\003\004", 4) != 0) {
@@ -387,7 +387,7 @@ bool bad_filename(const slice filename) {
   return false;
 }
 
-int bjvm_lookup_classpath(bjvm_classpath *cp, const slice filename,
+int lookup_classpath(classpath *cp, const slice filename,
                           u8 **bytes, size_t *len) {
   *bytes = nullptr;
   *len = 0;
@@ -395,7 +395,7 @@ int bjvm_lookup_classpath(bjvm_classpath *cp, const slice filename,
     return -1;
   }
   for (int i = 0; i < arrlen(cp->entries); i++) {
-    bjvm_classpath_entry *entry = &cp->entries[i];
+    classpath_entry *entry = &cp->entries[i];
     if (entry->jar) {
       enum jar_lookup_result result =
           jar_lookup(entry->jar, filename, bytes, len);

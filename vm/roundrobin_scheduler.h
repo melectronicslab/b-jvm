@@ -15,13 +15,13 @@ extern "C" {
 
 typedef struct {
   // Associated VM
-  bjvm_vm *vm;
+  vm *vm;
 
   // Pointer to implementation
   void *_impl;
 } rr_scheduler;
 
-void rr_scheduler_init(rr_scheduler *scheduler, bjvm_vm *vm);
+void rr_scheduler_init(rr_scheduler *scheduler, vm *vm);
 void rr_scheduler_uninit(rr_scheduler *scheduler);
 
 typedef enum {
@@ -35,11 +35,11 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler);
 
 typedef struct {
   scheduler_status_t status;  // as long as this is MORE, the method isn't yet finished
-  bjvm_stack_value returned;
-  bjvm_thread *thread;  // The thread that this execution record corresponds to
+  stack_value returned;
+  vm_thread *thread;  // The thread that this execution record corresponds to
 
   int js_handle;  // TEMPORARY, to prevent GC
-  bjvm_vm *vm;
+  vm *vm;
   void *_impl;
 } execution_record;
 

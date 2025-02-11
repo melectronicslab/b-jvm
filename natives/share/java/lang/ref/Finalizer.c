@@ -5,13 +5,13 @@
 #include <sys/time.h>
 
 DECLARE_NATIVE("java/lang/ref", Finalizer, isFinalizationEnabled, "()Z") {
-  return (bjvm_stack_value){.i = 0};
+  return (stack_value){.i = 0};
 }
 
 DECLARE_NATIVE("java/lang/ref", Reference, refersTo0, "(Ljava/lang/Object;)Z") {
   DCHECK(argc == 1);
-  struct bjvm_native_Reference *ref = (void*) obj;
-  return (bjvm_stack_value){.i = ref->referent == args[0].handle->obj};
+  struct native_Reference *ref = (void*) obj;
+  return (stack_value){.i = ref->referent == args[0].handle->obj};
 }
 
 DECLARE_NATIVE("java/lang/ref", Reference, clear0, "()V") {

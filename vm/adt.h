@@ -2,8 +2,8 @@
 // Created by alec on 12/18/24.
 //
 
-#ifndef BJVM_ADT_H
-#define BJVM_ADT_H
+#ifndef ADT_H
+#define ADT_H
 
 #include "util.h"
 
@@ -44,81 +44,81 @@ typedef struct {
     u64 bits_inl;
     heap_bitset ptr;
   };
-} bjvm_compressed_bitset;
+} compressed_bitset;
 
-void bjvm_init_compressed_bitset(bjvm_compressed_bitset *bs, int bits_capacity);
-void bjvm_free_compressed_bitset(bjvm_compressed_bitset bits);
-bool bjvm_is_bitset_compressed(bjvm_compressed_bitset bits);
-bjvm_compressed_bitset bjvm_empty_bitset();
-void bjvm_list_compressed_bitset_bits(bjvm_compressed_bitset bits,
+void init_compressed_bitset(compressed_bitset *bs, int bits_capacity);
+void free_compressed_bitset(compressed_bitset bits);
+bool is_bitset_compressed(compressed_bitset bits);
+compressed_bitset empty_bitset();
+void list_compressed_bitset_bits(compressed_bitset bits,
                                                     int **stbds_vector);
-bool bjvm_test_compressed_bitset(bjvm_compressed_bitset bits, size_t bit_index);
-bool bjvm_test_reset_compressed_bitset(bjvm_compressed_bitset *bits,
+bool test_compressed_bitset(compressed_bitset bits, size_t bit_index);
+bool test_reset_compressed_bitset(compressed_bitset *bits,
                                        size_t bit_index);
-bool bjvm_test_set_compressed_bitset(bjvm_compressed_bitset *bits,
+bool test_set_compressed_bitset(compressed_bitset *bits,
                                      size_t bit_index);
 
-typedef struct bjvm_hash_table_entry {
-  struct bjvm_hash_table_entry *next;
+typedef struct hash_table_entry {
+  struct hash_table_entry *next;
   char *key;
   u32 key_len;
   void *data;
-} bjvm_hash_table_entry;
+} hash_table_entry;
 
-typedef struct bjvm_string_hash_table_iterator {
-  bjvm_hash_table_entry *current_base;
-  bjvm_hash_table_entry *current;
-  bjvm_hash_table_entry *end;
-} bjvm_hash_table_iterator;
+typedef struct string_hash_table_iterator {
+  hash_table_entry *current_base;
+  hash_table_entry *current;
+  hash_table_entry *end;
+} hash_table_iterator;
 
 // Separate chaining hash map from (char) strings to void* (arbitrary)
 // entries. Sigh.
-typedef struct bjvm_string_hash_table {
+typedef struct string_hash_table {
   void (*free)(void *entry);
-  bjvm_hash_table_entry *entries;
+  hash_table_entry *entries;
 
   size_t entries_count;
   size_t entries_cap;
   double load_factor;
-} bjvm_string_hash_table;
+} string_hash_table;
 
-typedef struct bjvm_string_builder {
+typedef struct string_builder {
   char *data;
   int write_pos;
-} bjvm_string_builder;
+} string_builder;
 
-void bjvm_string_builder_init(bjvm_string_builder *builder);
-void bjvm_string_builder_append(bjvm_string_builder *builder, const char *fmt,
+void string_builder_init(string_builder *builder);
+void string_builder_append(string_builder *builder, const char *fmt,
                                 ...);
-void bjvm_string_builder_free(bjvm_string_builder *builder);
+void string_builder_free(string_builder *builder);
 
-bjvm_string_hash_table bjvm_make_hash_table(void (*free_fn)(void *),
+string_hash_table make_hash_table(void (*free_fn)(void *),
                                             double load_factor,
                                             size_t initial_capacity);
 
-bjvm_hash_table_iterator
-bjvm_hash_table_get_iterator(bjvm_string_hash_table *tbl);
+hash_table_iterator
+hash_table_get_iterator(string_hash_table *tbl);
 
-bool bjvm_hash_table_iterator_has_next(bjvm_hash_table_iterator iter,
+bool hash_table_iterator_has_next(hash_table_iterator iter,
                                        char **key, size_t *key_len,
                                        void **value);
 
-bool bjvm_hash_table_iterator_next(bjvm_hash_table_iterator *iter);
+bool hash_table_iterator_next(hash_table_iterator *iter);
 
-void bjvm_hash_table_reserve(bjvm_string_hash_table *tbl, size_t new_capacity);
+void hash_table_reserve(string_hash_table *tbl, size_t new_capacity);
 
 /**
  * Insert the key/value pair into the hash table and return the old value, if
  * any. Ownership of the key is passed into the function.
  */
-void *bjvm_hash_table_insert_impl(bjvm_string_hash_table *tbl, char *key,
+void *hash_table_insert_impl(string_hash_table *tbl, char *key,
                                   int len, void *value, bool copy_key);
 
 /**
  * Insert the key/value pair into the hash table and return the old value, if
  * any. If len = -1, the key is treated as a null-terminated string literal.
  */
-[[nodiscard]] void *bjvm_hash_table_insert(bjvm_string_hash_table *tbl,
+[[nodiscard]] void *hash_table_insert(string_hash_table *tbl,
                                            const char *key, int len,
                                            void *value);
 
@@ -128,19 +128,19 @@ void *bjvm_hash_table_insert_impl(bjvm_string_hash_table *tbl, char *key,
  * of this function to the free function, as long as it accepts nullptr
  * pointers.
  */
-[[nodiscard]] void *bjvm_hash_table_delete(bjvm_string_hash_table *tbl,
+[[nodiscard]] void *hash_table_delete(string_hash_table *tbl,
                                            const char *key, int len);
 
 /**
  * Look up the value in the hash table.
  */
-void *bjvm_hash_table_lookup(bjvm_string_hash_table *tbl, const char *key,
+void *hash_table_lookup(string_hash_table *tbl, const char *key,
                              int len);
 
-void bjvm_free_hash_table(bjvm_string_hash_table tbl);
+void free_hash_table(string_hash_table tbl);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // BJVM_ADT_H
+#endif // ADT_H

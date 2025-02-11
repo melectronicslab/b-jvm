@@ -5,11 +5,11 @@ DECLARE_NATIVE(
     "(Ljava/lang/ClassLoader;Ljava/lang/String;[BII)Ljava/lang/Class;") {
   DCHECK(argc == 5);
 
-  bjvm_obj_header *name = args[1].handle->obj;
-  bjvm_obj_header *data = args[2].handle->obj;
+  obj_header *name = args[1].handle->obj;
+  obj_header *data = args[2].handle->obj;
   int offset = args[3].i;
   int length = args[4].i;
-  bjvm_obj_header *loader = args[0].handle->obj;
+  obj_header *loader = args[0].handle->obj;
 
   (void)loader;
 
@@ -23,17 +23,17 @@ DECLARE_NATIVE(
     }
   }
 
-  bjvm_classdesc *result =
-      bjvm_define_bootstrap_class(thread, hslc(name_str), bytes, length);
+  classdesc *result =
+      define_bootstrap_class(thread, hslc(name_str), bytes, length);
 
   free_heap_str(name_str);
 
-  bjvm_initialize_class_t pox = {.args = {thread, result}};
-  future_t f = bjvm_initialize_class(&pox); // TODO convert
+  initialize_class_t pox = {.args = {thread, result}};
+  future_t f = initialize_class(&pox); // TODO convert
   CHECK(f.status == FUTURE_READY);
 
-  return (bjvm_stack_value){.obj =
-                                (void *)bjvm_get_class_mirror(thread, result)};
+  return (stack_value){.obj =
+                                (void *)get_class_mirror(thread, result)};
 
   on_oom:
   return value_null();

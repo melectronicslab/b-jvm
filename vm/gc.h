@@ -3,6 +3,6 @@
 
 #include <bjvm.h>
 
-void bjvm_major_gc(bjvm_vm *vm);
+void major_gc(vm *vm);
 
 #endif

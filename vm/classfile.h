@@ -2,8 +2,8 @@
 // Created by alec on 12/18/24.
 //
 
-#ifndef BJVM_CLASSFILE_H
-#define BJVM_CLASSFILE_H
+#ifndef CLASSFILE_H
+#define CLASSFILE_H
 
 #include "adt.h"
 #include "util.h"
@@ -13,13 +13,13 @@
 extern "C" {
 #endif
 
-typedef struct bjvm_cp_entry bjvm_cp_entry;
-typedef struct bjvm_field_descriptor bjvm_field_descriptor;
+typedef struct cp_entry cp_entry;
+typedef struct field_descriptor field_descriptor;
 
-enum bjvm_cp_kind : u32;
-typedef enum bjvm_cp_kind bjvm_cp_kind;
+enum cp_kind : u32;
+typedef enum cp_kind cp_kind;
 
-bjvm_cp_entry *bjvm_check_cp_entry(bjvm_cp_entry *entry, bjvm_cp_kind expected_kinds,
+cp_entry *check_cp_entry(cp_entry *entry, cp_kind expected_kinds,
                                    const char *reason);
 
 /**
@@ -37,535 +37,535 @@ bjvm_cp_entry *bjvm_check_cp_entry(bjvm_cp_entry *entry, bjvm_cp_kind expected_k
  */
 typedef enum : u8 {
   /** No operands */
-  bjvm_insn_nop, // stack polymorphic
+  insn_nop, // stack polymorphic
 
-  bjvm_insn_aaload,
-  bjvm_insn_aastore,
-  bjvm_insn_aconst_null,
-  bjvm_insn_areturn,
-  bjvm_insn_arraylength,
-  bjvm_insn_athrow,
-  bjvm_insn_baload,
-  bjvm_insn_bastore,
-  bjvm_insn_caload,
-  bjvm_insn_castore,
-  bjvm_insn_d2f,
-  bjvm_insn_d2i,
-  bjvm_insn_d2l,
-  bjvm_insn_dadd,
-  bjvm_insn_daload,
-  bjvm_insn_dastore,
-  bjvm_insn_dcmpg,
-  bjvm_insn_dcmpl,
-  bjvm_insn_ddiv,
-  bjvm_insn_dmul,
-  bjvm_insn_dneg,
-  bjvm_insn_drem,
-  bjvm_insn_dreturn,
-  bjvm_insn_dsub,
-  bjvm_insn_dup,
-  bjvm_insn_dup_x1,
-  bjvm_insn_dup_x2,
-  bjvm_insn_dup2,
-  bjvm_insn_dup2_x1,
-  bjvm_insn_dup2_x2,
-  bjvm_insn_f2d,
-  bjvm_insn_f2i,
-  bjvm_insn_f2l,
-  bjvm_insn_fadd,
-  bjvm_insn_faload,
-  bjvm_insn_fastore,
-  bjvm_insn_fcmpg,
-  bjvm_insn_fcmpl,
-  bjvm_insn_fdiv,
-  bjvm_insn_fmul,
-  bjvm_insn_fneg,
-  bjvm_insn_frem,
-  bjvm_insn_freturn,
-  bjvm_insn_fsub,
-  bjvm_insn_i2b,
-  bjvm_insn_i2c,
-  bjvm_insn_i2d,
-  bjvm_insn_i2f,
-  bjvm_insn_i2l,
-  bjvm_insn_i2s,
-  bjvm_insn_iadd,
-  bjvm_insn_iaload,
-  bjvm_insn_iand,
-  bjvm_insn_iastore,
-  bjvm_insn_idiv,
-  bjvm_insn_imul,
-  bjvm_insn_ineg,
-  bjvm_insn_ior,
-  bjvm_insn_irem,
-  bjvm_insn_ireturn,
-  bjvm_insn_ishl,
-  bjvm_insn_ishr,
-  bjvm_insn_isub,
-  bjvm_insn_iushr,
-  bjvm_insn_ixor,
-  bjvm_insn_l2d,
-  bjvm_insn_l2f,
-  bjvm_insn_l2i,
-  bjvm_insn_ladd,
-  bjvm_insn_laload,
-  bjvm_insn_land,
-  bjvm_insn_lastore,
-  bjvm_insn_lcmp,
-  bjvm_insn_ldiv,
-  bjvm_insn_lmul,
-  bjvm_insn_lneg,
-  bjvm_insn_lor,
-  bjvm_insn_lrem,
-  bjvm_insn_lreturn,
-  bjvm_insn_lshl,
-  bjvm_insn_lshr,
-  bjvm_insn_lsub,
-  bjvm_insn_lushr,
-  bjvm_insn_lxor,
-  bjvm_insn_monitorenter,
-  bjvm_insn_monitorexit,
-  bjvm_insn_pop,
-  bjvm_insn_pop2,
-  bjvm_insn_return,
-  bjvm_insn_saload,
-  bjvm_insn_sastore,
-  bjvm_insn_swap,
+  insn_aaload,
+  insn_aastore,
+  insn_aconst_null,
+  insn_areturn,
+  insn_arraylength,
+  insn_athrow,
+  insn_baload,
+  insn_bastore,
+  insn_caload,
+  insn_castore,
+  insn_d2f,
+  insn_d2i,
+  insn_d2l,
+  insn_dadd,
+  insn_daload,
+  insn_dastore,
+  insn_dcmpg,
+  insn_dcmpl,
+  insn_ddiv,
+  insn_dmul,
+  insn_dneg,
+  insn_drem,
+  insn_dreturn,
+  insn_dsub,
+  insn_dup,
+  insn_dup_x1,
+  insn_dup_x2,
+  insn_dup2,
+  insn_dup2_x1,
+  insn_dup2_x2,
+  insn_f2d,
+  insn_f2i,
+  insn_f2l,
+  insn_fadd,
+  insn_faload,
+  insn_fastore,
+  insn_fcmpg,
+  insn_fcmpl,
+  insn_fdiv,
+  insn_fmul,
+  insn_fneg,
+  insn_frem,
+  insn_freturn,
+  insn_fsub,
+  insn_i2b,
+  insn_i2c,
+  insn_i2d,
+  insn_i2f,
+  insn_i2l,
+  insn_i2s,
+  insn_iadd,
+  insn_iaload,
+  insn_iand,
+  insn_iastore,
+  insn_idiv,
+  insn_imul,
+  insn_ineg,
+  insn_ior,
+  insn_irem,
+  insn_ireturn,
+  insn_ishl,
+  insn_ishr,
+  insn_isub,
+  insn_iushr,
+  insn_ixor,
+  insn_l2d,
+  insn_l2f,
+  insn_l2i,
+  insn_ladd,
+  insn_laload,
+  insn_land,
+  insn_lastore,
+  insn_lcmp,
+  insn_ldiv,
+  insn_lmul,
+  insn_lneg,
+  insn_lor,
+  insn_lrem,
+  insn_lreturn,
+  insn_lshl,
+  insn_lshr,
+  insn_lsub,
+  insn_lushr,
+  insn_lxor,
+  insn_monitorenter,
+  insn_monitorexit,
+  insn_pop,
+  insn_pop2,
+  insn_return,
+  insn_saload,
+  insn_sastore,
+  insn_swap,
 
   /** Indexes into constant pool */
-  bjvm_insn_anewarray,
-  bjvm_insn_checkcast,
-  bjvm_insn_getfield,
-  bjvm_insn_getstatic,
-  bjvm_insn_instanceof,
-  bjvm_insn_invokedynamic,
-  bjvm_insn_new,
-  bjvm_insn_putfield,
-  bjvm_insn_putstatic,
-  bjvm_insn_invokevirtual,
-  bjvm_insn_invokespecial,
-  bjvm_insn_invokestatic,
-  bjvm_insn_ldc,
-  bjvm_insn_ldc2_w,
+  insn_anewarray,
+  insn_checkcast,
+  insn_getfield,
+  insn_getstatic,
+  insn_instanceof,
+  insn_invokedynamic,
+  insn_new,
+  insn_putfield,
+  insn_putstatic,
+  insn_invokevirtual,
+  insn_invokespecial,
+  insn_invokestatic,
+  insn_ldc,
+  insn_ldc2_w,
 
   /** Indexes into local variable table */
-  bjvm_insn_dload,
-  bjvm_insn_fload,
-  bjvm_insn_iload,
-  bjvm_insn_lload,
-  bjvm_insn_dstore,
-  bjvm_insn_fstore,
-  bjvm_insn_istore,
-  bjvm_insn_lstore,
-  bjvm_insn_aload,
-  bjvm_insn_astore,
+  insn_dload,
+  insn_fload,
+  insn_iload,
+  insn_lload,
+  insn_dstore,
+  insn_fstore,
+  insn_istore,
+  insn_lstore,
+  insn_aload,
+  insn_astore,
 
   /** Indexes into instruction table */
-  bjvm_insn_goto,
-  bjvm_insn_jsr,
+  insn_goto,
+  insn_jsr,
 
-  bjvm_insn_if_acmpeq,
-  bjvm_insn_if_acmpne,
-  bjvm_insn_if_icmpeq,
-  bjvm_insn_if_icmpne,
-  bjvm_insn_if_icmplt,
-  bjvm_insn_if_icmpge,
-  bjvm_insn_if_icmpgt,
-  bjvm_insn_if_icmple,
-  bjvm_insn_ifeq,
-  bjvm_insn_ifne,
-  bjvm_insn_iflt,
-  bjvm_insn_ifge,
-  bjvm_insn_ifgt,
-  bjvm_insn_ifle,
-  bjvm_insn_ifnonnull,
-  bjvm_insn_ifnull,
+  insn_if_acmpeq,
+  insn_if_acmpne,
+  insn_if_icmpeq,
+  insn_if_icmpne,
+  insn_if_icmplt,
+  insn_if_icmpge,
+  insn_if_icmpgt,
+  insn_if_icmple,
+  insn_ifeq,
+  insn_ifne,
+  insn_iflt,
+  insn_ifge,
+  insn_ifgt,
+  insn_ifle,
+  insn_ifnonnull,
+  insn_ifnull,
 
   /** Has some numerical immediate */
-  bjvm_insn_iconst,
-  bjvm_insn_dconst,
-  bjvm_insn_fconst,
-  bjvm_insn_lconst,
+  insn_iconst,
+  insn_dconst,
+  insn_fconst,
+  insn_lconst,
 
   /** Cursed */
-  bjvm_insn_iinc,
-  bjvm_insn_invokeinterface,
-  bjvm_insn_multianewarray,
-  bjvm_insn_newarray,
-  bjvm_insn_tableswitch,
-  bjvm_insn_lookupswitch,
-  bjvm_insn_ret,
+  insn_iinc,
+  insn_invokeinterface,
+  insn_multianewarray,
+  insn_newarray,
+  insn_tableswitch,
+  insn_lookupswitch,
+  insn_ret,
 
   /** Instruction failed with a LinkageError */
-  // bjvm_insn_linkage_error,
+  // insn_linkage_error,
 
   /** Resolved versions of misc instructions */
-  bjvm_insn_anewarray_resolved,
-  bjvm_insn_checkcast_resolved,
-  bjvm_insn_instanceof_resolved,
-  bjvm_insn_new_resolved,
+  insn_anewarray_resolved,
+  insn_checkcast_resolved,
+  insn_instanceof_resolved,
+  insn_new_resolved,
 
   /** Resolved versions of invoke* */
-  bjvm_insn_invokevtable_monomorphic, // inline cache with previous object
-  bjvm_insn_invokevtable_polymorphic, // slower vtable-based dispatch
-  bjvm_insn_invokeitable_monomorphic, // inline cache with previous object
-  bjvm_insn_invokeitable_polymorphic, // slower itable-based dispatch
-  bjvm_insn_invokespecial_resolved,   // resolved version of invokespecial
-  bjvm_insn_invokestatic_resolved,    // resolved version of invokestatic
-  bjvm_insn_invokecallsite,           // resolved version of invokedynamic
-  bjvm_insn_invokesigpoly,
+  insn_invokevtable_monomorphic, // inline cache with previous object
+  insn_invokevtable_polymorphic, // slower vtable-based dispatch
+  insn_invokeitable_monomorphic, // inline cache with previous object
+  insn_invokeitable_polymorphic, // slower itable-based dispatch
+  insn_invokespecial_resolved,   // resolved version of invokespecial
+  insn_invokestatic_resolved,    // resolved version of invokestatic
+  insn_invokecallsite,           // resolved version of invokedynamic
+  insn_invokesigpoly,
 
   /** Resolved versions of getfield */
-  bjvm_insn_getfield_B,
-  bjvm_insn_getfield_C,
-  bjvm_insn_getfield_S,
-  bjvm_insn_getfield_I,
-  bjvm_insn_getfield_J,
-  bjvm_insn_getfield_F,
-  bjvm_insn_getfield_D,
-  bjvm_insn_getfield_Z,
-  bjvm_insn_getfield_L,
+  insn_getfield_B,
+  insn_getfield_C,
+  insn_getfield_S,
+  insn_getfield_I,
+  insn_getfield_J,
+  insn_getfield_F,
+  insn_getfield_D,
+  insn_getfield_Z,
+  insn_getfield_L,
 
   /** Resolved versions of putfield */
-  bjvm_insn_putfield_B,
-  bjvm_insn_putfield_C,
-  bjvm_insn_putfield_S,
-  bjvm_insn_putfield_I,
-  bjvm_insn_putfield_J,
-  bjvm_insn_putfield_F,
-  bjvm_insn_putfield_D,
-  bjvm_insn_putfield_Z,
-  bjvm_insn_putfield_L,
+  insn_putfield_B,
+  insn_putfield_C,
+  insn_putfield_S,
+  insn_putfield_I,
+  insn_putfield_J,
+  insn_putfield_F,
+  insn_putfield_D,
+  insn_putfield_Z,
+  insn_putfield_L,
 
   /** Resolved versions of getstatic */
-  bjvm_insn_getstatic_B,
-  bjvm_insn_getstatic_C,
-  bjvm_insn_getstatic_S,
-  bjvm_insn_getstatic_I,
-  bjvm_insn_getstatic_J,
-  bjvm_insn_getstatic_F,
-  bjvm_insn_getstatic_D,
-  bjvm_insn_getstatic_Z,
-  bjvm_insn_getstatic_L,
+  insn_getstatic_B,
+  insn_getstatic_C,
+  insn_getstatic_S,
+  insn_getstatic_I,
+  insn_getstatic_J,
+  insn_getstatic_F,
+  insn_getstatic_D,
+  insn_getstatic_Z,
+  insn_getstatic_L,
 
   /** Resolved versions of putstatic */
-  bjvm_insn_putstatic_B,
-  bjvm_insn_putstatic_C,
-  bjvm_insn_putstatic_S,
-  bjvm_insn_putstatic_I,
-  bjvm_insn_putstatic_J,
-  bjvm_insn_putstatic_F,
-  bjvm_insn_putstatic_D,
-  bjvm_insn_putstatic_Z,
-  bjvm_insn_putstatic_L,
+  insn_putstatic_B,
+  insn_putstatic_C,
+  insn_putstatic_S,
+  insn_putstatic_I,
+  insn_putstatic_J,
+  insn_putstatic_F,
+  insn_putstatic_D,
+  insn_putstatic_Z,
+  insn_putstatic_L,
 
   /** intrinsics */
-  bjvm_insn_dsqrt
-} bjvm_insn_code_kind;
+  insn_dsqrt
+} insn_code_kind;
 
 typedef enum : u8 {
   TOS_VOID = 0,
   TOS_DOUBLE = 1,
   TOS_INT = 2,
   TOS_FLOAT = 3,
-} bjvm_reduced_tos_kind;
+} reduced_tos_kind;
 
 typedef enum : char {
-  BJVM_TYPE_KIND_BOOLEAN = 'Z',
-  BJVM_TYPE_KIND_CHAR = 'C',
-  BJVM_TYPE_KIND_FLOAT = 'F',
-  BJVM_TYPE_KIND_DOUBLE = 'D',
-  BJVM_TYPE_KIND_BYTE = 'B',
-  BJVM_TYPE_KIND_SHORT = 'S',
-  BJVM_TYPE_KIND_INT = 'I',
-  BJVM_TYPE_KIND_LONG = 'J',
-  BJVM_TYPE_KIND_VOID = 'V',
-  BJVM_TYPE_KIND_REFERENCE = 'L'
-} bjvm_type_kind;
+  TYPE_KIND_BOOLEAN = 'Z',
+  TYPE_KIND_CHAR = 'C',
+  TYPE_KIND_FLOAT = 'F',
+  TYPE_KIND_DOUBLE = 'D',
+  TYPE_KIND_BYTE = 'B',
+  TYPE_KIND_SHORT = 'S',
+  TYPE_KIND_INT = 'I',
+  TYPE_KIND_LONG = 'J',
+  TYPE_KIND_VOID = 'V',
+  TYPE_KIND_REFERENCE = 'L'
+} type_kind;
 
-bjvm_type_kind field_to_kind(const bjvm_field_descriptor *field);
+type_kind field_to_kind(const field_descriptor *field);
 
 typedef enum {
-  BJVM_CD_KIND_ORDINARY,
+  CD_KIND_ORDINARY,
   // e.g. classdesc corresponding to int.class. No objects mapping to this
   // classdesc are actually constructed.
-  BJVM_CD_KIND_PRIMITIVE,
-  BJVM_CD_KIND_ORDINARY_ARRAY,
+  CD_KIND_PRIMITIVE,
+  CD_KIND_ORDINARY_ARRAY,
   // e.g. [Z, [[[J  (i.e., multidimensional arrays are counted here)
-  BJVM_CD_KIND_PRIMITIVE_ARRAY,
-} bjvm_classdesc_kind;
+  CD_KIND_PRIMITIVE_ARRAY,
+} classdesc_kind;
 
 typedef enum {
-  BJVM_CD_STATE_LINKAGE_ERROR = 0,
-  BJVM_CD_STATE_LOADED = 1,
-  BJVM_CD_STATE_LINKED = 2,
-  BJVM_CD_STATE_INITIALIZING = 3,
-  BJVM_CD_STATE_INITIALIZED = 4
-} bjvm_classdesc_state;
+  CD_STATE_LINKAGE_ERROR = 0,
+  CD_STATE_LOADED = 1,
+  CD_STATE_LINKED = 2,
+  CD_STATE_INITIALIZING = 3,
+  CD_STATE_INITIALIZED = 4
+} classdesc_state;
 
-typedef struct bjvm_classdesc bjvm_classdesc;
-typedef struct bjvm_bootstrap_method bjvm_bootstrap_method;
+typedef struct classdesc classdesc;
+typedef struct bootstrap_method bootstrap_method;
 
 typedef struct {
-  bjvm_classdesc *classdesc;
+  classdesc *classdesc;
   slice name;
 
   void *vm_object; // linkage error (todo) or resolved class
-} bjvm_cp_class_info;
+} cp_class_info;
 
-typedef struct bjvm_cp_name_and_type {
+typedef struct cp_name_and_type {
   slice name;
   slice descriptor;
-} bjvm_cp_name_and_type;
+} cp_name_and_type;
 
-struct bjvm_field_descriptor {
-  bjvm_type_kind base_kind;
+struct field_descriptor {
+  type_kind base_kind;
   // Can be nonzero for any kind
   int dimensions;
   slice class_name; // For reference and array types only
 };
 
-typedef struct bjvm_cp_field bjvm_cp_field;
+typedef struct cp_field cp_field;
 
 typedef struct {
-  bjvm_cp_class_info *class_info;
-  bjvm_cp_name_and_type *nat;
+  cp_class_info *class_info;
+  cp_name_and_type *nat;
 
-  bjvm_field_descriptor *parsed_descriptor;
-  bjvm_cp_field *field;
-} bjvm_cp_field_info;
+  field_descriptor *parsed_descriptor;
+  cp_field *field;
+} cp_field_info;
 
-typedef struct bjvm_method_descriptor bjvm_method_descriptor;
+typedef struct method_descriptor method_descriptor;
 
 // Used by both methodref and interface methodref
 typedef struct {
-  bjvm_cp_class_info *class_info;
-  bjvm_cp_name_and_type *nat;
-  bjvm_method_descriptor *descriptor;
+  cp_class_info *class_info;
+  cp_name_and_type *nat;
+  method_descriptor *descriptor;
 
   // The resolved method -- initially nullptr
-  bjvm_cp_method *resolved;
-} bjvm_cp_method_info;
+  cp_method *resolved;
+} cp_method_info;
 
 typedef struct {
   slice chars;
   void *interned;  // pointer to the interned string, if instantiated
-} bjvm_cp_string_info;
+} cp_string_info;
 
 typedef struct {
   // Sign-extended if original entry was an Integer
   s64 value;
-} bjvm_cp_integral_info;
+} cp_integral_info;
 
 typedef struct {
   // Value-extended if original entry was a Float
   double value;
-} bjvm_cp_floating_info;
+} cp_floating_info;
 
 typedef enum {
-  BJVM_MH_KIND_GET_FIELD = 1,
-  BJVM_MH_KIND_GET_STATIC = 2,
-  BJVM_MH_KIND_PUT_FIELD = 3,
-  BJVM_MH_KIND_PUT_STATIC = 4,
-  BJVM_MH_KIND_INVOKE_VIRTUAL = 5,
-  BJVM_MH_KIND_INVOKE_STATIC = 6,
-  BJVM_MH_KIND_INVOKE_SPECIAL = 7,
-  BJVM_MH_KIND_NEW_INVOKE_SPECIAL = 8,
-  BJVM_MH_KIND_INVOKE_INTERFACE = 9,
-  BJVM_MH_KIND_LAST = 9
-} bjvm_method_handle_kind;
+  MH_KIND_GET_FIELD = 1,
+  MH_KIND_GET_STATIC = 2,
+  MH_KIND_PUT_FIELD = 3,
+  MH_KIND_PUT_STATIC = 4,
+  MH_KIND_INVOKE_VIRTUAL = 5,
+  MH_KIND_INVOKE_STATIC = 6,
+  MH_KIND_INVOKE_SPECIAL = 7,
+  MH_KIND_NEW_INVOKE_SPECIAL = 8,
+  MH_KIND_INVOKE_INTERFACE = 9,
+  MH_KIND_LAST = 9
+} method_handle_kind;
 
-static inline bool mh_is_invoke(bjvm_method_handle_kind kind) {
-  return kind >= BJVM_MH_KIND_INVOKE_VIRTUAL && kind <= BJVM_MH_KIND_INVOKE_INTERFACE;
+static inline bool mh_is_invoke(method_handle_kind kind) {
+  return kind >= MH_KIND_INVOKE_VIRTUAL && kind <= MH_KIND_INVOKE_INTERFACE;
 }
 
-static inline bool mh_is_vh(bjvm_method_handle_kind kind) {
-  // return kind & (BJVM_MH_KIND_GET_FIELD | BJVM_MH_KIND_GET_STATIC |
-  //                BJVM_MH_KIND_PUT_FIELD | BJVM_MH_KIND_PUT_STATIC);
-  return kind <= BJVM_MH_KIND_PUT_STATIC && kind >= BJVM_MH_KIND_GET_FIELD;
+static inline bool mh_is_vh(method_handle_kind kind) {
+  // return kind & (MH_KIND_GET_FIELD | MH_KIND_GET_STATIC |
+  //                MH_KIND_PUT_FIELD | MH_KIND_PUT_STATIC);
+  return kind <= MH_KIND_PUT_STATIC && kind >= MH_KIND_GET_FIELD;
 }
 
 typedef struct {
-  bjvm_method_handle_kind handle_kind;
-  bjvm_cp_entry *reference;
+  method_handle_kind handle_kind;
+  cp_entry *reference;
 
-  struct bjvm_native_MethodType *resolved_mt;
-} bjvm_cp_method_handle_info;
+  struct native_MethodType *resolved_mt;
+} cp_method_handle_info;
 
 typedef struct {
   slice descriptor;
-  bjvm_method_descriptor *parsed_descriptor;
+  method_descriptor *parsed_descriptor;
 
-  struct bjvm_native_MethodType *resolved_mt;
-} bjvm_cp_method_type_info;
+  struct native_MethodType *resolved_mt;
+} cp_method_type_info;
 
 typedef struct {
-  bjvm_bootstrap_method *method;
-  bjvm_cp_name_and_type *name_and_type;
-  bjvm_method_descriptor *method_descriptor;
+  bootstrap_method *method;
+  cp_name_and_type *name_and_type;
+  method_descriptor *method_descriptor;
 
-  struct bjvm_native_MethodType *resolved_mt;
-} bjvm_cp_indy_info;
+  struct native_MethodType *resolved_mt;
+} cp_indy_info;
 
-enum bjvm_cp_kind : u32 {
-  BJVM_CP_KIND_INVALID = 0,
-  BJVM_CP_KIND_UTF8 = 1 << 0,
-  BJVM_CP_KIND_INTEGER = 1 << 1,
-  BJVM_CP_KIND_FLOAT = 1 << 2,
-  BJVM_CP_KIND_LONG = 1 << 3,
-  BJVM_CP_KIND_DOUBLE = 1 << 4,
-  BJVM_CP_KIND_CLASS = 1 << 5,
-  BJVM_CP_KIND_STRING = 1 << 6,
-  BJVM_CP_KIND_FIELD_REF = 1 << 7,
-  BJVM_CP_KIND_METHOD_REF = 1 << 8,
-  BJVM_CP_KIND_INTERFACE_METHOD_REF = 1 << 9,
-  BJVM_CP_KIND_NAME_AND_TYPE = 1 << 10,
-  BJVM_CP_KIND_METHOD_HANDLE = 1 << 11,
-  BJVM_CP_KIND_METHOD_TYPE = 1 << 12,
-  BJVM_CP_KIND_INVOKE_DYNAMIC = 1 << 13,
-  BJVM_CP_KIND_DYNAMIC_CONSTANT = 1 << 14,
-  BJVM_CP_KIND_MODULE = 1 << 15,
-  BJVM_CP_KIND_PACKAGE = 1 << 16,
-  BJVM_CP_KIND_LAST = 1 << 16
+enum cp_kind : u32 {
+  CP_KIND_INVALID = 0,
+  CP_KIND_UTF8 = 1 << 0,
+  CP_KIND_INTEGER = 1 << 1,
+  CP_KIND_FLOAT = 1 << 2,
+  CP_KIND_LONG = 1 << 3,
+  CP_KIND_DOUBLE = 1 << 4,
+  CP_KIND_CLASS = 1 << 5,
+  CP_KIND_STRING = 1 << 6,
+  CP_KIND_FIELD_REF = 1 << 7,
+  CP_KIND_METHOD_REF = 1 << 8,
+  CP_KIND_INTERFACE_METHOD_REF = 1 << 9,
+  CP_KIND_NAME_AND_TYPE = 1 << 10,
+  CP_KIND_METHOD_HANDLE = 1 << 11,
+  CP_KIND_METHOD_TYPE = 1 << 12,
+  CP_KIND_INVOKE_DYNAMIC = 1 << 13,
+  CP_KIND_DYNAMIC_CONSTANT = 1 << 14,
+  CP_KIND_MODULE = 1 << 15,
+  CP_KIND_PACKAGE = 1 << 16,
+  CP_KIND_LAST = 1 << 16
 };
 
-static inline bool cp_kind_is_primitive(bjvm_cp_kind kind) {
-  return kind == BJVM_CP_KIND_INTEGER || kind == BJVM_CP_KIND_FLOAT ||
-         kind == BJVM_CP_KIND_LONG || kind == BJVM_CP_KIND_DOUBLE;
+static inline bool cp_kind_is_primitive(cp_kind kind) {
+  return kind == CP_KIND_INTEGER || kind == CP_KIND_FLOAT ||
+         kind == CP_KIND_LONG || kind == CP_KIND_DOUBLE;
 }
 
-typedef struct bjvm_cp_entry {
-  bjvm_cp_kind kind;
+typedef struct cp_entry {
+  cp_kind kind;
   // Index of this entry within the constant pool
   int my_index;
 
   union {
     slice utf8;
-    bjvm_cp_string_info string;
+    cp_string_info string;
 
-    bjvm_cp_floating_info floating;
-    bjvm_cp_integral_info integral;
+    cp_floating_info floating;
+    cp_integral_info integral;
 
-    bjvm_cp_name_and_type name_and_type;
-    bjvm_cp_class_info class_info;
+    cp_name_and_type name_and_type;
+    cp_class_info class_info;
 
-    bjvm_cp_field_info field;
-    bjvm_cp_method_info methodref;
-    bjvm_cp_method_handle_info method_handle;
-    bjvm_cp_method_type_info method_type;
-    bjvm_cp_indy_info indy_info;
+    cp_field_info field;
+    cp_method_info methodref;
+    cp_method_handle_info method_handle;
+    cp_method_type_info method_type;
+    cp_indy_info indy_info;
   };
-} bjvm_cp_entry;
+} cp_entry;
 
-struct bjvm_multianewarray_data {
-  bjvm_cp_class_info *entry;
+struct multianewarray_data {
+  cp_class_info *entry;
   u8 dimensions;
 };
 
-typedef struct bjvm_constant_pool {
+typedef struct constant_pool {
   int entries_len;
-  bjvm_cp_entry entries[];
-} bjvm_constant_pool;
+  cp_entry entries[];
+} constant_pool;
 
 // Access flags. Same as given in the class file specification.
 typedef enum : u16 {
-  BJVM_ACCESS_PUBLIC = 0x0001,
-  BJVM_ACCESS_PRIVATE = 0x0002,
-  BJVM_ACCESS_PROTECTED = 0x0004,
-  BJVM_ACCESS_STATIC = 0x0008,
-  BJVM_ACCESS_FINAL = 0x0010,
-  BJVM_ACCESS_SYNCHRONIZED = 0x0020,
-  BJVM_ACCESS_BRIDGE = 0x0040,
-  BJVM_ACCESS_VARARGS = 0x0080,
-  BJVM_ACCESS_NATIVE = 0x0100,
-  BJVM_ACCESS_INTERFACE = 0x0200,
-  BJVM_ACCESS_ABSTRACT = 0x0400,
-  BJVM_ACCESS_STRICT = 0x0800,
-  BJVM_ACCESS_SYNTHETIC = 0x1000,
-  BJVM_ACCESS_ANNOTATION = 0x2000,
-  BJVM_ACCESS_ENUM = 0x4000,
-  BJVM_ACCESS_MODULE = 0x8000
-} bjvm_access_flags;
+  ACCESS_PUBLIC = 0x0001,
+  ACCESS_PRIVATE = 0x0002,
+  ACCESS_PROTECTED = 0x0004,
+  ACCESS_STATIC = 0x0008,
+  ACCESS_FINAL = 0x0010,
+  ACCESS_SYNCHRONIZED = 0x0020,
+  ACCESS_BRIDGE = 0x0040,
+  ACCESS_VARARGS = 0x0080,
+  ACCESS_NATIVE = 0x0100,
+  ACCESS_INTERFACE = 0x0200,
+  ACCESS_ABSTRACT = 0x0400,
+  ACCESS_STRICT = 0x0800,
+  ACCESS_SYNTHETIC = 0x1000,
+  ACCESS_ANNOTATION = 0x2000,
+  ACCESS_ENUM = 0x4000,
+  ACCESS_MODULE = 0x8000
+} access_flags;
 
 typedef enum {
-  BJVM_ATTRIBUTE_KIND_CODE,
-  BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE,
-  BJVM_ATTRIBUTE_KIND_UNKNOWN,
-  BJVM_ATTRIBUTE_KIND_BOOTSTRAP_METHODS,
-  BJVM_ATTRIBUTE_KIND_ENCLOSING_METHOD,
-  BJVM_ATTRIBUTE_KIND_SOURCE_FILE,
-  BJVM_ATTRIBUTE_KIND_LINE_NUMBER_TABLE,
-  BJVM_ATTRIBUTE_KIND_METHOD_PARAMETERS,
-  BJVM_ATTRIBUTE_KIND_RUNTIME_VISIBLE_ANNOTATIONS,
-  BJVM_ATTRIBUTE_KIND_SIGNATURE,
-  BJVM_ATTRIBUTE_KIND_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS,
-  BJVM_ATTRIBUTE_KIND_RUNTIME_VISIBLE_TYPE_ANNOTATIONS,
-  BJVM_ATTRIBUTE_KIND_ANNOTATION_DEFAULT,
-  BJVM_ATTRIBUTE_KIND_NEST_HOST,
-  BJVM_ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE,
-  BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE,
-} bjvm_attribute_kind;
+  ATTRIBUTE_KIND_CODE,
+  ATTRIBUTE_KIND_CONSTANT_VALUE,
+  ATTRIBUTE_KIND_UNKNOWN,
+  ATTRIBUTE_KIND_BOOTSTRAP_METHODS,
+  ATTRIBUTE_KIND_ENCLOSING_METHOD,
+  ATTRIBUTE_KIND_SOURCE_FILE,
+  ATTRIBUTE_KIND_LINE_NUMBER_TABLE,
+  ATTRIBUTE_KIND_METHOD_PARAMETERS,
+  ATTRIBUTE_KIND_RUNTIME_VISIBLE_ANNOTATIONS,
+  ATTRIBUTE_KIND_SIGNATURE,
+  ATTRIBUTE_KIND_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS,
+  ATTRIBUTE_KIND_RUNTIME_VISIBLE_TYPE_ANNOTATIONS,
+  ATTRIBUTE_KIND_ANNOTATION_DEFAULT,
+  ATTRIBUTE_KIND_NEST_HOST,
+  ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE,
+  ATTRIBUTE_KIND_STACK_MAP_TABLE,
+} attribute_kind;
 
-typedef struct bjvm_method_descriptor {
-  bjvm_field_descriptor *args;
+typedef struct method_descriptor {
+  field_descriptor *args;
   int args_count;
-  bjvm_field_descriptor return_type;
-} bjvm_method_descriptor;
+  field_descriptor return_type;
+} method_descriptor;
 
 typedef struct {
   int start_insn;
   int end_insn;
   int handler_insn;
-  bjvm_cp_class_info *catch_type;
-} bjvm_exception_table_entry;
+  cp_class_info *catch_type;
+} exception_table_entry;
 
 typedef struct {
-  bjvm_exception_table_entry *entries;
+  exception_table_entry *entries;
   u16 entries_count;
-} bjvm_attribute_exception_table;
+} attribute_exception_table;
 
-typedef struct bjvm_attribute bjvm_attribute;
+typedef struct attribute attribute;
 
 typedef struct {
   int start_pc;
   int line;
-} bjvm_line_number_table_entry;
+} line_number_table_entry;
 
 typedef struct {
-  bjvm_line_number_table_entry *entries;
+  line_number_table_entry *entries;
   int entry_count;
-} bjvm_attribute_line_number_table;
+} attribute_line_number_table;
 
 typedef struct {
   int start_pc, end_pc;
   int index;
   slice name;
   slice descriptor;
-} bjvm_attribute_lvt_entry;
+} attribute_lvt_entry;
 
 // Local variable table
 typedef struct {
-  bjvm_attribute_lvt_entry *entries;
+  attribute_lvt_entry *entries;
   int entries_count;
-} bjvm_attribute_local_variable_table;
+} attribute_local_variable_table;
 
 // Look up an entry in the local variable table, according to a swizzled local index but the original instruction
 // program counter.
-const slice *bjvm_lvt_lookup(int index, int original_pc, const bjvm_attribute_local_variable_table *table) ;
+const slice *lvt_lookup(int index, int original_pc, const attribute_local_variable_table *table) ;
 
 typedef struct {
   slice name;
   u16 access_flags;
-} bjvm_method_parameter_info;
+} method_parameter_info;
 
 typedef struct {
-  bjvm_method_parameter_info *params;
+  method_parameter_info *params;
   int count;
-} bjvm_attribute_method_parameters;
+} attribute_method_parameters;
 
-struct bjvm_bc_tableswitch_data {
+struct bc_tableswitch_data {
   // Note: If changing this, make sure the layout of the first three fields
-  // is the same as bjvm_bc_lookupswitch_data.
+  // is the same as bc_lookupswitch_data.
   int default_target;
   int *targets;
   int targets_count;
@@ -573,9 +573,9 @@ struct bjvm_bc_tableswitch_data {
   int low, high;
 };
 
-struct bjvm_bc_lookupswitch_data {
+struct bc_lookupswitch_data {
   // Note: If changing this, make sure the layout of the first three fields
-  // is the same as bjvm_bc_tableswitch_data.
+  // is the same as bc_tableswitch_data.
   int default_target;
   int *targets;
   int targets_count;
@@ -584,23 +584,23 @@ struct bjvm_bc_lookupswitch_data {
   int keys_count;
 };
 
-struct bjvm_bc_iinc_data {
+struct bc_iinc_data {
   u16 index;
   s16 const_;
 };
 
-typedef struct bjvm_bytecode_insn {
+typedef struct bytecode_insn {
   // Please don't change the offsets of "kind" and "tos_before" as the interpreter intrinsic rewriter uses these offsets
   // directly.
-  bjvm_insn_code_kind kind;
+  insn_code_kind kind;
   u8 args;
-  bjvm_reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
-  bjvm_reduced_tos_kind tos_after;  // the (reduced) top-of-stack type after this instruction executes
+  reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
+  reduced_tos_kind tos_after;  // the (reduced) top-of-stack type after this instruction executes
   u16 original_pc;
 
   union {
     // for newarray
-    bjvm_type_kind array_type;
+    type_kind array_type;
     // constant pool index or local variable index or branch target (instruction
     // index)
     u32 index;
@@ -611,23 +611,23 @@ typedef struct bjvm_bytecode_insn {
     // Double immediate
     double d_imm;
     // lookupswitch
-    struct bjvm_bc_lookupswitch_data *lookupswitch;
+    struct bc_lookupswitch_data *lookupswitch;
     // tableswitch
-    struct bjvm_bc_tableswitch_data *tableswitch;
+    struct bc_tableswitch_data *tableswitch;
     // iinc
-    struct bjvm_bc_iinc_data iinc;
+    struct bc_iinc_data iinc;
     // multianewarray
-    struct bjvm_multianewarray_data *multianewarray;
+    struct multianewarray_data *multianewarray;
     // non-owned pointer into the constant pool
-    bjvm_cp_entry *cp;
+    cp_entry *cp;
     // anewarray_resolved, checkcast_resolved
-    bjvm_classdesc *classdesc;
+    classdesc *classdesc;
   };
 
   // Per-instruction inline cache data
   void *ic;
   void *ic2;
-} bjvm_bytecode_insn;
+} bytecode_insn;
 
 typedef struct {
   u16 max_stack;
@@ -635,58 +635,58 @@ typedef struct {
   int insn_count;
   int max_formal_pc;
 
-  bjvm_bytecode_insn *code;
-  bjvm_attribute_exception_table *exception_table;
-  bjvm_attribute_line_number_table *line_number_table;
-  bjvm_attribute_local_variable_table *local_variable_table;
+  bytecode_insn *code;
+  attribute_exception_table *exception_table;
+  attribute_line_number_table *line_number_table;
+  attribute_local_variable_table *local_variable_table;
 
-  bjvm_attribute *attributes;
+  attribute *attributes;
   int attributes_count;
-} bjvm_attribute_code;
+} attribute_code;
 
-typedef struct bjvm_bootstrap_method {
-  bjvm_cp_method_handle_info *ref;
-  bjvm_cp_entry **args;
+typedef struct bootstrap_method {
+  cp_method_handle_info *ref;
+  cp_entry **args;
   int args_count;
-} bjvm_bootstrap_method;
+} bootstrap_method;
 
 typedef struct {
   int count;
-  bjvm_bootstrap_method *methods;
-} bjvm_attribute_bootstrap_methods;
+  bootstrap_method *methods;
+} attribute_bootstrap_methods;
 
 typedef struct {
-  bjvm_cp_class_info *class_info;
-  bjvm_cp_name_and_type *nat;
-} bjvm_attribute_enclosing_method;
-
-typedef struct {
-  u8 *data;
-  int length;
-} bjvm_attribute_runtime_visible_annotations;
+  cp_class_info *class_info;
+  cp_name_and_type *nat;
+} attribute_enclosing_method;
 
 typedef struct {
   u8 *data;
   int length;
-} bjvm_attribute_runtime_visible_parameter_annotations;
+} attribute_runtime_visible_annotations;
 
 typedef struct {
   u8 *data;
   int length;
-} bjvm_attribute_runtime_visible_type_annotations;
+} attribute_runtime_visible_parameter_annotations;
 
 typedef struct {
   u8 *data;
   int length;
-} bjvm_attribute_annotation_default;
+} attribute_runtime_visible_type_annotations;
+
+typedef struct {
+  u8 *data;
+  int length;
+} attribute_annotation_default;
 
 typedef struct {
   slice utf8;
-} bjvm_attribute_signature;
+} attribute_signature;
 
 typedef struct {
   slice name;
-} bjvm_attribute_source_file;
+} attribute_source_file;
 
 // We leave the attribute unparsed until analysis time (which is technically incorrect I think, but whatever)
 typedef struct {
@@ -695,61 +695,61 @@ typedef struct {
   int32_t entries_count;
 } attribute_stack_map_table;
 
-typedef struct bjvm_attribute {
-  bjvm_attribute_kind kind;
+typedef struct attribute {
+  attribute_kind kind;
   slice name;
   u32 length;
 
   union {
-    bjvm_attribute_code code;
-    bjvm_cp_entry *constant_value;
-    bjvm_attribute_bootstrap_methods bootstrap_methods;
-    bjvm_attribute_enclosing_method enclosing_method;
-    bjvm_attribute_source_file source_file;
-    bjvm_attribute_line_number_table lnt;
-    bjvm_attribute_method_parameters method_parameters;
-    bjvm_attribute_runtime_visible_annotations annotations;
-    bjvm_attribute_runtime_visible_parameter_annotations parameter_annotations;
-    bjvm_attribute_runtime_visible_type_annotations type_annotations;
-    bjvm_attribute_annotation_default annotation_default;
-    bjvm_attribute_signature signature;
-    bjvm_attribute_local_variable_table lvt;
+    attribute_code code;
+    cp_entry *constant_value;
+    attribute_bootstrap_methods bootstrap_methods;
+    attribute_enclosing_method enclosing_method;
+    attribute_source_file source_file;
+    attribute_line_number_table lnt;
+    attribute_method_parameters method_parameters;
+    attribute_runtime_visible_annotations annotations;
+    attribute_runtime_visible_parameter_annotations parameter_annotations;
+    attribute_runtime_visible_type_annotations type_annotations;
+    attribute_annotation_default annotation_default;
+    attribute_signature signature;
+    attribute_local_variable_table lvt;
     attribute_stack_map_table smt;
-    bjvm_cp_class_info *nest_host;
+    cp_class_info *nest_host;
   };
-} bjvm_attribute;
+} attribute;
 
-typedef struct bjvm_code_analysis bjvm_code_analysis;
+typedef struct code_analysis code_analysis;
 
-typedef struct bjvm_cp_method {
-  bjvm_access_flags access_flags;
+typedef struct cp_method {
+  access_flags access_flags;
 
   slice name;
   slice unparsed_descriptor;
 
-  bjvm_method_descriptor *descriptor;
-  bjvm_code_analysis *code_analysis;
+  method_descriptor *descriptor;
+  code_analysis *code_analysis;
 
   int attributes_count;
-  bjvm_attribute *attributes;
-  bjvm_attribute_code *code;
+  attribute *attributes;
+  attribute_code *code;
 
   bool is_signature_polymorphic;
   // Whether the method is a constructor (i.e., its name is <init>)
   bool is_ctor;
   // Whether the method is a <clinit> (class initialization method)
   bool is_clinit;
-  bjvm_classdesc *my_class;
+  classdesc *my_class;
 
   // Index in the vtable, if applicable. Only set at class link time.
   size_t vtable_index;
   // Index in the itable, if applicable.
   size_t itable_index;
-  void *native_handle; // bjvm_native_callback
+  void *native_handle; // native_callback
 
-  struct bjvm_native_Constructor *reflection_ctor;
-  struct bjvm_native_Method *reflection_method;
-  struct bjvm_native_MethodType *method_type_obj;
+  struct native_Constructor *reflection_ctor;
+  struct native_Method *reflection_method;
+  struct native_MethodType *method_type_obj;
 
   // Rough number of times this method has been called. Used for JIT heuristics.
   // Not at all exact because of interrupts.
@@ -759,104 +759,104 @@ typedef struct bjvm_cp_method {
   bool overrides;
 
   // JIT-compiled method
-  void *compiled_method; // bjvm_wasm_instantiation_result*
+  void *compiled_method; // wasm_instantiation_result*
   // Already tried and failed
   bool failed_jit;
-} bjvm_cp_method;
+} cp_method;
 
-int bjvm_method_argc(const bjvm_cp_method* method) ;
+int method_argc(const cp_method* method) ;
 
-typedef struct bjvm_cp_field {
-  bjvm_access_flags access_flags;
+typedef struct cp_field {
+  access_flags access_flags;
   slice name;
   slice descriptor;
 
   int attributes_count;
-  bjvm_attribute *attributes;
+  attribute *attributes;
   // Offset of the field in the static or instance data area
   size_t byte_offset;
 
-  bjvm_field_descriptor parsed_descriptor;
-  struct bjvm_native_Field *reflection_field;
+  field_descriptor parsed_descriptor;
+  struct native_Field *reflection_field;
 
-  bjvm_classdesc *my_class;
-} bjvm_cp_field;
+  classdesc *my_class;
+} cp_field;
 
-typedef struct bjvm_module bjvm_module;
+typedef struct module module;
 
 // Class descriptor. (Roughly equivalent to HotSpot's InstanceKlass)
-typedef struct bjvm_classdesc {
-  bjvm_classdesc_kind kind;
-  bjvm_classdesc_state state;
-  bjvm_constant_pool *pool;
+typedef struct classdesc {
+  classdesc_kind kind;
+  classdesc_state state;
+  constant_pool *pool;
 
-  bjvm_access_flags access_flags;
+  access_flags access_flags;
   heap_string name;
-  bjvm_cp_class_info *self;
-  bjvm_cp_class_info *super_class;
-  bjvm_cp_class_info *nest_host;
+  cp_class_info *self;
+  cp_class_info *super_class;
+  cp_class_info *nest_host;
 
   int interfaces_count;
-  bjvm_cp_class_info **interfaces;
+  cp_class_info **interfaces;
 
   int fields_count;
-  bjvm_cp_field *fields;
+  cp_field *fields;
 
   int methods_count;
-  bjvm_cp_method *methods;
+  cp_method *methods;
 
-  bjvm_attribute_bootstrap_methods *bootstrap_methods;
-  bjvm_attribute_source_file *source_file;
+  attribute_bootstrap_methods *bootstrap_methods;
+  attribute_source_file *source_file;
 
   int attributes_count;
-  bjvm_attribute *attributes;
-  bjvm_classdesc *array_type;
+  attribute *attributes;
+  classdesc *array_type;
 
   u8 *static_fields;
   // Number of bytes (including the object header) which an instance of this
   // class takes up. Unused for array types.
   size_t instance_bytes;
 
-  struct bjvm_native_Class *mirror;
-  struct bjvm_native_ConstantPool *cp_mirror;
+  struct native_Class *mirror;
+  struct native_ConstantPool *cp_mirror;
 
   // Non-array classes: which 4- (32-bit system) or 8-byte aligned offsets
   // correspond to references that need to be followed
-  bjvm_compressed_bitset static_references;
-  bjvm_compressed_bitset instance_references;
+  compressed_bitset static_references;
+  compressed_bitset instance_references;
 
-  bjvm_classdesc *one_fewer_dim; // NULL for non-array types
-  bjvm_classdesc *base_component;
+  classdesc *one_fewer_dim; // NULL for non-array types
+  classdesc *base_component;
 
   int dimensions;                     // array types only
-  bjvm_type_kind primitive_component; // primitives and array types only
+  type_kind primitive_component; // primitives and array types only
 
-  bjvm_bytecode_insn **indy_insns; // used to get GC roots to CallSites
-  bjvm_bytecode_insn **sigpoly_insns; // used to get GC roots to MethodTypes
+  bytecode_insn **indy_insns; // used to get GC roots to CallSites
+  bytecode_insn **sigpoly_insns; // used to get GC roots to MethodTypes
 
-  void (*dtor)(bjvm_classdesc *); // apoptosis
+  void (*dtor)(classdesc *); // apoptosis
 
-  bjvm_module *module;
+  module *module;
   void *classloader; // parent classloader (static-ish lifetime)
 
-  bjvm_vtable vtable;
-  bjvm_itables itables;
+  vtable vtable;
+  itables itables;
 
-  bjvm_classdesc **hierarchy;  // 0 = java/lang/Object, etc. Used for fast instanceof checks
+  classdesc **hierarchy;  // 0 = java/lang/Object, etc. Used for fast instanceof checks
   int hierarchy_len;
 
   arena arena; // most things are allocated in here
 
   // The tid of the thread which is initializing this class
   s32 initializing_thread;
-} bjvm_classdesc;
+} classdesc;
 
-heap_string insn_to_string(const bjvm_bytecode_insn *insn, int insn_index);
+heap_string insn_to_string(const bytecode_insn *insn, int insn_index);
 
 char *parse_field_descriptor(const char **chars, size_t len,
-                             bjvm_field_descriptor *result, arena *arena);
+                             field_descriptor *result, arena *arena);
 char *parse_method_descriptor(slice entry,
-                              bjvm_method_descriptor *result, arena *arena);
+                              method_descriptor *result, arena *arena);
 
 typedef enum { PARSE_SUCCESS = 0, PARSE_ERR = 1 } parse_result_t;
 
@@ -871,11 +871,11 @@ typedef enum { PARSE_SUCCESS = 0, PARSE_ERR = 1 } parse_result_t;
  * @param result Where to write the result.
  * @param error Where to write the error string. If nullptr, error is ignored.
  */
-parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len,
-                                    bjvm_classdesc *result, heap_string *error);
+parse_result_t parse_classfile(const u8 *bytes, size_t len,
+                                    classdesc *result, heap_string *error);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // BJVM_CLASSFILE_H
+#endif // CLASSFILE_H

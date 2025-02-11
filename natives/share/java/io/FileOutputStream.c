@@ -6,10 +6,10 @@ DECLARE_NATIVE("java/io", FileOutputStream, initIDs, "()V") {
 }
 
 DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   s32 unix_fd = LoadFieldInt(fd, "fd");
 
-  bjvm_obj_header *bytes = args[0].handle->obj;
+  obj_header *bytes = args[0].handle->obj;
   s32 offset = args[1].i;
   s32 length = args[2].i;
   [[maybe_unused]] bool append = args[3].i; // todo: append to first advance the position to the end of file
@@ -31,7 +31,7 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
       s32 written = (s32) write(unix_fd, buf, length);
 
       if (written < 0) {
-        bjvm_raise_vm_exception(thread, STR("java/io/IOException"), STR("Error writing file"));
+        raise_vm_exception(thread, STR("java/io/IOException"), STR("Error writing file"));
         return value_null();
       }
 
@@ -44,7 +44,7 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
 
 DECLARE_NATIVE("java/io", FileOutputStream, close0, "()V") {
   // this method does no allocations or yielding, so we can use the same pointer
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   DCHECK(fd);
 
   s32 unix_fd = LoadFieldInt(fd, "fd");

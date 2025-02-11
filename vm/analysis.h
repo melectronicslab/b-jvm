@@ -2,8 +2,8 @@
 // Created by alec on 12/18/24.
 //
 
-#ifndef BJVM_ANALYSIS_H
-#define BJVM_ANALYSIS_H
+#ifndef ANALYSIS_H
+#define ANALYSIS_H
 
 #include "classfile.h"
 
@@ -13,14 +13,14 @@ extern "C" {
 
 typedef struct {
   int *list;
-} bjvm_dominated_list_t;
+} dominated_list_t;
 
-typedef struct bjvm_bytecode_insn bjvm_bytecode_insn;
+typedef struct bytecode_insn bytecode_insn;
 
-typedef struct bjvm_basic_block {
+typedef struct basic_block {
   int my_index;
 
-  const bjvm_bytecode_insn *start; // non-owned
+  const bytecode_insn *start; // non-owned
   int start_index;
   int insn_count;
 
@@ -39,31 +39,31 @@ typedef struct bjvm_basic_block {
   // Immediate dominator of this block
   u32 idom;
   // Blocks that this block immediately dominates
-  bjvm_dominated_list_t idominates;
+  dominated_list_t idominates;
   // Pre- and postorder in the immediate dominator tree
   u32 idom_pre, idom_post;
   // Whether this block is the target of a backedge
   bool is_loop_header;
   // Whether we can get here in the method without an exception being thrown
   bool nothrow_accessible;
-} bjvm_basic_block;
+} basic_block;
 
 typedef enum : u16 {
   // The nth parameter to the function (0 = implicit 'this')
-  BJVM_VARIABLE_SRC_KIND_PARAMETER,
+  VARIABLE_SRC_KIND_PARAMETER,
   // The nth local (not parameter) of the function
-  BJVM_VARIABLE_SRC_KIND_LOCAL,
+  VARIABLE_SRC_KIND_LOCAL,
   // The nth instruction produced this variable in the course of execution (seeing through
   // instructions like dup etc.)
-  BJVM_VARIABLE_SRC_KIND_INSN,
+  VARIABLE_SRC_KIND_INSN,
   // Comes from multiple possible instructions
-  BJVM_VARIABLE_SRC_KIND_UNK
-} bjvm_variable_source_kind;
+  VARIABLE_SRC_KIND_UNK
+} variable_source_kind;
 
 typedef struct {
   u16 index;
-  bjvm_variable_source_kind kind;
-} bjvm_stack_variable_source;
+  variable_source_kind kind;
+} stack_variable_source;
 
 // Result of the analysis of a code segment. During analysis, stack operations
 // on longs/doubles are simplified as if they only took up one stack slot (e.g.,
@@ -71,16 +71,16 @@ typedef struct {
 // Also, we progressively resolve the state of the stack and local variable
 // table at each program counter, and store a bitset of which stack/local
 // variables are references, so that the GC can follow them.
-typedef struct bjvm_code_analysis {
+typedef struct code_analysis {
   union {
     // wasm jit depends on the order here
-    bjvm_compressed_bitset *insn_index_to_references;
-    bjvm_compressed_bitset *insn_index_to_ints;
-    bjvm_compressed_bitset *insn_index_to_floats;
-    bjvm_compressed_bitset *insn_index_to_doubles;
-    bjvm_compressed_bitset *insn_index_to_longs;
+    compressed_bitset *insn_index_to_references;
+    compressed_bitset *insn_index_to_ints;
+    compressed_bitset *insn_index_to_floats;
+    compressed_bitset *insn_index_to_doubles;
+    compressed_bitset *insn_index_to_longs;
 
-    bjvm_compressed_bitset *insn_index_to_kinds[5];
+    compressed_bitset *insn_index_to_kinds[5];
   };
 
   u16 *insn_index_to_stack_depth;
@@ -89,15 +89,15 @@ typedef struct bjvm_code_analysis {
   // For each instruction that might participate in extended NPE message resolution,
   // the sources of its first two operands.
   struct {
-    bjvm_stack_variable_source a, b;
+    stack_variable_source a, b;
   } *sources;
 
   // block 0 = entry point
-  bjvm_basic_block *blocks;
+  basic_block *blocks;
   int block_count;
 
   bool dominator_tree_computed;
-} bjvm_code_analysis;
+} code_analysis;
 
 /**
  * Analyze the method's code segment if it exists, rewriting instructions in
@@ -106,21 +106,21 @@ typedef struct bjvm_code_analysis {
  * <br/>
  * Returns -1 if an error occurred, and writes the error message into error.
  */
-int bjvm_analyze_method_code(bjvm_cp_method *method, heap_string *error);
-void free_code_analysis(bjvm_code_analysis *analy);
-int bjvm_scan_basic_blocks(const bjvm_attribute_code *code, bjvm_code_analysis *analy);
-void bjvm_compute_dominator_tree(bjvm_code_analysis *analy);
-void bjvm_dump_cfg_to_graphviz(FILE *out, const bjvm_code_analysis *analysis);
+int analyze_method_code(cp_method *method, heap_string *error);
+void free_code_analysis(code_analysis *analy);
+int scan_basic_blocks(const attribute_code *code, code_analysis *analy);
+void compute_dominator_tree(code_analysis *analy);
+void dump_cfg_to_graphviz(FILE *out, const code_analysis *analysis);
 // Returns true iff dominator dominates dominated. dom dom dom.
-bool bjvm_query_dominance(const bjvm_basic_block *dominator, const bjvm_basic_block *dominated);
+bool query_dominance(const basic_block *dominator, const basic_block *dominated);
 // Try to reduce the CFG and mark the edges/blocks accordingly.
-int bjvm_attempt_reduce_cfg(bjvm_code_analysis *analy);
-const char *bjvm_insn_code_name(bjvm_insn_code_kind code);
+int attempt_reduce_cfg(code_analysis *analy);
+const char *insn_code_name(insn_code_kind code);
 
-int get_extended_npe_message(bjvm_cp_method *method, u16 pc, heap_string *result);
+int get_extended_npe_message(cp_method *method, u16 pc, heap_string *result);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // BJVM_ANALYSIS_H
+#endif // ANALYSIS_H

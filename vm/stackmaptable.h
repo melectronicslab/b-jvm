@@ -41,7 +41,7 @@ typedef struct {
 } stack_map_frame_iterator;
 
 // Initializes the iterator with the given method
-int stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const bjvm_cp_method *method);
+int stack_map_frame_iterator_init(stack_map_frame_iterator *iter, const cp_method *method);
 // Check if there is another frame to read
 bool stack_map_frame_iterator_has_next(const stack_map_frame_iterator *iter);
 // Returns nonzero on a failure to read and fills in the error with a constant (although not terribly helpful) message

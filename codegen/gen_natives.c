@@ -14,40 +14,40 @@ struct class_def {
   char *fields;
 };
 
-void print_field(const bjvm_cp_field *field) {
-  if ((field->access_flags & BJVM_ACCESS_STATIC))
+void print_field(const cp_field *field) {
+  if ((field->access_flags & ACCESS_STATIC))
     return;
   const char *name;
   switch (field_to_kind(&field->parsed_descriptor)) {
-  case BJVM_TYPE_KIND_FLOAT:
+  case TYPE_KIND_FLOAT:
     name = "float ";
     break;
-  case BJVM_TYPE_KIND_DOUBLE:
+  case TYPE_KIND_DOUBLE:
     name = "double ";
     break;
-  case BJVM_TYPE_KIND_INT:
+  case TYPE_KIND_INT:
     name = "s32 ";
     break;
-  case BJVM_TYPE_KIND_LONG:
+  case TYPE_KIND_LONG:
     name = "s64 ";
     break;
-  case BJVM_TYPE_KIND_REFERENCE:
-    name = "bjvm_obj_header *";
+  case TYPE_KIND_REFERENCE:
+    name = "obj_header *";
     break;
-  case BJVM_TYPE_KIND_BOOLEAN:
+  case TYPE_KIND_BOOLEAN:
     name = "_Alignas(4) bool ";
     break;
-  case BJVM_TYPE_KIND_CHAR:
+  case TYPE_KIND_CHAR:
     name = "_Alignas(4) u16 ";
     break;
-  case BJVM_TYPE_KIND_BYTE:
+  case TYPE_KIND_BYTE:
     name = "_Alignas(4) s8 ";
     break;
-  case BJVM_TYPE_KIND_SHORT:
+  case TYPE_KIND_SHORT:
     name = "_Alignas(4) s16 ";
     break;
   default:
-  case BJVM_TYPE_KIND_VOID:
+  case TYPE_KIND_VOID:
     UNREACHABLE();
   }
   printf("  %s%.*s;  // %.*s\n", name, fmt_slice(field->name),
@@ -60,10 +60,10 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  bjvm_vm_options options = bjvm_default_vm_options();
+  vm_options options = default_vm_options();
 
-  bjvm_vm *vm = bjvm_create_vm(options);
-  bjvm_thread *thread = bjvm_create_thread(vm, bjvm_default_thread_options());
+  vm *vm = create_vm(options);
+  thread *thread = create_thread(vm, default_thread_options());
 
   // Read natives.txt line by line
   FILE *f = fopen(argv[1], "r");
@@ -118,27 +118,27 @@ int main(int argc, char **argv) {
   printf("/** BEGIN CODEGEN SECTION (gen_natives.c) */\n");
 
   for (int i = 0; i < class_count; ++i) {
-    bjvm_classdesc *desc = bootstrap_lookup_class(thread, (slice) { .chars = classes[i].name, .len = strlen(classes[i].name) });
+    classdesc *desc = bootstrap_lookup_class(thread, (slice) { .chars = classes[i].name, .len = strlen(classes[i].name) });
     DCHECK(desc);
-    bjvm_link_class(thread, desc);
+    link_class(thread, desc);
 
     char *last_slash = strrchr(classes[i].name, L'/');
     char *simple_name = last_slash ? last_slash + 1 : classes[i].name;
 
     // Go through fields and generate the struct definition
     //
-    // struct bjvm_native_<suffix> {
-    //    bjvm_obj_header base;
+    // struct native_<suffix> {
+    //    obj_header base;
     //    <superclass's fields>
     //    <impdep fields>
     //    <my fields>
     // }
 
-    printf("struct bjvm_native_%s {\n", simple_name);
-    printf("  bjvm_obj_header base;\n");
+    printf("struct native_%s {\n", simple_name);
+    printf("  obj_header base;\n");
     if (desc->super_class) {
-      bjvm_classdesc *v = desc->super_class->classdesc;
-      bjvm_classdesc *supers[10];
+      classdesc *v = desc->super_class->classdesc;
+      classdesc *supers[10];
       int supers_count = 0;
       while (v && v->super_class) {
         supers[supers_count++] = v;
@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
             comment = true;
             printf("  // superclass fields\n");
           }
-          bjvm_cp_field *field = &supers[j]->fields[i];
+          cp_field *field = &supers[j]->fields[i];
           print_field(field);
         }
       }
@@ -166,18 +166,18 @@ int main(int argc, char **argv) {
     printf("  // my fields\n");
     // Add my fields
     for (int j = 0; j < desc->fields_count; ++j) {
-      bjvm_cp_field *field = &desc->fields[j];
+      cp_field *field = &desc->fields[j];
       print_field(field);
     }
 
     printf("};\n");
   }
 
-  printf("static inline void bjvm_register_native_padding(bjvm_vm *vm) {\n");
+  printf("static inline void register_native_padding(vm *vm) {\n");
 
   for (int i = 0; i < class_count; ++i) {
     if (classes[i].imp_padding)
-      printf("  (void)bjvm_hash_table_insert(&vm->class_padding, \"%s\", -1, "
+      printf("  (void)hash_table_insert(&vm->class_padding, \"%s\", -1, "
              "(void*) (%d * sizeof(void*)));\n",
              classes[i].name, classes[i].imp_padding);
   }

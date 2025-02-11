@@ -8,7 +8,7 @@
 #include <probes.h>
 #endif
 
-static inline void InstrumentMethodEntry(bjvm_thread *thread, bjvm_stack_frame *frame) {
+static inline void InstrumentMethodEntry(vm_thread *thread, stack_frame *frame) {
 #if DTRACE_ENABLED
   BJVM_METHOD_ENTRY(
     thread->tid,
@@ -19,7 +19,7 @@ static inline void InstrumentMethodEntry(bjvm_thread *thread, bjvm_stack_frame *
 #endif
 }
 
-static inline void InstrumentMethodReturn(bjvm_thread *thread, bjvm_stack_frame *frame) {
+static inline void InstrumentMethodReturn(vm_thread *thread, stack_frame *frame) {
 #if DTRACE_ENABLED
   BJVM_METHOD_RETURN(
     thread->tid,
@@ -60,7 +60,7 @@ static inline void InstrumentGCEnd() {
 #endif
 }
 
-static inline void InstrumentObjectAlloc(bjvm_thread *thread, bjvm_classdesc *cd, size_t size) {
+static inline void InstrumentObjectAlloc(vm_thread *thread, classdesc *cd, size_t size) {
 #if DTRACE_ENABLED
   BJVM_OBJECT_ALLOC(thread->tid, cd->name.chars, cd->name.len, size);
 #endif

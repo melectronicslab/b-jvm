@@ -61,12 +61,12 @@ static int convert_modified_utf8_to_chars(const char *bytes, int len, u16 **resu
 }
 
 // TODO restore implementation calling <init> when we can figure it out
-bjvm_obj_header *make_jstring_modified_utf8(bjvm_thread *thread, slice string) {
-  bjvm_handle *str = bjvm_make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
+obj_header *make_jstring_modified_utf8(vm_thread *thread, slice string) {
+  handle *str = make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
 
-#define S ((struct bjvm_native_String *)str->obj)
+#define S ((struct native_String *)str->obj)
 
-  bjvm_obj_header *result = nullptr;
+  obj_header *result = nullptr;
 
   u16 *chars = nullptr;
   int len;
@@ -74,7 +74,7 @@ bjvm_obj_header *make_jstring_modified_utf8(bjvm_thread *thread, slice string) {
     goto error;
 
   if (do_latin1(chars, len)) {
-    S->value = CreatePrimitiveArray1D(thread, BJVM_TYPE_KIND_BYTE, len);
+    S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
     if (!S->value)
       goto oom;
     for (int i = 0; i < len; ++i) {
@@ -83,7 +83,7 @@ bjvm_obj_header *make_jstring_modified_utf8(bjvm_thread *thread, slice string) {
     S->coder = STRING_CODER_LATIN1; // LATIN1
     result = (void *)S;
   } else {
-    S->value = CreatePrimitiveArray1D(thread, BJVM_TYPE_KIND_BYTE, 2 * len);
+    S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, 2 * len);
     if (!S->value)
       goto oom;
     memcpy(ArrayData(S->value), chars, len * sizeof(short));
@@ -94,22 +94,22 @@ bjvm_obj_header *make_jstring_modified_utf8(bjvm_thread *thread, slice string) {
 oom:
   free(chars);
 error:
-  bjvm_drop_handle(thread, str);
+  drop_handle(thread, str);
   return result;
 }
 
-object make_jstring_cstr(bjvm_thread *thread, char const* cstr) {
-  bjvm_handle *str = bjvm_make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
+object make_jstring_cstr(vm_thread *thread, char const* cstr) {
+  handle *str = make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
 
-#define S ((struct bjvm_native_String *)str->obj)
+#define S ((struct native_String *)str->obj)
 
-  bjvm_obj_header *result = nullptr;
+  obj_header *result = nullptr;
 
   size_t len_ = strlen(cstr);
   DCHECK(len_ < INT32_MAX);
   s32 len = (s32)len_;
 
-  S->value = CreatePrimitiveArray1D(thread, BJVM_TYPE_KIND_BYTE, len);
+  S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
   if (!S->value)
     goto oom;
   ByteArrayStoreBlock(S->value, 0, len, (u8*)cstr);
@@ -117,29 +117,29 @@ object make_jstring_cstr(bjvm_thread *thread, char const* cstr) {
   result = (void *)S;
 
   oom:
-  bjvm_drop_handle(thread, str);
+  drop_handle(thread, str);
   return result;
 }
 
-static object lookup_interned_jstring(bjvm_thread *thread, object s) {
+static object lookup_interned_jstring(vm_thread *thread, object s) {
   object raw = RawStringData(thread, s);
 
   u8 *data = ArrayData(raw);
   s32 len = *ArrayLength(raw);
 
-  return bjvm_hash_table_lookup(&thread->vm->interned_strings, (char const*)data, len);
+  return hash_table_lookup(&thread->vm->interned_strings, (char const*)data, len);
 }
 
-static void insert_interned_jstring(bjvm_thread *thread, object s) {
+static void insert_interned_jstring(vm_thread *thread, object s) {
   object raw = RawStringData(thread, s);
 
   u8 *data = ArrayData(raw);
   s32 len = *ArrayLength(raw);
 
-  (void)bjvm_hash_table_insert(&thread->vm->interned_strings, (char const*) data, len, s);
+  (void)hash_table_insert(&thread->vm->interned_strings, (char const*) data, len, s);
 }
 
-object MakeJStringFromModifiedUTF8(bjvm_thread *thread, slice data, bool intern) {
+object MakeJStringFromModifiedUTF8(vm_thread *thread, slice data, bool intern) {
   object obj = make_jstring_modified_utf8(thread, data);
   if (!obj)
     return nullptr;
@@ -154,7 +154,7 @@ object MakeJStringFromModifiedUTF8(bjvm_thread *thread, slice data, bool intern)
 
   return obj;
 }
-bjvm_obj_header *MakeJStringFromCString(bjvm_thread *thread, char const* data, bool intern) {
+obj_header *MakeJStringFromCString(vm_thread *thread, char const* data, bool intern) {
   object obj = make_jstring_cstr(thread, data);
   if (!obj)
     return nullptr;
@@ -170,17 +170,17 @@ bjvm_obj_header *MakeJStringFromCString(bjvm_thread *thread, char const* data, b
   return obj;
 }
 
-bjvm_obj_header *MakeJStringFromData(bjvm_thread *thread, slice data, string_coder_kind encoding) {
-  bjvm_handle *str = bjvm_make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
+obj_header *MakeJStringFromData(vm_thread *thread, slice data, string_coder_kind encoding) {
+  handle *str = make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
 
-#define S ((struct bjvm_native_String *)str->obj)
+#define S ((struct native_String *)str->obj)
 
-  bjvm_obj_header *result = nullptr;
+  obj_header *result = nullptr;
 
   DCHECK(data.len < INT32_MAX);
   s32 len = (s32)data.len;
 
-  S->value = CreatePrimitiveArray1D(thread, BJVM_TYPE_KIND_BYTE, len);
+  S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
   if (!S->value)
     goto oom;
   ByteArrayStoreBlock(S->value, 0, len, (u8 const*)data.chars);
@@ -188,11 +188,11 @@ bjvm_obj_header *MakeJStringFromData(bjvm_thread *thread, slice data, string_cod
   result = (void *)S;
 
   oom:
-  bjvm_drop_handle(thread, str);
+  drop_handle(thread, str);
   return result;
 }
 
-bjvm_obj_header *InternJString(bjvm_thread *thread, object s) {
+obj_header *InternJString(vm_thread *thread, object s) {
   object lookup_result = lookup_interned_jstring(thread, s);
   if (lookup_result)
     return lookup_result;
@@ -202,7 +202,7 @@ bjvm_obj_header *InternJString(bjvm_thread *thread, object s) {
   u8 *data = ArrayData(raw);
   s32 len = *ArrayLength(raw);
 
-  (void)bjvm_hash_table_insert(&thread->vm->interned_strings, (char const*)data, len, s);
+  (void)hash_table_insert(&thread->vm->interned_strings, (char const*)data, len, s);
   return s;
 }
 
@@ -222,4 +222,4 @@ u64 ObjNextHashCode() {
   return hash_code_rng >> 32;
 }
 
-bjvm_obj_header *MakeJavaString(bjvm_thread *thread, slice slice) { return make_jstring_modified_utf8(thread, slice); }
+obj_header *MakeJavaString(vm_thread *thread, slice slice) { return make_jstring_modified_utf8(thread, slice); }

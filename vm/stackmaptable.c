@@ -5,7 +5,7 @@ typedef stack_map_frame_validation_type validation_type;
 typedef stack_map_frame_iterator iterator;
 
 typedef struct {
-  bjvm_attribute_code *code;
+  attribute_code *code;
   attribute_stack_map_table table_copy;  // the pointers here indicate how much is left to read
   bool has_next;  // whether there is another frame to read
   bool is_first;  // are we about to compute the first stack map frame besides the 0th, implicit frame
@@ -22,11 +22,11 @@ static validation_type *allocate_validation_buffer(size_t count) {
 
 static stack_map_frame_validation_type_kind type_to_validation_type[] = {
   // We don't need the other integer types because field_to_kind doesn't produce them
-  [BJVM_TYPE_KIND_REFERENCE] = STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
-  [BJVM_TYPE_KIND_INT] = STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER,
-  [BJVM_TYPE_KIND_LONG] = STACK_MAP_FRAME_VALIDATION_TYPE_LONG,
-  [BJVM_TYPE_KIND_FLOAT] = STACK_MAP_FRAME_VALIDATION_TYPE_FLOAT,
-  [BJVM_TYPE_KIND_DOUBLE] = STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE
+  [TYPE_KIND_REFERENCE] = STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
+  [TYPE_KIND_INT] = STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER,
+  [TYPE_KIND_LONG] = STACK_MAP_FRAME_VALIDATION_TYPE_LONG,
+  [TYPE_KIND_FLOAT] = STACK_MAP_FRAME_VALIDATION_TYPE_FLOAT,
+  [TYPE_KIND_DOUBLE] = STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE
 };
 
 // Value used for "top"s produced because they are the local following a double or long, rather than explicitly given
@@ -34,12 +34,12 @@ static stack_map_frame_validation_type_kind type_to_validation_type[] = {
 static validation_type implicit_top = { STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (void*) IMPLICIT_TOP };
 
 // Create the initial stack frame for the method
-static int init_locals(iterator *iter, const bjvm_cp_method *method) {
+static int init_locals(iterator *iter, const cp_method *method) {
   iter->locals = allocate_validation_buffer(method->code->max_locals);
   if (!iter->locals)
     return -1; // oom
   s32 local_i = 0;
-  if (!(method->access_flags & BJVM_ACCESS_STATIC)) {
+  if (!(method->access_flags & ACCESS_STATIC)) {
     // Write "this"
     iter->locals[local_i++] = (validation_type) {
       method->is_ctor ? STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS : STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
@@ -48,14 +48,14 @@ static int init_locals(iterator *iter, const bjvm_cp_method *method) {
   }
 
   // Write the remaining locals, one per argument
-  bjvm_method_descriptor *d = method->descriptor;
+  method_descriptor *d = method->descriptor;
   DCHECK(d, "Method has no descriptor");
   for (int arg_i = 0; arg_i < d->args_count; ++local_i, ++arg_i) {
-    bjvm_type_kind kind = field_to_kind(d->args + arg_i);
+    type_kind kind = field_to_kind(d->args + arg_i);
     iter->locals[local_i].kind = type_to_validation_type[kind];
-    if (kind == BJVM_TYPE_KIND_REFERENCE) {
+    if (kind == TYPE_KIND_REFERENCE) {
       iter->locals[local_i].name = nullptr; // TODO
-    } else if (kind == BJVM_TYPE_KIND_DOUBLE || kind == BJVM_TYPE_KIND_LONG) {
+    } else if (kind == TYPE_KIND_DOUBLE || kind == TYPE_KIND_LONG) {
       // For any double or long entry, the following type is an implicit "top"
       iter->locals[++local_i] = implicit_top;
     }
@@ -64,17 +64,17 @@ static int init_locals(iterator *iter, const bjvm_cp_method *method) {
   return 0;
 }
 
-int stack_map_frame_iterator_init(iterator *iter, const bjvm_cp_method *method) {
+int stack_map_frame_iterator_init(iterator *iter, const cp_method *method) {
   memset(iter, 0, sizeof(*iter));  // clear memory
   impl *I = iter->_impl = calloc(1, sizeof(impl));
   if (!I)
     return -1;
-  bjvm_attribute_code *code = I->code = method->code;
+  attribute_code *code = I->code = method->code;
   DCHECK(code, "Method has no code");
   // Look for a StackMapTable, otherwise zero-init
   I->is_first = true;
   for (int i = 0; i < code->attributes_count; ++i) {
-    if (BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE == code->attributes[i].kind) {
+    if (ATTRIBUTE_KIND_STACK_MAP_TABLE == code->attributes[i].kind) {
       I->table_copy = code->attributes[i].smt;
       I->has_next = true;
       break;

@@ -20,7 +20,7 @@ DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
   }
 
   // todo: replace with getPath when async natives work
-  bjvm_obj_header *path = LoadFieldObject(args[0].handle->obj, "java/lang/String", "path");
+  obj_header *path = LoadFieldObject(args[0].handle->obj, "java/lang/String", "path");
   heap_string str = AsHeapString(path, exception);
 
   boolean_attributes attrs;
@@ -33,7 +33,7 @@ DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
     goto exception;
   }
 
-  ASYNC_RETURN((bjvm_stack_value) {.i = result});
+  ASYNC_RETURN((stack_value) {.i = result});
 
   exception:
   ASYNC_RETURN(value_null());
@@ -87,23 +87,23 @@ DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0,
 
   // canonicalize_path only is looking for sequences of .. and /, whcih look the same regardless of the coding.
   // It passes other elements on as-is, meaning the canonicalized string has the same encoding as the input string
-  string_coder_kind coder = ((struct bjvm_native_String *)args[0].handle->obj)->coder;
-  bjvm_obj_header *result = MakeJStringFromData(thread, hslc(canonical), coder);
+  string_coder_kind coder = ((struct native_String *)args[0].handle->obj)->coder;
+  obj_header *result = MakeJStringFromData(thread, hslc(canonical), coder);
 
   free_heap_str(canonical);
 
-  return (bjvm_stack_value){.obj = result};
+  return (stack_value){.obj = result};
 }
 
 DECLARE_NATIVE("java/io", UnixFileSystem, getLastModifiedTime,
                "(Ljava/io/File;)J") {
-  bjvm_obj_header *file_obj = args[0].handle->obj;
-  bjvm_obj_header *path = LoadFieldObject(file_obj, "java/lang/String", "path");
+  obj_header *file_obj = args[0].handle->obj;
+  obj_header *path = LoadFieldObject(file_obj, "java/lang/String", "path");
 
   heap_string path_str = AsHeapString(path, on_oom);
 
   struct stat st;
-  bjvm_stack_value result = stat(path_str.chars, &st) != 0 ? value_null() : (bjvm_stack_value){.l = st.st_mtime};
+  stack_value result = stat(path_str.chars, &st) != 0 ? value_null() : (stack_value){.l = st.st_mtime};
   free_heap_str(path_str);
   return result;
 

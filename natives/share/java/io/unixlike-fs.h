@@ -14,7 +14,7 @@
 
 typedef struct {
   fs fs;
-  bjvm_string_hash_table synthetic_entries;
+  string_hash_table synthetic_entries;
 
   void *inherited_data;
 } unixlike_fs;
