@@ -15,7 +15,7 @@
 
 typedef struct {
   bjvm_type_kind type;
-  bjvm_stack_variable_source source;
+  bjvm_stack_variable_source source;  // used for NPE reason analysis
 } bjvm_analy_stack_entry;
 
 // State of the stack (or local variable table) during analysis, indexed after
@@ -24,11 +24,6 @@ typedef struct {
   bjvm_analy_stack_entry *entries;
   int entries_count;
   int entries_cap;
-
-  bool from_jump_target;
-  bool is_exc_handler;
-
-  int exc_handler_start;
 } bjvm_analy_stack_state;
 
 #define CASE(K)                                                                \
@@ -368,7 +363,7 @@ char *constant_pool_entry_to_string(const bjvm_cp_entry *ent) {
   return strdup(result);
 }
 
-int bjvm_argc(const bjvm_cp_method *method){
+int bjvm_method_argc(const bjvm_cp_method *method){
   bool nonstatic = !(method->access_flags & BJVM_ACCESS_STATIC);
   return method->descriptor->args_count + (nonstatic ? 1 : 0);
 }
@@ -461,27 +456,6 @@ void copy_analy_stack_state(bjvm_analy_stack_state st,
   out->entries_count = st.entries_count;
 }
 
-char *expect_jump_target_compatible(bjvm_analy_stack_state target,
-                                      bjvm_analy_stack_state from) {
-  if (target.entries_count != from.entries_count)
-    goto fail;
-  for (int i = 0; i < target.entries_count; ++i) {
-    if (target.entries[i].type != BJVM_TYPE_KIND_VOID && target.entries[i].type != from.entries[i].type) {
-      goto fail;
-    }
-  }
-  return nullptr;
-fail:;
-  char *a_str = print_analy_stack_state(&target),
-       *b_str = print_analy_stack_state(&from);
-  char *buf = malloc(strlen(a_str) + strlen(b_str) + 128);
-  snprintf(buf, strlen(a_str) + strlen(b_str) + 128,
-           "Stack mismatch:\nPreviously inferred: %s\nFound: %s", a_str, b_str);
-  free(a_str);
-  free(b_str);
-  return buf;
-}
-
 bool is_kind_wide(bjvm_type_kind kind) {
   return kind == BJVM_TYPE_KIND_LONG || kind == BJVM_TYPE_KIND_DOUBLE;
 }
@@ -500,7 +474,7 @@ void write_kinds_to_bitset(const bjvm_analy_stack_state *inferred_stack,
   }
 }
 
-
+/** Possible value "sources" for NPE analysis */
 static bjvm_analy_stack_entry parameter_source(bjvm_type_kind type, int j) {
   return (bjvm_analy_stack_entry){
     type,

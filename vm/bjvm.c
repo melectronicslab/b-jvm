@@ -327,7 +327,7 @@ bjvm_stack_frame *bjvm_push_plain_frame(bjvm_thread *thread, bjvm_cp_method *met
 //   - No interrupts will occur as a result of executing this function.
 bjvm_stack_frame *bjvm_push_frame(bjvm_thread *thread, bjvm_cp_method *method, bjvm_stack_value *args, u8 argc) {
   DCHECK(method != nullptr, "Method is null");
-  DCHECK(argc == bjvm_argc(method), "Wrong argc");
+  DCHECK(argc == bjvm_method_argc(method), "Wrong argc");
   if (method->access_flags & BJVM_ACCESS_NATIVE) {
     return bjvm_push_native_frame(thread, method, method->descriptor, args, argc);
   }
@@ -1702,7 +1702,7 @@ static bool initialize_async_ctx(bjvm_async_run_ctx *ctx, bjvm_thread *thread, b
   assert(method && "Method is null");
   memset(ctx, 0, sizeof(*ctx));
 
-  u8 argc = bjvm_argc(method);
+  u8 argc = bjvm_method_argc(method);
   bjvm_stack_value *stack_top = (bjvm_stack_value *)(thread->frame_buffer + thread->frame_buffer_used);
   size_t args_size = sizeof(bjvm_stack_value) * argc;
 

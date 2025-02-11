@@ -232,8 +232,8 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
   thread_info *info = get_or_create_thread_info(scheduler->_impl, thread);
 
   // Copy the arguments object
-  bjvm_stack_value *args_copy = calloc(bjvm_argc(call.args.method), sizeof(bjvm_stack_value));
-  memcpy(args_copy, call.args.args, sizeof(bjvm_stack_value) * bjvm_argc(call.args.method));
+  bjvm_stack_value *args_copy = calloc(bjvm_method_argc(call.args.method), sizeof(bjvm_stack_value));
+  memcpy(args_copy, call.args.args, sizeof(bjvm_stack_value) * bjvm_method_argc(call.args.method));
   call.args.args = args_copy;
 
   pending_call pending = {.call = call, .record = calloc(1, sizeof(execution_record))};
