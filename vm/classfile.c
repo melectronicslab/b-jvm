@@ -11,76 +11,76 @@
 #include "classfile.h"
 #include "util.h"
 
-static const char *cp_kind_to_string(bjvm_cp_kind kind) {
+static const char *cp_kind_to_string(cp_kind kind) {
   switch (kind) {
-  case BJVM_CP_KIND_INVALID:
+  case CP_KIND_INVALID:
     return "invalid";
-  case BJVM_CP_KIND_UTF8:
+  case CP_KIND_UTF8:
     return "utf8";
-  case BJVM_CP_KIND_INTEGER:
+  case CP_KIND_INTEGER:
     return "integer";
-  case BJVM_CP_KIND_FLOAT:
+  case CP_KIND_FLOAT:
     return "float";
-  case BJVM_CP_KIND_LONG:
+  case CP_KIND_LONG:
     return "long";
-  case BJVM_CP_KIND_DOUBLE:
+  case CP_KIND_DOUBLE:
     return "double";
-  case BJVM_CP_KIND_CLASS:
+  case CP_KIND_CLASS:
     return "class";
-  case BJVM_CP_KIND_STRING:
+  case CP_KIND_STRING:
     return "string";
-  case BJVM_CP_KIND_FIELD_REF:
+  case CP_KIND_FIELD_REF:
     return "field";
-  case BJVM_CP_KIND_METHOD_REF:
+  case CP_KIND_METHOD_REF:
     return "method";
-  case BJVM_CP_KIND_INTERFACE_METHOD_REF:
+  case CP_KIND_INTERFACE_METHOD_REF:
     return "interfacemethod";
-  case BJVM_CP_KIND_NAME_AND_TYPE:
+  case CP_KIND_NAME_AND_TYPE:
     return "nameandtype";
-  case BJVM_CP_KIND_METHOD_HANDLE:
+  case CP_KIND_METHOD_HANDLE:
     return "methodhandle";
-  case BJVM_CP_KIND_METHOD_TYPE:
+  case CP_KIND_METHOD_TYPE:
     return "methodtype";
-  case BJVM_CP_KIND_INVOKE_DYNAMIC:
+  case CP_KIND_INVOKE_DYNAMIC:
     return "invokedynamic";
   default:
     UNREACHABLE();
   }
 }
 
-bjvm_type_kind kind_to_representable_kind(bjvm_type_kind kind) {
+type_kind kind_to_representable_kind(type_kind kind) {
   switch (kind) {
-  case BJVM_TYPE_KIND_BOOLEAN:
-  case BJVM_TYPE_KIND_CHAR:
-  case BJVM_TYPE_KIND_BYTE:
-  case BJVM_TYPE_KIND_SHORT:
-  case BJVM_TYPE_KIND_INT:
-    return BJVM_TYPE_KIND_INT;
+  case TYPE_KIND_BOOLEAN:
+  case TYPE_KIND_CHAR:
+  case TYPE_KIND_BYTE:
+  case TYPE_KIND_SHORT:
+  case TYPE_KIND_INT:
+    return TYPE_KIND_INT;
   default:
     return kind;
   }
 }
 
-bjvm_type_kind field_to_kind(const bjvm_field_descriptor *field) {
+type_kind field_to_kind(const field_descriptor *field) {
   if (field->dimensions)
-    return BJVM_TYPE_KIND_REFERENCE;
+    return TYPE_KIND_REFERENCE;
   return kind_to_representable_kind(field->base_kind);
 }
 
-void free_method(bjvm_cp_method *method) { free_code_analysis(method->code_analysis); }
+void free_method(cp_method *method) { free_code_analysis(method->code_analysis); }
 
-void bjvm_free_classfile(bjvm_classdesc cf) {
+void free_classfile(classdesc cf) {
   for (int i = 0; i < cf.methods_count; ++i)
     free_method(&cf.methods[i]);
   free(cf.static_fields);
   arrfree(cf.indy_insns);
   arrfree(cf.sigpoly_insns);
-  bjvm_free_compressed_bitset(cf.static_references);
-  bjvm_free_compressed_bitset(cf.instance_references);
+  free_compressed_bitset(cf.static_references);
+  free_compressed_bitset(cf.instance_references);
   arena_uninit(&cf.arena);
 }
 
-bjvm_cp_entry *get_constant_pool_entry(bjvm_constant_pool *pool, int index) {
+cp_entry *get_constant_pool_entry(constant_pool *pool, int index) {
   DCHECK(index >= 0 && index < pool->entries_len);
   return &pool->entries[index];
 }
@@ -159,11 +159,11 @@ cf_byteslice reader_get_slice(cf_byteslice *reader, size_t len, const char *reas
 }
 
 typedef struct {
-  bjvm_constant_pool *cp;
+  constant_pool *cp;
   arena *arena;
   int current_code_max_pc;
   void *temp_allocation;
-} bjvm_classfile_parse_ctx;
+} classfile_parse_ctx;
 
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
 slice parse_modified_utf8(const u8 *bytes, int len, arena *arena) {
@@ -173,7 +173,7 @@ slice parse_modified_utf8(const u8 *bytes, int len, arena *arena) {
   return (slice){.chars = result, .len = len};
 }
 
-bjvm_cp_entry *bjvm_check_cp_entry(bjvm_cp_entry *entry, bjvm_cp_kind expected_kinds, const char *reason) {
+cp_entry *check_cp_entry(cp_entry *entry, cp_kind expected_kinds, const char *reason) {
   DCHECK(reason);
   if ((entry->kind & expected_kinds) || (!expected_kinds))
     return entry;
@@ -189,10 +189,10 @@ bjvm_cp_entry *bjvm_check_cp_entry(bjvm_cp_entry *entry, bjvm_cp_kind expected_k
   format_error_dynamic(strdup(buf));
 }
 
-const slice *bjvm_lvt_lookup(int index, int original_pc, const bjvm_attribute_local_variable_table *table) {
+const slice *lvt_lookup(int index, int original_pc, const attribute_local_variable_table *table) {
   // Linear scan throught the whole array
   for (int i = 0; i < table->entries_count; ++i) {
-    bjvm_attribute_lvt_entry *entry = table->entries + i;
+    attribute_lvt_entry *entry = table->entries + i;
     if (entry->index == index && entry->start_pc <= original_pc && entry->end_pc > original_pc) {
       return &entry->name;
     }
@@ -200,7 +200,7 @@ const slice *bjvm_lvt_lookup(int index, int original_pc, const bjvm_attribute_lo
   return nullptr;
 }
 
-bjvm_cp_entry *checked_cp_entry(bjvm_constant_pool *pool, int index, bjvm_cp_kind expected_kinds, const char *reason) {
+cp_entry *checked_cp_entry(constant_pool *pool, int index, cp_kind expected_kinds, const char *reason) {
   DCHECK(reason);
   if (!(index >= 0 && index < pool->entries_len)) {
     char buf[256] = {0};
@@ -208,14 +208,14 @@ bjvm_cp_entry *checked_cp_entry(bjvm_constant_pool *pool, int index, bjvm_cp_kin
              pool->entries_len, reason);
     format_error_dynamic(strdup(buf));
   }
-  return bjvm_check_cp_entry(&pool->entries[index], expected_kinds, reason);
+  return check_cp_entry(&pool->entries[index], expected_kinds, reason);
 }
 
-slice checked_get_utf8(bjvm_constant_pool *pool, int index, const char *reason) {
-  return checked_cp_entry(pool, index, BJVM_CP_KIND_UTF8, reason)->utf8;
+slice checked_get_utf8(constant_pool *pool, int index, const char *reason) {
+  return checked_cp_entry(pool, index, CP_KIND_UTF8, reason)->utf8;
 }
 
-char *parse_complete_field_descriptor(const slice entry, bjvm_field_descriptor *result, bjvm_classfile_parse_ctx *ctx) {
+char *parse_complete_field_descriptor(const slice entry, field_descriptor *result, classfile_parse_ctx *ctx) {
   const char *chars = entry.chars;
   char *error = parse_field_descriptor(&chars, entry.len, result, ctx->arena);
   if (error)
@@ -236,7 +236,7 @@ char *parse_complete_field_descriptor(const slice entry, bjvm_field_descriptor *
  * entries.
  * @return The resolved entry.
  */
-bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx, bool skip_linking) {
+cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ctx, bool skip_linking) {
   enum {
     CONSTANT_Class = 7,
     CONSTANT_Fieldref = 9,
@@ -264,12 +264,12 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_par
   case CONSTANT_Package:
     [[fallthrough]];
   case CONSTANT_Class: {
-    bjvm_cp_kind entry_kind = kind == CONSTANT_Class    ? BJVM_CP_KIND_CLASS
-                              : kind == CONSTANT_Module ? BJVM_CP_KIND_MODULE
-                                                        : BJVM_CP_KIND_PACKAGE;
+    cp_kind entry_kind = kind == CONSTANT_Class    ? CP_KIND_CLASS
+                              : kind == CONSTANT_Module ? CP_KIND_MODULE
+                                                        : CP_KIND_PACKAGE;
 
     u16 index = reader_next_u16(reader, "class index");
-    return (bjvm_cp_entry){
+    return (cp_entry){
         .kind = entry_kind,
         .class_info = {.name = skip_linking ? null_str() : checked_get_utf8(ctx->cp, index, "class info name")}};
   }
@@ -280,48 +280,48 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_par
     u16 class_index = reader_next_u16(reader, "class index");
     u16 name_and_type_index = reader_next_u16(reader, "name and type index");
 
-    bjvm_cp_kind entry_kind = kind == CONSTANT_Fieldref    ? BJVM_CP_KIND_FIELD_REF
-                              : kind == CONSTANT_Methodref ? BJVM_CP_KIND_METHOD_REF
-                                                           : BJVM_CP_KIND_INTERFACE_METHOD_REF;
-    bjvm_cp_class_info *class_info = skip_linking
+    cp_kind entry_kind = kind == CONSTANT_Fieldref    ? CP_KIND_FIELD_REF
+                              : kind == CONSTANT_Methodref ? CP_KIND_METHOD_REF
+                                                           : CP_KIND_INTERFACE_METHOD_REF;
+    cp_class_info *class_info = skip_linking
                                          ? nullptr
-                                         : &checked_cp_entry(ctx->cp, class_index, BJVM_CP_KIND_CLASS,
+                                         : &checked_cp_entry(ctx->cp, class_index, CP_KIND_CLASS,
                                                              "fieldref/methodref/interfacemethodref class info")
                                                 ->class_info;
 
-    bjvm_cp_name_and_type *name_and_type =
+    cp_name_and_type *name_and_type =
         skip_linking ? nullptr
-                     : &checked_cp_entry(ctx->cp, name_and_type_index, BJVM_CP_KIND_NAME_AND_TYPE,
+                     : &checked_cp_entry(ctx->cp, name_and_type_index, CP_KIND_NAME_AND_TYPE,
                                          "fieldref/methodref/interfacemethodref name and type")
                             ->name_and_type;
 
     if (kind == CONSTANT_Fieldref) {
-      return (bjvm_cp_entry){.kind = entry_kind,
+      return (cp_entry){.kind = entry_kind,
                              .field = {.class_info = class_info, .nat = name_and_type, .field = nullptr}};
     }
-    return (bjvm_cp_entry){.kind = entry_kind, .methodref = {.class_info = class_info, .nat = name_and_type}};
+    return (cp_entry){.kind = entry_kind, .methodref = {.class_info = class_info, .nat = name_and_type}};
   }
   case CONSTANT_String: {
     u16 index = reader_next_u16(reader, "string index");
-    return (bjvm_cp_entry){
-        .kind = BJVM_CP_KIND_STRING,
+    return (cp_entry){
+        .kind = CP_KIND_STRING,
         .string = {.chars = skip_linking ? null_str() : checked_get_utf8(ctx->cp, index, "string value")}};
   }
   case CONSTANT_Integer: {
     s32 value = reader_next_s32(reader, "integer value");
-    return (bjvm_cp_entry){.kind = BJVM_CP_KIND_INTEGER, .integral = {.value = value}};
+    return (cp_entry){.kind = CP_KIND_INTEGER, .integral = {.value = value}};
   }
   case CONSTANT_Float: {
     double value = reader_next_f32(reader, "double value");
-    return (bjvm_cp_entry){.kind = BJVM_CP_KIND_FLOAT, .floating = {.value = value}};
+    return (cp_entry){.kind = CP_KIND_FLOAT, .floating = {.value = value}};
   }
   case CONSTANT_Long: {
     s64 value = reader_next_s64(reader, "long value");
-    return (bjvm_cp_entry){.kind = BJVM_CP_KIND_LONG, .integral = {.value = value}};
+    return (cp_entry){.kind = CP_KIND_LONG, .integral = {.value = value}};
   }
   case CONSTANT_Double: {
     double value = reader_next_f64(reader, "double value");
-    return (bjvm_cp_entry){.kind = BJVM_CP_KIND_DOUBLE, .floating = {.value = value}};
+    return (cp_entry){.kind = CP_KIND_DOUBLE, .floating = {.value = value}};
   }
   case CONSTANT_NameAndType: {
     u16 name_index = reader_next_u16(reader, "name index");
@@ -329,8 +329,8 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_par
 
     slice name = skip_linking ? null_str() : checked_get_utf8(ctx->cp, name_index, "name and type name");
 
-    return (bjvm_cp_entry){
-        .kind = BJVM_CP_KIND_NAME_AND_TYPE,
+    return (cp_entry){
+        .kind = CP_KIND_NAME_AND_TYPE,
         .name_and_type = {.name = name,
                           .descriptor = skip_linking
                                             ? null_str()
@@ -343,21 +343,21 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_par
     if (skip_linking) {
       utf8 = parse_modified_utf8(bytes_reader.bytes, length, ctx->arena);
     }
-    return (bjvm_cp_entry){.kind = BJVM_CP_KIND_UTF8, .utf8 = utf8};
+    return (cp_entry){.kind = CP_KIND_UTF8, .utf8 = utf8};
   }
   case CONSTANT_MethodHandle: {
     u8 handle_kind = reader_next_u8(reader, "method handle kind");
     u16 reference_index = reader_next_u16(reader, "reference index");
-    bjvm_cp_entry *entry =
+    cp_entry *entry =
         skip_linking ? nullptr : checked_cp_entry(ctx->cp, reference_index, 0, "method handle reference");
     // TODO validate both
-    return (bjvm_cp_entry){.kind = BJVM_CP_KIND_METHOD_HANDLE,
+    return (cp_entry){.kind = CP_KIND_METHOD_HANDLE,
                            .method_handle = {.handle_kind = handle_kind, .reference = entry}};
   }
   case CONSTANT_MethodType: {
     u16 desc_index = reader_next_u16(reader, "descriptor index");
-    return (bjvm_cp_entry){
-        .kind = BJVM_CP_KIND_METHOD_TYPE,
+    return (cp_entry){
+        .kind = CP_KIND_METHOD_TYPE,
         .method_type = {.descriptor = skip_linking ? null_str()
                                                    : checked_get_utf8(ctx->cp, desc_index, "method type descriptor")}};
   }
@@ -366,13 +366,13 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_par
   case CONSTANT_InvokeDynamic: {
     u16 bootstrap_method_attr_index = reader_next_u16(reader, "bootstrap method attr index");
     u16 name_and_type_index = reader_next_u16(reader, "name and type index");
-    bjvm_cp_name_and_type *name_and_type =
+    cp_name_and_type *name_and_type =
         skip_linking ? nullptr
-                     : &checked_cp_entry(ctx->cp, name_and_type_index, BJVM_CP_KIND_NAME_AND_TYPE, "indy name and type")
+                     : &checked_cp_entry(ctx->cp, name_and_type_index, CP_KIND_NAME_AND_TYPE, "indy name and type")
                             ->name_and_type;
 
-    return (bjvm_cp_entry){.kind =
-                               (kind == CONSTANT_Dynamic) ? BJVM_CP_KIND_DYNAMIC_CONSTANT : BJVM_CP_KIND_INVOKE_DYNAMIC,
+    return (cp_entry){.kind =
+                               (kind == CONSTANT_Dynamic) ? CP_KIND_DYNAMIC_CONSTANT : CP_KIND_INVOKE_DYNAMIC,
                            .indy_info = {// will be converted into a pointer to the method in
                                          // link_bootstrap_methods
                                          .method = (void *)(uintptr_t)bootstrap_method_attr_index,
@@ -384,36 +384,36 @@ bjvm_cp_entry parse_constant_pool_entry(cf_byteslice *reader, bjvm_classfile_par
   }
 }
 
-bjvm_constant_pool *init_constant_pool(u16 count, arena *arena) {
-  bjvm_constant_pool *pool = arena_alloc(arena, 1, sizeof(bjvm_constant_pool) + (count + 1) * sizeof(bjvm_cp_entry));
+constant_pool *init_constant_pool(u16 count, arena *arena) {
+  constant_pool *pool = arena_alloc(arena, 1, sizeof(constant_pool) + (count + 1) * sizeof(cp_entry));
   pool->entries_len = count + 1;
   return pool;
 }
 
-void finish_constant_pool_entry(bjvm_cp_entry *entry, bjvm_classfile_parse_ctx *ctx) {
+void finish_constant_pool_entry(cp_entry *entry, classfile_parse_ctx *ctx) {
   switch (entry->kind) {
-  case BJVM_CP_KIND_FIELD_REF: {
-    bjvm_field_descriptor *parsed_descriptor = nullptr;
-    bjvm_cp_name_and_type *name_and_type = entry->field.nat;
+  case CP_KIND_FIELD_REF: {
+    field_descriptor *parsed_descriptor = nullptr;
+    cp_name_and_type *name_and_type = entry->field.nat;
 
-    entry->field.parsed_descriptor = parsed_descriptor = arena_alloc(ctx->arena, 1, sizeof(bjvm_field_descriptor));
+    entry->field.parsed_descriptor = parsed_descriptor = arena_alloc(ctx->arena, 1, sizeof(field_descriptor));
     char *error = parse_complete_field_descriptor(name_and_type->descriptor, parsed_descriptor, ctx);
     if (error)
       format_error_dynamic(error);
     break;
   }
-  case BJVM_CP_KIND_INVOKE_DYNAMIC: {
-    bjvm_method_descriptor *desc = arena_alloc(ctx->arena, 1, sizeof(bjvm_method_descriptor));
+  case CP_KIND_INVOKE_DYNAMIC: {
+    method_descriptor *desc = arena_alloc(ctx->arena, 1, sizeof(method_descriptor));
     char *error = parse_method_descriptor(entry->indy_info.name_and_type->descriptor, desc, ctx->arena);
     if (error)
       format_error_dynamic(error);
     entry->indy_info.method_descriptor = desc;
     break;
   }
-  case BJVM_CP_KIND_METHOD_REF:
-  case BJVM_CP_KIND_INTERFACE_METHOD_REF: {
-    bjvm_method_descriptor *desc = arena_alloc(ctx->arena, 1, sizeof(bjvm_method_descriptor));
-    bjvm_cp_name_and_type *nat = entry->methodref.nat;
+  case CP_KIND_METHOD_REF:
+  case CP_KIND_INTERFACE_METHOD_REF: {
+    method_descriptor *desc = arena_alloc(ctx->arena, 1, sizeof(method_descriptor));
+    cp_name_and_type *nat = entry->methodref.nat;
     char *error = parse_method_descriptor(nat->descriptor, desc, ctx->arena);
     if (error) {
       char *buf = malloc(1000);
@@ -425,8 +425,8 @@ void finish_constant_pool_entry(bjvm_cp_entry *entry, bjvm_classfile_parse_ctx *
     entry->methodref.descriptor = desc;
     break;
   }
-  case BJVM_CP_KIND_METHOD_TYPE: {
-    bjvm_method_descriptor *desc = arena_alloc(ctx->arena, 1, sizeof(bjvm_method_descriptor));
+  case CP_KIND_METHOD_TYPE: {
+    method_descriptor *desc = arena_alloc(ctx->arena, 1, sizeof(method_descriptor));
     char *error = parse_method_descriptor(entry->method_type.descriptor, desc, ctx->arena);
     if (error)
       format_error_dynamic(error);
@@ -442,32 +442,32 @@ void finish_constant_pool_entry(bjvm_cp_entry *entry, bjvm_classfile_parse_ctx *
  * Parse the constant pool from the given byteslice. Basic validation is
  * performed for format checking, i.e., all within-pool pointers are resolved.
  */
-bjvm_constant_pool *parse_constant_pool(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx) {
+constant_pool *parse_constant_pool(cf_byteslice *reader, classfile_parse_ctx *ctx) {
   u16 cp_count = reader_next_u16(reader, "constant pool count");
 
-  bjvm_constant_pool *pool = init_constant_pool(cp_count, ctx->arena);
+  constant_pool *pool = init_constant_pool(cp_count, ctx->arena);
   ctx->cp = pool;
 
-  get_constant_pool_entry(pool, 0)->kind = BJVM_CP_KIND_INVALID; // entry at 0 is always invalid
+  get_constant_pool_entry(pool, 0)->kind = CP_KIND_INVALID; // entry at 0 is always invalid
   cf_byteslice initial_reader_state = *reader;
   for (int resolution_pass = 0; resolution_pass < 2; ++resolution_pass) {
     // In the first pass, read entries; in the second pass, link them via
     // pointers
     for (int cp_i = 1; cp_i < cp_count; ++cp_i) {
-      bjvm_cp_entry *ent = get_constant_pool_entry(pool, cp_i);
-      bjvm_cp_entry new_entry = parse_constant_pool_entry(reader, ctx, !(bool)resolution_pass);
-      if (new_entry.kind != BJVM_CP_KIND_UTF8 || resolution_pass == 0) {
+      cp_entry *ent = get_constant_pool_entry(pool, cp_i);
+      cp_entry new_entry = parse_constant_pool_entry(reader, ctx, !(bool)resolution_pass);
+      if (new_entry.kind != CP_KIND_UTF8 || resolution_pass == 0) {
         *ent = new_entry; // don't store UTF-8 entries on the second pass
         // TODO fix ^^ this is janky af
       }
       ent->my_index = cp_i;
 
-      if (ent->kind == BJVM_CP_KIND_PACKAGE) {
+      if (ent->kind == CP_KIND_PACKAGE) {
         printf("PACKAGE: %.*s\n", fmt_slice(ent->class_info.name));
       }
 
-      if (ent->kind == BJVM_CP_KIND_LONG || ent->kind == BJVM_CP_KIND_DOUBLE) {
-        get_constant_pool_entry(pool, cp_i + 1)->kind = BJVM_CP_KIND_INVALID;
+      if (ent->kind == CP_KIND_LONG || ent->kind == CP_KIND_DOUBLE) {
+        get_constant_pool_entry(pool, cp_i + 1)->kind = CP_KIND_INVALID;
         cp_i++;
       }
     }
@@ -482,7 +482,7 @@ bjvm_constant_pool *parse_constant_pool(cf_byteslice *reader, bjvm_classfile_par
   return pool;
 }
 
-int checked_pc(u32 insn_pc, int offset, bjvm_classfile_parse_ctx *ctx) {
+int checked_pc(u32 insn_pc, int offset, classfile_parse_ctx *ctx) {
   int target;
   int overflow = __builtin_add_overflow(insn_pc, offset, &target);
   if (overflow || target < 0 || target >= ctx->current_code_max_pc) {
@@ -491,7 +491,7 @@ int checked_pc(u32 insn_pc, int offset, bjvm_classfile_parse_ctx *ctx) {
   return target;
 }
 
-bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_classfile_parse_ctx *ctx) {
+bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, classfile_parse_ctx *ctx) {
   int original_pc = pc++;
 
   // consume u8s until pc = 0 mod 4
@@ -517,17 +517,17 @@ bjvm_bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, bjvm_cla
   for (int i = 0; i < targets_count; ++i) {
     targets[i] = checked_pc(original_pc, reader_next_s32(reader, "tableswitch target"), ctx);
   }
-  struct bjvm_bc_tableswitch_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
-  *data = (struct bjvm_bc_tableswitch_data){.default_target = default_target,
+  struct bc_tableswitch_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
+  *data = (struct bc_tableswitch_data){.default_target = default_target,
                                             .low = low,
                                             .high = high,
                                             .targets = targets,
                                             .targets_count = (int)targets_count};
 
-  return (bjvm_bytecode_insn){.kind = bjvm_insn_tableswitch, .original_pc = original_pc, .tableswitch = data};
+  return (bytecode_insn){.kind = insn_tableswitch, .original_pc = original_pc, .tableswitch = data};
 }
 
-bjvm_bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, bjvm_classfile_parse_ctx *ctx) {
+bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, classfile_parse_ctx *ctx) {
   int original_pc = pc++;
   while (pc % 4 != 0) {
     reader_next_u8(reader, "tableswitch padding");
@@ -549,33 +549,33 @@ bjvm_bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, bjvm_cl
     targets[i] = checked_pc(original_pc, reader_next_s32(reader, "lookupswitch target"), ctx);
   }
 
-  struct bjvm_bc_lookupswitch_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
-  *data = (struct bjvm_bc_lookupswitch_data){.default_target = default_target,
+  struct bc_lookupswitch_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
+  *data = (struct bc_lookupswitch_data){.default_target = default_target,
                                              .keys = keys,
                                              .keys_count = pairs_count,
                                              .targets = targets,
                                              .targets_count = pairs_count};
-  return (bjvm_bytecode_insn){.kind = bjvm_insn_lookupswitch, .original_pc = original_pc, .lookupswitch = data};
+  return (bytecode_insn){.kind = insn_lookupswitch, .original_pc = original_pc, .lookupswitch = data};
 }
 
-bjvm_type_kind parse_atype(u8 atype) {
+type_kind parse_atype(u8 atype) {
   switch (atype) {
   case 4:
-    return BJVM_TYPE_KIND_BOOLEAN;
+    return TYPE_KIND_BOOLEAN;
   case 5:
-    return BJVM_TYPE_KIND_CHAR;
+    return TYPE_KIND_CHAR;
   case 6:
-    return BJVM_TYPE_KIND_FLOAT;
+    return TYPE_KIND_FLOAT;
   case 7:
-    return BJVM_TYPE_KIND_DOUBLE;
+    return TYPE_KIND_DOUBLE;
   case 8:
-    return BJVM_TYPE_KIND_BYTE;
+    return TYPE_KIND_BYTE;
   case 9:
-    return BJVM_TYPE_KIND_SHORT;
+    return TYPE_KIND_SHORT;
   case 10:
-    return BJVM_TYPE_KIND_INT;
+    return TYPE_KIND_INT;
   case 11:
-    return BJVM_TYPE_KIND_LONG;
+    return TYPE_KIND_LONG;
   default: {
     char buf[64];
     snprintf(buf, sizeof(buf), "invalid newarray type %d", atype);
@@ -584,7 +584,7 @@ bjvm_type_kind parse_atype(u8 atype) {
   }
 }
 
-bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, bjvm_classfile_parse_ctx *ctx) {
+bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx *ctx) {
   /** Raw instruction codes (to be canonicalized). */
   enum {
     nop = 0x00,
@@ -795,9 +795,9 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, bjvm_classfile_
 
   switch (opcode) {
   case nop:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_nop};
+    return (bytecode_insn){.kind = insn_nop};
   case aconst_null:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_aconst_null};
+    return (bytecode_insn){.kind = insn_aconst_null};
   case iconst_m1:
   case iconst_0:
   case iconst_1:
@@ -805,327 +805,327 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, bjvm_classfile_
   case iconst_3:
   case iconst_4:
   case iconst_5:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iconst, .integer_imm = opcode - iconst_0};
+    return (bytecode_insn){.kind = insn_iconst, .integer_imm = opcode - iconst_0};
   case lconst_0:
   case lconst_1:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lconst, .integer_imm = opcode - lconst_0};
+    return (bytecode_insn){.kind = insn_lconst, .integer_imm = opcode - lconst_0};
   case fconst_0:
   case fconst_1:
   case fconst_2:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fconst, .f_imm = (float)(opcode - fconst_0)};
+    return (bytecode_insn){.kind = insn_fconst, .f_imm = (float)(opcode - fconst_0)};
   case dconst_0:
   case dconst_1:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dconst, .d_imm = (double)(opcode - dconst_0)};
+    return (bytecode_insn){.kind = insn_dconst, .d_imm = (double)(opcode - dconst_0)};
   case bipush:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iconst, .integer_imm = reader_next_s8(reader, "bipush immediate")};
+    return (bytecode_insn){.kind = insn_iconst, .integer_imm = reader_next_s8(reader, "bipush immediate")};
   case sipush:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iconst, .integer_imm = reader_next_s16(reader, "sipush immediate")};
+    return (bytecode_insn){.kind = insn_iconst, .integer_imm = reader_next_s16(reader, "sipush immediate")};
   case ldc:
-    return (bjvm_bytecode_insn){
-        .kind = bjvm_insn_ldc,
+    return (bytecode_insn){
+        .kind = insn_ldc,
         .cp = checked_cp_entry(ctx->cp, reader_next_u8(reader, "ldc index"),
-                               BJVM_CP_KIND_INTEGER | BJVM_CP_KIND_FLOAT | BJVM_CP_KIND_STRING | BJVM_CP_KIND_CLASS,
+                               CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
                                "ldc index")};
   case ldc_w:
-    return (bjvm_bytecode_insn){
-        .kind = bjvm_insn_ldc,
+    return (bytecode_insn){
+        .kind = insn_ldc,
         .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc_w index"),
-                               BJVM_CP_KIND_INTEGER | BJVM_CP_KIND_FLOAT | BJVM_CP_KIND_STRING | BJVM_CP_KIND_CLASS,
+                               CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
                                "ldc_w index")};
   case ldc2_w:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ldc2_w,
+    return (bytecode_insn){.kind = insn_ldc2_w,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc2_w index"),
-                                                       BJVM_CP_KIND_DOUBLE | BJVM_CP_KIND_LONG, "ldc2_w index")};
+                                                       CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w index")};
   case iload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iload, .index = reader_next_u8(reader, "iload index")};
+    return (bytecode_insn){.kind = insn_iload, .index = reader_next_u8(reader, "iload index")};
   case lload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lload, .index = reader_next_u8(reader, "lload index")};
+    return (bytecode_insn){.kind = insn_lload, .index = reader_next_u8(reader, "lload index")};
   case fload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fload, .index = reader_next_u8(reader, "fload index")};
+    return (bytecode_insn){.kind = insn_fload, .index = reader_next_u8(reader, "fload index")};
   case dload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dload, .index = reader_next_u8(reader, "dload index")};
+    return (bytecode_insn){.kind = insn_dload, .index = reader_next_u8(reader, "dload index")};
   case aload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_aload, .index = reader_next_u8(reader, "aload index")};
+    return (bytecode_insn){.kind = insn_aload, .index = reader_next_u8(reader, "aload index")};
   case iload_0:
   case iload_1:
   case iload_2:
   case iload_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iload, .index = opcode - iload_0};
+    return (bytecode_insn){.kind = insn_iload, .index = opcode - iload_0};
   case lload_0:
   case lload_1:
   case lload_2:
   case lload_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lload, .index = opcode - lload_0};
+    return (bytecode_insn){.kind = insn_lload, .index = opcode - lload_0};
   case fload_0:
   case fload_1:
   case fload_2:
   case fload_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fload, .index = opcode - fload_0};
+    return (bytecode_insn){.kind = insn_fload, .index = opcode - fload_0};
   case dload_0:
   case dload_1:
   case dload_2:
   case dload_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dload, .index = opcode - dload_0};
+    return (bytecode_insn){.kind = insn_dload, .index = opcode - dload_0};
   case aload_0:
   case aload_1:
   case aload_2:
   case aload_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_aload, .index = opcode - aload_0};
+    return (bytecode_insn){.kind = insn_aload, .index = opcode - aload_0};
   case iaload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iaload};
+    return (bytecode_insn){.kind = insn_iaload};
   case laload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_laload};
+    return (bytecode_insn){.kind = insn_laload};
   case faload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_faload};
+    return (bytecode_insn){.kind = insn_faload};
   case daload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_daload};
+    return (bytecode_insn){.kind = insn_daload};
   case aaload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_aaload};
+    return (bytecode_insn){.kind = insn_aaload};
   case baload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_baload};
+    return (bytecode_insn){.kind = insn_baload};
   case caload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_caload};
+    return (bytecode_insn){.kind = insn_caload};
   case saload:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_saload};
+    return (bytecode_insn){.kind = insn_saload};
   case istore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_istore, .index = reader_next_u8(reader, "istore index")};
+    return (bytecode_insn){.kind = insn_istore, .index = reader_next_u8(reader, "istore index")};
   case lstore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lstore, .index = reader_next_u8(reader, "lstore index")};
+    return (bytecode_insn){.kind = insn_lstore, .index = reader_next_u8(reader, "lstore index")};
   case fstore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fstore, .index = reader_next_u8(reader, "fstore index")};
+    return (bytecode_insn){.kind = insn_fstore, .index = reader_next_u8(reader, "fstore index")};
   case dstore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dstore, .index = reader_next_u8(reader, "dstore index")};
+    return (bytecode_insn){.kind = insn_dstore, .index = reader_next_u8(reader, "dstore index")};
   case astore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_astore, .index = reader_next_u8(reader, "astore index")};
+    return (bytecode_insn){.kind = insn_astore, .index = reader_next_u8(reader, "astore index")};
   case istore_0:
   case istore_1:
   case istore_2:
   case istore_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_istore, .index = opcode - istore_0};
+    return (bytecode_insn){.kind = insn_istore, .index = opcode - istore_0};
   case lstore_0:
   case lstore_1:
   case lstore_2:
   case lstore_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lstore, .index = opcode - lstore_0};
+    return (bytecode_insn){.kind = insn_lstore, .index = opcode - lstore_0};
   case fstore_0:
   case fstore_1:
   case fstore_2:
   case fstore_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fstore, .index = opcode - fstore_0};
+    return (bytecode_insn){.kind = insn_fstore, .index = opcode - fstore_0};
   case dstore_0:
   case dstore_1:
   case dstore_2:
   case dstore_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dstore, .index = opcode - dstore_0};
+    return (bytecode_insn){.kind = insn_dstore, .index = opcode - dstore_0};
   case astore_0:
   case astore_1:
   case astore_2:
   case astore_3:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_astore, .index = opcode - astore_0};
+    return (bytecode_insn){.kind = insn_astore, .index = opcode - astore_0};
   case iastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iastore};
+    return (bytecode_insn){.kind = insn_iastore};
   case lastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lastore};
+    return (bytecode_insn){.kind = insn_lastore};
   case fastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fastore};
+    return (bytecode_insn){.kind = insn_fastore};
   case dastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dastore};
+    return (bytecode_insn){.kind = insn_dastore};
   case aastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_aastore};
+    return (bytecode_insn){.kind = insn_aastore};
   case bastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_bastore};
+    return (bytecode_insn){.kind = insn_bastore};
   case castore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_castore};
+    return (bytecode_insn){.kind = insn_castore};
   case sastore:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_sastore};
+    return (bytecode_insn){.kind = insn_sastore};
   case pop:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_pop};
+    return (bytecode_insn){.kind = insn_pop};
   case pop2:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_pop2};
+    return (bytecode_insn){.kind = insn_pop2};
   case dup:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dup};
+    return (bytecode_insn){.kind = insn_dup};
   case dup_x1:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dup_x1};
+    return (bytecode_insn){.kind = insn_dup_x1};
   case dup_x2:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dup_x2};
+    return (bytecode_insn){.kind = insn_dup_x2};
   case dup2:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dup2};
+    return (bytecode_insn){.kind = insn_dup2};
   case dup2_x1:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dup2_x1};
+    return (bytecode_insn){.kind = insn_dup2_x1};
   case dup2_x2:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dup2_x2};
+    return (bytecode_insn){.kind = insn_dup2_x2};
   case swap:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_swap};
+    return (bytecode_insn){.kind = insn_swap};
   case iadd:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iadd};
+    return (bytecode_insn){.kind = insn_iadd};
   case ladd:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ladd};
+    return (bytecode_insn){.kind = insn_ladd};
   case fadd:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fadd};
+    return (bytecode_insn){.kind = insn_fadd};
   case dadd:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dadd};
+    return (bytecode_insn){.kind = insn_dadd};
   case isub:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_isub};
+    return (bytecode_insn){.kind = insn_isub};
   case lsub:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lsub};
+    return (bytecode_insn){.kind = insn_lsub};
   case fsub:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fsub};
+    return (bytecode_insn){.kind = insn_fsub};
   case dsub:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dsub};
+    return (bytecode_insn){.kind = insn_dsub};
   case imul:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_imul};
+    return (bytecode_insn){.kind = insn_imul};
   case lmul:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lmul};
+    return (bytecode_insn){.kind = insn_lmul};
   case fmul:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fmul};
+    return (bytecode_insn){.kind = insn_fmul};
   case dmul:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dmul};
+    return (bytecode_insn){.kind = insn_dmul};
   case idiv:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_idiv};
+    return (bytecode_insn){.kind = insn_idiv};
   case ldiv:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ldiv};
+    return (bytecode_insn){.kind = insn_ldiv};
   case fdiv:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fdiv};
+    return (bytecode_insn){.kind = insn_fdiv};
   case ddiv:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ddiv};
+    return (bytecode_insn){.kind = insn_ddiv};
   case irem:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_irem};
+    return (bytecode_insn){.kind = insn_irem};
   case lrem:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lrem};
+    return (bytecode_insn){.kind = insn_lrem};
   case frem:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_frem};
+    return (bytecode_insn){.kind = insn_frem};
   case drem:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_drem};
+    return (bytecode_insn){.kind = insn_drem};
   case ineg:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ineg};
+    return (bytecode_insn){.kind = insn_ineg};
   case lneg:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lneg};
+    return (bytecode_insn){.kind = insn_lneg};
   case fneg:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fneg};
+    return (bytecode_insn){.kind = insn_fneg};
   case dneg:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dneg};
+    return (bytecode_insn){.kind = insn_dneg};
   case ishl:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ishl};
+    return (bytecode_insn){.kind = insn_ishl};
   case lshl:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lshl};
+    return (bytecode_insn){.kind = insn_lshl};
   case ishr:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ishr};
+    return (bytecode_insn){.kind = insn_ishr};
   case lshr:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lshr};
+    return (bytecode_insn){.kind = insn_lshr};
   case iushr:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iushr};
+    return (bytecode_insn){.kind = insn_iushr};
   case lushr:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lushr};
+    return (bytecode_insn){.kind = insn_lushr};
   case iand:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iand};
+    return (bytecode_insn){.kind = insn_iand};
   case land:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_land};
+    return (bytecode_insn){.kind = insn_land};
   case ior:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ior};
+    return (bytecode_insn){.kind = insn_ior};
   case lor:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lor};
+    return (bytecode_insn){.kind = insn_lor};
   case ixor:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ixor};
+    return (bytecode_insn){.kind = insn_ixor};
   case lxor:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lxor};
+    return (bytecode_insn){.kind = insn_lxor};
   case iinc: {
     u16 index = reader_next_u8(reader, "iinc index");
     s16 const_ = (s16)reader_next_s8(reader, "iinc const");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iinc, .iinc = {index, const_}};
+    return (bytecode_insn){.kind = insn_iinc, .iinc = {index, const_}};
   }
   case i2l:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_i2l};
+    return (bytecode_insn){.kind = insn_i2l};
   case i2f:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_i2f};
+    return (bytecode_insn){.kind = insn_i2f};
   case i2d:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_i2d};
+    return (bytecode_insn){.kind = insn_i2d};
   case l2i:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_l2i};
+    return (bytecode_insn){.kind = insn_l2i};
   case l2f:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_l2f};
+    return (bytecode_insn){.kind = insn_l2f};
   case l2d:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_l2d};
+    return (bytecode_insn){.kind = insn_l2d};
   case f2i:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_f2i};
+    return (bytecode_insn){.kind = insn_f2i};
   case f2l:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_f2l};
+    return (bytecode_insn){.kind = insn_f2l};
   case f2d:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_f2d};
+    return (bytecode_insn){.kind = insn_f2d};
   case d2i:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_d2i};
+    return (bytecode_insn){.kind = insn_d2i};
   case d2l:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_d2l};
+    return (bytecode_insn){.kind = insn_d2l};
   case d2f:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_d2f};
+    return (bytecode_insn){.kind = insn_d2f};
   case i2b:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_i2b};
+    return (bytecode_insn){.kind = insn_i2b};
   case i2c:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_i2c};
+    return (bytecode_insn){.kind = insn_i2c};
   case i2s:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_i2s};
+    return (bytecode_insn){.kind = insn_i2s};
   case lcmp:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lcmp};
+    return (bytecode_insn){.kind = insn_lcmp};
   case fcmpl:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fcmpl};
+    return (bytecode_insn){.kind = insn_fcmpl};
   case fcmpg:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_fcmpg};
+    return (bytecode_insn){.kind = insn_fcmpg};
   case dcmpl:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dcmpl};
+    return (bytecode_insn){.kind = insn_dcmpl};
   case dcmpg:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dcmpg};
+    return (bytecode_insn){.kind = insn_dcmpg};
 
   case ifeq:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifeq,
+    return (bytecode_insn){.kind = insn_ifeq,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_eq offset"), ctx)};
   case ifne:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifne,
+    return (bytecode_insn){.kind = insn_ifne,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_ne offset"), ctx)};
   case iflt:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_iflt,
+    return (bytecode_insn){.kind = insn_iflt,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_lt offset"), ctx)};
   case ifge:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifge,
+    return (bytecode_insn){.kind = insn_ifge,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_ge offset"), ctx)};
   case ifgt:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifgt,
+    return (bytecode_insn){.kind = insn_ifgt,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_gt offset"), ctx)};
   case ifle:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifle,
+    return (bytecode_insn){.kind = insn_ifle,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_le offset"), ctx)};
 
   case if_icmpeq:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_icmpeq,
+    return (bytecode_insn){.kind = insn_if_icmpeq,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_icmpeq offset"), ctx)};
   case if_icmpne:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_icmpne,
+    return (bytecode_insn){.kind = insn_if_icmpne,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_icmpne offset"), ctx)};
   case if_icmplt:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_icmplt,
+    return (bytecode_insn){.kind = insn_if_icmplt,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_icmplt offset"), ctx)};
   case if_icmpge:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_icmpge,
+    return (bytecode_insn){.kind = insn_if_icmpge,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_icmpge offset"), ctx)};
   case if_icmpgt:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_icmpgt,
+    return (bytecode_insn){.kind = insn_if_icmpgt,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_icmpgt offset"), ctx)};
   case if_icmple:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_icmple,
+    return (bytecode_insn){.kind = insn_if_icmple,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_icmple offset"), ctx)};
   case if_acmpeq:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_acmpeq,
+    return (bytecode_insn){.kind = insn_if_acmpeq,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_acmpeq offset"), ctx)};
   case if_acmpne:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_if_acmpne,
+    return (bytecode_insn){.kind = insn_if_acmpne,
                                 .index = checked_pc(pc, reader_next_s16(reader, "if_acmpne offset"), ctx)};
 
   case goto_:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_goto,
+    return (bytecode_insn){.kind = insn_goto,
                                 .index = checked_pc(pc, reader_next_s16(reader, "goto offset"), ctx)};
   case jsr:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_jsr,
+    return (bytecode_insn){.kind = insn_jsr,
                                 .index = checked_pc(pc, reader_next_s16(reader, "jsr offset"), ctx)};
   case ret:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ret, .index = reader_next_u8(reader, "ret index")};
+    return (bytecode_insn){.kind = insn_ret, .index = reader_next_u8(reader, "ret index")};
   case tableswitch: {
     return parse_tableswitch_insn(reader, pc, ctx);
   }
@@ -1133,146 +1133,146 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, bjvm_classfile_
     return parse_lookupswitch_insn(reader, pc, ctx);
   }
   case ireturn:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ireturn};
+    return (bytecode_insn){.kind = insn_ireturn};
   case lreturn:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_lreturn};
+    return (bytecode_insn){.kind = insn_lreturn};
   case freturn:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_freturn};
+    return (bytecode_insn){.kind = insn_freturn};
   case dreturn:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_dreturn};
+    return (bytecode_insn){.kind = insn_dreturn};
   case areturn:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_areturn};
+    return (bytecode_insn){.kind = insn_areturn};
   case return_:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_return};
+    return (bytecode_insn){.kind = insn_return};
 
   case getstatic:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_getstatic,
+    return (bytecode_insn){.kind = insn_getstatic,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "getstatic index"),
-                                                       BJVM_CP_KIND_FIELD_REF, "getstatic field ref")};
+                                                       CP_KIND_FIELD_REF, "getstatic field ref")};
   case putstatic:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_putstatic,
+    return (bytecode_insn){.kind = insn_putstatic,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "putstatic index"),
-                                                       BJVM_CP_KIND_FIELD_REF, "putstatic field ref")};
+                                                       CP_KIND_FIELD_REF, "putstatic field ref")};
 
   case getfield:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_getfield,
+    return (bytecode_insn){.kind = insn_getfield,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "getfield index"),
-                                                       BJVM_CP_KIND_FIELD_REF, "getfield field ref")};
+                                                       CP_KIND_FIELD_REF, "getfield field ref")};
   case putfield:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_putfield,
+    return (bytecode_insn){.kind = insn_putfield,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "putfield index"),
-                                                       BJVM_CP_KIND_FIELD_REF, "putfield field ref")};
+                                                       CP_KIND_FIELD_REF, "putfield field ref")};
 
   case invokevirtual:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_invokevirtual,
+    return (bytecode_insn){.kind = insn_invokevirtual,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokevirtual index"),
-                                                       BJVM_CP_KIND_METHOD_REF | BJVM_CP_KIND_INTERFACE_METHOD_REF,
+                                                       CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
                                                        "invokevirtual method ref")};
   case invokespecial:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_invokespecial,
+    return (bytecode_insn){.kind = insn_invokespecial,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokespecial index"),
-                                                       BJVM_CP_KIND_METHOD_REF | BJVM_CP_KIND_INTERFACE_METHOD_REF,
+                                                       CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
                                                        "invokespecial method ref")};
   case invokestatic:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_invokestatic,
+    return (bytecode_insn){.kind = insn_invokestatic,
                                 .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokestatic index"),
-                                                       BJVM_CP_KIND_METHOD_REF | BJVM_CP_KIND_INTERFACE_METHOD_REF,
+                                                       CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
                                                        "invokestatic method ref")};
 
   case invokeinterface: {
     u16 index = reader_next_u16(reader, "invokeinterface index");
-    bjvm_cp_entry *entry =
-        checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_INTERFACE_METHOD_REF, "invokeinterface method ref");
+    cp_entry *entry =
+        checked_cp_entry(ctx->cp, index, CP_KIND_INTERFACE_METHOD_REF, "invokeinterface method ref");
     reader_next_u8(reader, "invokeinterface count");
     reader_next_u8(reader, "invokeinterface zero");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_invokeinterface, .cp = entry};
+    return (bytecode_insn){.kind = insn_invokeinterface, .cp = entry};
   }
 
   case invokedynamic: {
     u16 index = reader_next_u16(reader, "invokedynamic index");
-    bjvm_cp_entry *entry = checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_INVOKE_DYNAMIC, "indy method ref");
+    cp_entry *entry = checked_cp_entry(ctx->cp, index, CP_KIND_INVOKE_DYNAMIC, "indy method ref");
     reader_next_u16(reader, "invokedynamic zero");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_invokedynamic, .cp = entry};
+    return (bytecode_insn){.kind = insn_invokedynamic, .cp = entry};
   }
 
   case new_: {
     u16 index = reader_next_u16(reader, "new index");
-    bjvm_cp_entry *entry = checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_CLASS, "new class");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_new, .cp = entry};
+    cp_entry *entry = checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "new class");
+    return (bytecode_insn){.kind = insn_new, .cp = entry};
   }
 
   case newarray: {
     u8 atype = reader_next_u8(reader, "newarray type");
-    bjvm_type_kind parsed = parse_atype(atype);
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_newarray, .array_type = parsed};
+    type_kind parsed = parse_atype(atype);
+    return (bytecode_insn){.kind = insn_newarray, .array_type = parsed};
   }
 
   case anewarray: {
     u16 index = reader_next_u16(reader, "anewarray index");
-    bjvm_cp_entry *entry = checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_CLASS, "anewarray class");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_anewarray, .cp = entry};
+    cp_entry *entry = checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "anewarray class");
+    return (bytecode_insn){.kind = insn_anewarray, .cp = entry};
   }
 
   case arraylength:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_arraylength};
+    return (bytecode_insn){.kind = insn_arraylength};
   case athrow:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_athrow};
+    return (bytecode_insn){.kind = insn_athrow};
   case checkcast: {
     u16 index = reader_next_u16(reader, "checkcast index");
-    bjvm_cp_entry *entry = checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_CLASS, "checkcast class");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_checkcast, .cp = entry};
+    cp_entry *entry = checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "checkcast class");
+    return (bytecode_insn){.kind = insn_checkcast, .cp = entry};
   }
 
   case instanceof: {
     u16 index = reader_next_u16(reader, "instanceof index");
-    bjvm_cp_entry *entry = checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_CLASS, "instanceof class");
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_instanceof, .cp = entry};
+    cp_entry *entry = checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "instanceof class");
+    return (bytecode_insn){.kind = insn_instanceof, .cp = entry};
   }
 
   case monitorenter:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_monitorenter};
+    return (bytecode_insn){.kind = insn_monitorenter};
   case monitorexit:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_monitorexit};
+    return (bytecode_insn){.kind = insn_monitorexit};
 
   case wide: {
     switch (reader_next_u8(reader, "widened opcode")) {
     case iload: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_iload, .index = reader_next_u16(reader, "wide iload index")};
+      return (bytecode_insn){.kind = insn_iload, .index = reader_next_u16(reader, "wide iload index")};
     }
     case lload: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_lload, .index = reader_next_u16(reader, "wide lload index")};
+      return (bytecode_insn){.kind = insn_lload, .index = reader_next_u16(reader, "wide lload index")};
     }
     case fload: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_fload, .index = reader_next_u16(reader, "wide fload index")};
+      return (bytecode_insn){.kind = insn_fload, .index = reader_next_u16(reader, "wide fload index")};
     }
     case dload: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_dload, .index = reader_next_u16(reader, "wide dload index")};
+      return (bytecode_insn){.kind = insn_dload, .index = reader_next_u16(reader, "wide dload index")};
     }
     case aload: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_aload, .index = reader_next_u16(reader, "wide aload index")};
+      return (bytecode_insn){.kind = insn_aload, .index = reader_next_u16(reader, "wide aload index")};
     }
     case istore: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_istore, .index = reader_next_u16(reader, "wide istore index")};
+      return (bytecode_insn){.kind = insn_istore, .index = reader_next_u16(reader, "wide istore index")};
     }
     case lstore: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_lstore, .index = reader_next_u16(reader, "wide lstore index")};
+      return (bytecode_insn){.kind = insn_lstore, .index = reader_next_u16(reader, "wide lstore index")};
     }
     case fstore: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_fstore, .index = reader_next_u16(reader, "wide fstore index")};
+      return (bytecode_insn){.kind = insn_fstore, .index = reader_next_u16(reader, "wide fstore index")};
     }
     case dstore: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_dstore, .index = reader_next_u16(reader, "wide dstore index")};
+      return (bytecode_insn){.kind = insn_dstore, .index = reader_next_u16(reader, "wide dstore index")};
     }
     case astore: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_astore, .index = reader_next_u16(reader, "wide astore index")};
+      return (bytecode_insn){.kind = insn_astore, .index = reader_next_u16(reader, "wide astore index")};
     }
     case iinc: {
       u16 index = reader_next_u16(reader, "wide iinc index");
       s16 const_ = reader_next_s16(reader, "wide iinc const");
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_iinc, .iinc = {index, const_}};
+      return (bytecode_insn){.kind = insn_iinc, .iinc = {index, const_}};
     }
     case ret: {
-      return (bjvm_bytecode_insn){.kind = bjvm_insn_ret, .index = reader_next_u16(reader, "wide ret index")};
+      return (bytecode_insn){.kind = insn_ret, .index = reader_next_u16(reader, "wide ret index")};
     }
 
     default: {
@@ -1286,25 +1286,25 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, bjvm_classfile_
   case multianewarray: {
     u16 index = reader_next_u16(reader, "multianewarray index");
     u8 dimensions = reader_next_u8(reader, "multianewarray dimensions");
-    bjvm_cp_class_info *entry =
-        &checked_cp_entry(ctx->cp, index, BJVM_CP_KIND_CLASS, "multianewarray class")->class_info;
-    struct bjvm_multianewarray_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
+    cp_class_info *entry =
+        &checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "multianewarray class")->class_info;
+    struct multianewarray_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
     data->entry = entry;
     data->dimensions = dimensions;
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_multianewarray, .multianewarray = data};
+    return (bytecode_insn){.kind = insn_multianewarray, .multianewarray = data};
   }
 
   case ifnull:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifnull,
+    return (bytecode_insn){.kind = insn_ifnull,
                                 .index = checked_pc(pc, reader_next_s16(reader, "ifnull offset"), ctx)};
   case ifnonnull:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_ifnonnull,
+    return (bytecode_insn){.kind = insn_ifnonnull,
                                 .index = checked_pc(pc, reader_next_s16(reader, "ifnonnull offset"), ctx)};
   case goto_w:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_goto,
+    return (bytecode_insn){.kind = insn_goto,
                                 .index = checked_pc(pc, reader_next_s32(reader, "goto_w offset"), ctx)};
   case jsr_w:
-    return (bjvm_bytecode_insn){.kind = bjvm_insn_jsr,
+    return (bytecode_insn){.kind = insn_jsr,
                                 .index = checked_pc(pc, reader_next_s32(reader, "jsr_w offset"), ctx)};
 
   default: {
@@ -1319,8 +1319,8 @@ bjvm_bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, bjvm_classfile_
  * Parse an instruction at the given program counter and advance the reader.
  * @return The parsed instruction.
  */
-bjvm_bytecode_insn parse_insn(cf_byteslice *reader, u32 pc, bjvm_classfile_parse_ctx *ctx) {
-  bjvm_bytecode_insn insn = parse_insn_impl(reader, pc, ctx);
+bytecode_insn parse_insn(cf_byteslice *reader, u32 pc, classfile_parse_ctx *ctx) {
+  bytecode_insn insn = parse_insn_impl(reader, pc, ctx);
   insn.original_pc = pc;
   return insn;
 }
@@ -1336,21 +1336,21 @@ int convert_pc_to_insn(int pc, int *pc_to_insn, u32 max_pc) {
   return insn;
 }
 
-void convert_pc_offsets_to_insn_offsets(bjvm_bytecode_insn *code, int insn_count, int *pc_to_insn, u32 max_pc) {
+void convert_pc_offsets_to_insn_offsets(bytecode_insn *code, int insn_count, int *pc_to_insn, u32 max_pc) {
   for (int i = 0; i < insn_count; ++i) {
-    bjvm_bytecode_insn *insn = &code[i];
-    if (insn->kind == bjvm_insn_tableswitch) {
+    bytecode_insn *insn = &code[i];
+    if (insn->kind == insn_tableswitch) {
       insn->tableswitch->default_target = convert_pc_to_insn(insn->tableswitch->default_target, pc_to_insn, max_pc);
       int count = insn->tableswitch->high - insn->tableswitch->low + 1;
       for (int j = 0; j < count; ++j) {
         insn->tableswitch->targets[j] = convert_pc_to_insn(insn->tableswitch->targets[j], pc_to_insn, max_pc);
       }
-    } else if (insn->kind == bjvm_insn_lookupswitch) {
+    } else if (insn->kind == insn_lookupswitch) {
       insn->lookupswitch->default_target = convert_pc_to_insn(insn->lookupswitch->default_target, pc_to_insn, max_pc);
       for (int j = 0; j < insn->lookupswitch->targets_count; ++j) {
         insn->lookupswitch->targets[j] = convert_pc_to_insn(insn->lookupswitch->targets[j], pc_to_insn, max_pc);
       }
-    } else if (insn->kind >= bjvm_insn_goto && insn->kind <= bjvm_insn_ifnull) {
+    } else if (insn->kind >= insn_goto && insn->kind <= insn_ifnull) {
       // instruction uses index to store PC; convert to instruction
       insn->index = convert_pc_to_insn(insn->index, pc_to_insn,
                                        max_pc); // always decreases, so ok
@@ -1358,33 +1358,33 @@ void convert_pc_offsets_to_insn_offsets(bjvm_bytecode_insn *code, int insn_count
   }
 }
 
-void parse_bootstrap_methods_attribute(cf_byteslice attr_reader, bjvm_attribute *attr, bjvm_classfile_parse_ctx *ctx) {
-  attr->kind = BJVM_ATTRIBUTE_KIND_BOOTSTRAP_METHODS;
+void parse_bootstrap_methods_attribute(cf_byteslice attr_reader, attribute *attr, classfile_parse_ctx *ctx) {
+  attr->kind = ATTRIBUTE_KIND_BOOTSTRAP_METHODS;
   u16 count = attr->bootstrap_methods.count = reader_next_u16(&attr_reader, "bootstrap methods count");
-  bjvm_bootstrap_method *methods = attr->bootstrap_methods.methods =
-      arena_alloc(ctx->arena, count, sizeof(bjvm_bootstrap_method));
+  bootstrap_method *methods = attr->bootstrap_methods.methods =
+      arena_alloc(ctx->arena, count, sizeof(bootstrap_method));
 
   for (int i = 0; i < count; ++i) {
-    bjvm_bootstrap_method *method = methods + i;
+    bootstrap_method *method = methods + i;
     method->ref = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "bootstrap method ref"),
-                                    BJVM_CP_KIND_METHOD_HANDLE, "bootstrap method ref")
+                                    CP_KIND_METHOD_HANDLE, "bootstrap method ref")
                        ->method_handle;
     u16 arg_count = reader_next_u16(&attr_reader, "bootstrap method arg count");
     method->args_count = arg_count;
-    method->args = arena_alloc(ctx->arena, arg_count, sizeof(bjvm_cp_entry *));
+    method->args = arena_alloc(ctx->arena, arg_count, sizeof(cp_entry *));
     for (int j = 0; j < arg_count; ++j) {
-      const int allowed = BJVM_CP_KIND_STRING | BJVM_CP_KIND_INTEGER | BJVM_CP_KIND_FLOAT | BJVM_CP_KIND_LONG |
-                          BJVM_CP_KIND_DOUBLE | BJVM_CP_KIND_METHOD_HANDLE | BJVM_CP_KIND_METHOD_TYPE |
-                          BJVM_CP_KIND_CLASS | BJVM_CP_KIND_DYNAMIC_CONSTANT;
+      const int allowed = CP_KIND_STRING | CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_LONG |
+                          CP_KIND_DOUBLE | CP_KIND_METHOD_HANDLE | CP_KIND_METHOD_TYPE |
+                          CP_KIND_CLASS | CP_KIND_DYNAMIC_CONSTANT;
       method->args[j] = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "bootstrap method arg"), allowed,
                                          "bootstrap method arg");
     }
   }
 }
 
-void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx, bjvm_attribute *attr);
+void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *attr);
 
-bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfile_parse_ctx *ctx) {
+attribute_code parse_code_attribute(cf_byteslice attr_reader, classfile_parse_ctx *ctx) {
   u16 max_stack = reader_next_u16(&attr_reader, "max stack");
   u16 max_locals = reader_next_u16(&attr_reader, "max locals");
   u32 code_length = reader_next_u32(&attr_reader, "code length");
@@ -1392,7 +1392,7 @@ bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfil
   const u8 *code_start = attr_reader.bytes;
 
   cf_byteslice code_reader = reader_get_slice(&attr_reader, code_length, "code");
-  bjvm_bytecode_insn *code = arena_alloc(ctx->arena, code_length, sizeof(bjvm_bytecode_insn));
+  bytecode_insn *code = arena_alloc(ctx->arena, code_length, sizeof(bytecode_insn));
 
   ctx->current_code_max_pc = code_length;
 
@@ -1411,14 +1411,14 @@ bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfil
   convert_pc_offsets_to_insn_offsets(code, insn_count, pc_to_insn, code_length);
 
   u16 exception_table_length = reader_next_u16(&attr_reader, "exception table length");
-  bjvm_attribute_exception_table *table = nullptr;
+  attribute_exception_table *table = nullptr;
   if (exception_table_length) {
-    table = arena_alloc(ctx->arena, 1, sizeof(bjvm_attribute_exception_table));
+    table = arena_alloc(ctx->arena, 1, sizeof(attribute_exception_table));
     table->entries =
-        arena_alloc(ctx->arena, table->entries_count = exception_table_length, sizeof(bjvm_exception_table_entry));
+        arena_alloc(ctx->arena, table->entries_count = exception_table_length, sizeof(exception_table_entry));
 
     for (int i = 0; i < exception_table_length; ++i) {
-      bjvm_exception_table_entry *ent = table->entries + i;
+      exception_table_entry *ent = table->entries + i;
       u16 start_pc = reader_next_u16(&attr_reader, "exception start pc");
       u16 end_pc = reader_next_u16(&attr_reader, "exception end pc");
       u16 handler_pc = reader_next_u16(&attr_reader, "exception handler pc");
@@ -1436,7 +1436,7 @@ bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfil
       ent->catch_type =
           catch_type == 0
               ? nullptr
-              : &checked_cp_entry(ctx->cp, catch_type, BJVM_CP_KIND_CLASS, "exception catch type")->class_info;
+              : &checked_cp_entry(ctx->cp, catch_type, CP_KIND_CLASS, "exception catch type")->class_info;
     }
   }
 
@@ -1444,21 +1444,21 @@ bjvm_attribute_code parse_code_attribute(cf_byteslice attr_reader, bjvm_classfil
   ctx->temp_allocation = nullptr;
 
   u16 attributes_count = reader_next_u16(&attr_reader, "code attributes count");
-  bjvm_attribute *attributes = arena_alloc(ctx->arena, attributes_count, sizeof(bjvm_attribute));
+  attribute *attributes = arena_alloc(ctx->arena, attributes_count, sizeof(attribute));
 
-  bjvm_attribute_line_number_table *lnt = NULL;
-  bjvm_attribute_local_variable_table *lvt = NULL;
+  attribute_line_number_table *lnt = NULL;
+  attribute_local_variable_table *lvt = NULL;
   for (int i = 0; i < attributes_count; ++i) {
-    bjvm_attribute *attr = attributes + i;
+    attribute *attr = attributes + i;
     parse_attribute(&attr_reader, ctx, attr);
-    if (attr->kind == BJVM_ATTRIBUTE_KIND_LINE_NUMBER_TABLE) {
+    if (attr->kind == ATTRIBUTE_KIND_LINE_NUMBER_TABLE) {
       lnt = &attr->lnt;
-    } else if (attr->kind == BJVM_ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE) {
+    } else if (attr->kind == ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE) {
       lvt = &attr->lvt;
     }
   }
 
-  return (bjvm_attribute_code){.max_stack = max_stack,
+  return (attribute_code){.max_stack = max_stack,
                                .max_locals = max_locals,
                                .insn_count = insn_count,
                                .max_formal_pc = ctx->current_code_max_pc,
@@ -1495,60 +1495,60 @@ void check_unqualified_name(slice name, bool is_method, const char *reading) {
   }
 }
 
-void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx, bjvm_attribute *attr) {
+void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *attr) {
   u16 index = reader_next_u16(reader, "method attribute name");
   attr->name = checked_get_utf8(ctx->cp, index, "method attribute name");
   attr->length = reader_next_u32(reader, "method attribute length");
 
   cf_byteslice attr_reader = reader_get_slice(reader, attr->length, "Attribute data");
   if (utf8_equals(attr->name, "Code")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_CODE;
+    attr->kind = ATTRIBUTE_KIND_CODE;
     attr->code = parse_code_attribute(attr_reader, ctx);
   } else if (utf8_equals(attr->name, "StackMapTable")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_STACK_MAP_TABLE;
+    attr->kind = ATTRIBUTE_KIND_STACK_MAP_TABLE;
     attr->smt.entries_count = reader_next_u16(&attr_reader, "stack map table count");
     attr->smt.data = arena_alloc(ctx->arena, attr_reader.len, sizeof(uint8_t));
     attr->smt.length = attr_reader.len;
     memcpy(attr->smt.data, attr_reader.bytes, attr_reader.len);
   } else if (utf8_equals(attr->name, "ConstantValue")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_CONSTANT_VALUE;
+    attr->kind = ATTRIBUTE_KIND_CONSTANT_VALUE;
     attr->constant_value = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "constant value index"),
-                                            BJVM_CP_KIND_STRING | BJVM_CP_KIND_INTEGER | BJVM_CP_KIND_FLOAT |
-                                                BJVM_CP_KIND_LONG | BJVM_CP_KIND_DOUBLE,
+                                            CP_KIND_STRING | CP_KIND_INTEGER | CP_KIND_FLOAT |
+                                                CP_KIND_LONG | CP_KIND_DOUBLE,
                                             "constant value");
   } else if (utf8_equals(attr->name, "BootstrapMethods")) {
     parse_bootstrap_methods_attribute(attr_reader, attr, ctx);
   } else if (utf8_equals(attr->name, "EnclosingMethod")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_ENCLOSING_METHOD;
+    attr->kind = ATTRIBUTE_KIND_ENCLOSING_METHOD;
     u16 enclosing_class_index = reader_next_u16(&attr_reader, "enclosing class index");
     u16 enclosing_method_index = reader_next_u16(&attr_reader, "enclosing method index");
-    attr->enclosing_method = (bjvm_attribute_enclosing_method){
+    attr->enclosing_method = (attribute_enclosing_method){
         enclosing_class_index
-            ? &checked_cp_entry(ctx->cp, enclosing_class_index, BJVM_CP_KIND_CLASS, "enclosing class")->class_info
+            ? &checked_cp_entry(ctx->cp, enclosing_class_index, CP_KIND_CLASS, "enclosing class")->class_info
             : nullptr,
         enclosing_method_index
-            ? &checked_cp_entry(ctx->cp, enclosing_method_index, BJVM_CP_KIND_NAME_AND_TYPE, "enclosing method")
+            ? &checked_cp_entry(ctx->cp, enclosing_method_index, CP_KIND_NAME_AND_TYPE, "enclosing method")
                    ->name_and_type
             : nullptr};
   } else if (utf8_equals(attr->name, "SourceFile")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_SOURCE_FILE;
+    attr->kind = ATTRIBUTE_KIND_SOURCE_FILE;
     attr->source_file.name =
-        checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "source file index"), BJVM_CP_KIND_UTF8, "source file")
+        checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "source file index"), CP_KIND_UTF8, "source file")
             ->utf8;
   } else if (utf8_equals(attr->name, "LineNumberTable")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_LINE_NUMBER_TABLE;
+    attr->kind = ATTRIBUTE_KIND_LINE_NUMBER_TABLE;
     u16 count = attr->lnt.entry_count = reader_next_u16(&attr_reader, "line number table count");
-    attr->lnt.entries = arena_alloc(ctx->arena, count, sizeof(bjvm_line_number_table_entry));
+    attr->lnt.entries = arena_alloc(ctx->arena, count, sizeof(line_number_table_entry));
     for (int i = 0; i < count; ++i) {
-      bjvm_line_number_table_entry *entry = attr->lnt.entries + i;
+      line_number_table_entry *entry = attr->lnt.entries + i;
       entry->start_pc = reader_next_u16(&attr_reader, "line number start pc");
       entry->line = reader_next_u16(&attr_reader, "line number");
     }
   } else if (utf8_equals(attr->name, "MethodParameters")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_METHOD_PARAMETERS;
+    attr->kind = ATTRIBUTE_KIND_METHOD_PARAMETERS;
     int count = attr->method_parameters.count = reader_next_u8(&attr_reader, "method parameters count");
-    bjvm_method_parameter_info *params = attr->method_parameters.params =
-        arena_alloc(ctx->arena, count, sizeof(bjvm_method_parameter_info));
+    method_parameter_info *params = attr->method_parameters.params =
+        arena_alloc(ctx->arena, count, sizeof(method_parameter_info));
 
     for (int i = 0; i < count; ++i) {
       u16 name_index = reader_next_u16(&attr_reader, "method parameter name");
@@ -1571,55 +1571,55 @@ void parse_attribute(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx, bjvm_a
   memcpy(data, attr_reader.bytes, attr_reader.len);                                                                    \
   attr->annotations.length = attr_reader.len;
 
-    BYTE_ARRAY_ANNOTATION(BJVM_ATTRIBUTE_KIND_RUNTIME_VISIBLE_ANNOTATIONS, annotations);
+    BYTE_ARRAY_ANNOTATION(ATTRIBUTE_KIND_RUNTIME_VISIBLE_ANNOTATIONS, annotations);
   } else if (utf8_equals(attr->name, "RuntimeVisibleParameterAnnotations")) {
-    BYTE_ARRAY_ANNOTATION(BJVM_ATTRIBUTE_KIND_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS, parameter_annotations);
+    BYTE_ARRAY_ANNOTATION(ATTRIBUTE_KIND_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS, parameter_annotations);
   } else if (utf8_equals(attr->name, "RuntimeVisibleTypeAnnotations")) {
-    BYTE_ARRAY_ANNOTATION(BJVM_ATTRIBUTE_KIND_RUNTIME_VISIBLE_TYPE_ANNOTATIONS, type_annotations);
+    BYTE_ARRAY_ANNOTATION(ATTRIBUTE_KIND_RUNTIME_VISIBLE_TYPE_ANNOTATIONS, type_annotations);
   } else if (utf8_equals(attr->name, "AnnotationDefault")) {
-    BYTE_ARRAY_ANNOTATION(BJVM_ATTRIBUTE_KIND_ANNOTATION_DEFAULT, annotation_default);
+    BYTE_ARRAY_ANNOTATION(ATTRIBUTE_KIND_ANNOTATION_DEFAULT, annotation_default);
   } else if (utf8_equals(attr->name, "Signature")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_SIGNATURE;
+    attr->kind = ATTRIBUTE_KIND_SIGNATURE;
     attr->signature.utf8 =
         checked_get_utf8(ctx->cp, reader_next_u16(&attr_reader, "Signature index"), "Signature index");
   } else if (utf8_equals(attr->name, "NestHost")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_NEST_HOST;
-    attr->nest_host = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "NestHost index"), BJVM_CP_KIND_CLASS,
+    attr->kind = ATTRIBUTE_KIND_NEST_HOST;
+    attr->nest_host = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "NestHost index"), CP_KIND_CLASS,
                                         "NestHost index")
                            ->class_info;
   } else if (utf8_equals(attr->name, "LocalVariableTable")) {
-    attr->kind = BJVM_ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE;
+    attr->kind = ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE;
     u16 count = attr->lvt.entries_count = reader_next_u16(&attr_reader, "local variable table count");
-    attr->lvt.entries = arena_alloc(ctx->arena, count, sizeof(bjvm_attribute_lvt_entry));
+    attr->lvt.entries = arena_alloc(ctx->arena, count, sizeof(attribute_lvt_entry));
     for (int i = 0; i < count; ++i) {
-      bjvm_attribute_lvt_entry *entry = &attr->lvt.entries[i];
+      attribute_lvt_entry *entry = &attr->lvt.entries[i];
       entry->start_pc = reader_next_u16(&attr_reader, "local variable start pc");
       entry->end_pc = entry->start_pc + reader_next_u16(&attr_reader, "local variable length");
-      entry->name = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "local variable name"), BJVM_CP_KIND_UTF8,
+      entry->name = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "local variable name"), CP_KIND_UTF8,
                                      "local variable name")
                         ->utf8;
       entry->descriptor = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "local variable descriptor"),
-                                           BJVM_CP_KIND_UTF8, "local variable descriptor")
+                                           CP_KIND_UTF8, "local variable descriptor")
                               ->utf8;
       entry->index = reader_next_u16(&attr_reader, "local variable index");
     }
   } else {
-    attr->kind = BJVM_ATTRIBUTE_KIND_UNKNOWN;
+    attr->kind = ATTRIBUTE_KIND_UNKNOWN;
   }
 }
 
 /**
  * Parse a method in a classfile.
  */
-bjvm_cp_method parse_method(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx) {
-  bjvm_cp_method method = {0};
+cp_method parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx) {
+  cp_method method = {0};
   method.access_flags = reader_next_u16(reader, "method access flags");
   method.name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "method name"), "method name");
   method.unparsed_descriptor =
       checked_get_utf8(ctx->cp, reader_next_u16(reader, "method descriptor"), "method descriptor");
   method.attributes_count = reader_next_u16(reader, "method attributes count");
-  method.attributes = arena_alloc(ctx->arena, method.attributes_count, sizeof(bjvm_attribute));
-  method.descriptor = arena_alloc(ctx->arena, 1, sizeof(bjvm_method_descriptor));
+  method.attributes = arena_alloc(ctx->arena, method.attributes_count, sizeof(attribute));
+  method.descriptor = arena_alloc(ctx->arena, 1, sizeof(method_descriptor));
   method.is_ctor = utf8_equals(method.name, "<init>");
   method.is_clinit = utf8_equals(method.name, "<clinit>");
   char *error = parse_method_descriptor(method.unparsed_descriptor, method.descriptor, ctx->arena);
@@ -1628,9 +1628,9 @@ bjvm_cp_method parse_method(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx)
   }
 
   for (int i = 0; i < method.attributes_count; i++) {
-    bjvm_attribute *attrib = &method.attributes[i];
+    attribute *attrib = &method.attributes[i];
     parse_attribute(reader, ctx, attrib);
-    if (attrib->kind == BJVM_ATTRIBUTE_KIND_CODE) {
+    if (attrib->kind == ATTRIBUTE_KIND_CODE) {
       method.code = &attrib->code;
     }
   }
@@ -1638,13 +1638,13 @@ bjvm_cp_method parse_method(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx)
   return method;
 }
 
-bjvm_cp_field read_field(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx) {
-  bjvm_cp_field field = {.access_flags = reader_next_u16(reader, "field access flags"),
+cp_field read_field(cf_byteslice *reader, classfile_parse_ctx *ctx) {
+  cp_field field = {.access_flags = reader_next_u16(reader, "field access flags"),
                          .name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "field name"), "field name"),
                          .descriptor =
                              checked_get_utf8(ctx->cp, reader_next_u16(reader, "field descriptor"), "field descriptor"),
                          .attributes_count = reader_next_u16(reader, "field attributes count")};
-  field.attributes = arena_alloc(ctx->arena, field.attributes_count, sizeof(bjvm_attribute));
+  field.attributes = arena_alloc(ctx->arena, field.attributes_count, sizeof(attribute));
 
   for (int i = 0; i < field.attributes_count; i++) {
     parse_attribute(reader, ctx, field.attributes + i);
@@ -1662,7 +1662,7 @@ bjvm_cp_field read_field(cf_byteslice *reader, bjvm_classfile_parse_ctx *ctx) {
  * length len, writing the result to result and returning an owned error message
  * if there was an error.
  */
-char *parse_field_descriptor(const char **chars, size_t len, bjvm_field_descriptor *result, arena *arena) {
+char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *result, arena *arena) {
   const char *end = *chars + len;
   int dimensions = 0;
   while (*chars < end) {
@@ -1680,7 +1680,7 @@ char *parse_field_descriptor(const char **chars, size_t len, bjvm_field_descript
     case 'S':
     case 'Z':
     case 'V':
-      result->base_kind = (bjvm_type_kind)c;
+      result->base_kind = (type_kind)c;
       if (c == 'V' && dimensions > 0)
         return strdup("void cannot have dimensions");
       return nullptr;
@@ -1698,7 +1698,7 @@ char *parse_field_descriptor(const char **chars, size_t len, bjvm_field_descript
         return strdup("missing reference type name");
       }
       ++*chars;
-      result->base_kind = BJVM_TYPE_KIND_REFERENCE;
+      result->base_kind = TYPE_KIND_REFERENCE;
       result->class_name = arena_make_str(arena, start, class_name_len);
       return nullptr;
     }
@@ -1713,7 +1713,7 @@ char *parse_field_descriptor(const char **chars, size_t len, bjvm_field_descript
   return strdup("Expected field descriptor character, but reached end of string");
 }
 
-char *parse_method_descriptor(const slice entry, bjvm_method_descriptor *result, arena *arena) {
+char *parse_method_descriptor(const slice entry, method_descriptor *result, arena *arena) {
   // MethodDescriptor:
   // ( { ParameterDescriptor } )
   // ParameterDescriptor:
@@ -1723,12 +1723,12 @@ char *parse_method_descriptor(const slice entry, bjvm_method_descriptor *result,
   if (len < 1 || *chars++ != '(')
     return strdup("Expected '('");
   result->args_count = 0;
-  bjvm_field_descriptor *fields = nullptr;
+  field_descriptor *fields = nullptr;
   while (chars < end && *chars != ')') {
-    bjvm_field_descriptor arg;
+    field_descriptor arg;
 
     char *error = parse_field_descriptor(&chars, end - chars, &arg, arena);
-    if (error || arg.base_kind == BJVM_TYPE_KIND_VOID) {
+    if (error || arg.base_kind == TYPE_KIND_VOID) {
       free(fields);
       return error ? error : strdup("void as method parameter");
     }
@@ -1736,9 +1736,9 @@ char *parse_method_descriptor(const slice entry, bjvm_method_descriptor *result,
     arrput(fields, arg);
     result->args_count++;
   }
-  result->args = arena_alloc(arena, result->args_count, sizeof(bjvm_field_descriptor));
+  result->args = arena_alloc(arena, result->args_count, sizeof(field_descriptor));
   if (result->args_count) {
-    memcpy(result->args, fields, result->args_count * sizeof(bjvm_field_descriptor));
+    memcpy(result->args, fields, result->args_count * sizeof(field_descriptor));
   }
   arrfree(fields);
   if (chars >= end) {
@@ -1750,11 +1750,11 @@ char *parse_method_descriptor(const slice entry, bjvm_method_descriptor *result,
 }
 
 // Go through the InvokeDynamic entries and link their bootstrap method pointers
-void link_bootstrap_methods(bjvm_classdesc *cf) {
-  bjvm_constant_pool *cp = cf->pool;
+void link_bootstrap_methods(classdesc *cf) {
+  constant_pool *cp = cf->pool;
   for (int i = 1; i < cp->entries_len; i++) {
-    if (cp->entries[i].kind == BJVM_CP_KIND_INVOKE_DYNAMIC) {
-      bjvm_cp_indy_info *indy = &cp->entries[i].indy_info;
+    if (cp->entries[i].kind == CP_KIND_INVOKE_DYNAMIC) {
+      cp_indy_info *indy = &cp->entries[i].indy_info;
       int index = (int)(uintptr_t)indy->method;
       if (!cf->bootstrap_methods) {
         format_error_static("Missing BootstrapMethods attribute");
@@ -1767,11 +1767,11 @@ void link_bootstrap_methods(bjvm_classdesc *cf) {
   }
 }
 
-parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len, bjvm_classdesc *result, heap_string *error) {
+parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, heap_string *error) {
   cf_byteslice reader = {.bytes = bytes, .len = len};
-  bjvm_classdesc *cf = result;
+  classdesc *cf = result;
   arena_init(&cf->arena);
-  bjvm_classfile_parse_ctx ctx = {.arena = &cf->arena, .cp = nullptr};
+  classfile_parse_ctx ctx = {.arena = &cf->arena, .cp = nullptr};
 
   if (setjmp(format_error_jmp_buf)) {
     arena_uninit(&cf->arena); // clean up our shit
@@ -1781,7 +1781,7 @@ parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len, bjvm_classdesc 
     }
     if (format_error_needs_free)
       free(format_error_msg);
-    result->state = BJVM_CD_STATE_LINKAGE_ERROR;
+    result->state = CD_STATE_LINKAGE_ERROR;
     return PARSE_ERR;
   }
 
@@ -1807,44 +1807,44 @@ parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len, bjvm_classdesc 
   // the actual value of the flag in the class file and the version of the
   // class file."
   // -> getModifiers doesn't return this bit
-  cf->access_flags &= ~BJVM_ACCESS_SYNCHRONIZED; // not a typo, this is the ACC_SUPER bit
+  cf->access_flags &= ~ACCESS_SYNCHRONIZED; // not a typo, this is the ACC_SUPER bit
 
-  bjvm_cp_class_info *this_class =
-      &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"), BJVM_CP_KIND_CLASS, "this class")->class_info;
+  cp_class_info *this_class =
+      &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"), CP_KIND_CLASS, "this class")->class_info;
   cf->self = this_class;
   cf->name = (heap_string){.chars = this_class->name.chars, .len = this_class->name.len}; // TODO unjank
 
   bool is_primordial_object = utf8_equals(hslc(cf->name), "java/lang/Object");
 
   u16 super_class = reader_next_u16(&reader, "super class");
-  cf->super_class = ((cf->access_flags & BJVM_ACCESS_MODULE) | is_primordial_object)
+  cf->super_class = ((cf->access_flags & ACCESS_MODULE) | is_primordial_object)
                         ? nullptr
-                        : &checked_cp_entry(cf->pool, super_class, BJVM_CP_KIND_CLASS, "super class")->class_info;
+                        : &checked_cp_entry(cf->pool, super_class, CP_KIND_CLASS, "super class")->class_info;
 
   // Parse superinterfaces
   cf->interfaces_count = reader_next_u16(&reader, "interfaces count");
-  cf->interfaces = arena_alloc(ctx.arena, cf->interfaces_count, sizeof(bjvm_cp_class_info *));
+  cf->interfaces = arena_alloc(ctx.arena, cf->interfaces_count, sizeof(cp_class_info *));
 
   for (int i = 0; i < cf->interfaces_count; i++) {
     cf->interfaces[i] =
-        &checked_cp_entry(cf->pool, reader_next_u16(&reader, "interface"), BJVM_CP_KIND_CLASS, "superinterface")
+        &checked_cp_entry(cf->pool, reader_next_u16(&reader, "interface"), CP_KIND_CLASS, "superinterface")
              ->class_info;
   }
 
   // Parse fields
   cf->fields_count = reader_next_u16(&reader, "fields count");
-  cf->fields = arena_alloc(ctx.arena, cf->fields_count, sizeof(bjvm_cp_field));
+  cf->fields = arena_alloc(ctx.arena, cf->fields_count, sizeof(cp_field));
   for (int i = 0; i < cf->fields_count; i++) {
     cf->fields[i] = read_field(&reader, &ctx);
     cf->fields[i].my_class = result;
   }
   cf->static_fields = nullptr;
-  cf->static_references = bjvm_empty_bitset();
-  cf->instance_references = bjvm_empty_bitset();
+  cf->static_references = empty_bitset();
+  cf->instance_references = empty_bitset();
 
   // Parse methods
   cf->methods_count = reader_next_u16(&reader, "methods count");
-  cf->methods = arena_alloc(ctx.arena, cf->methods_count, sizeof(bjvm_cp_method));
+  cf->methods = arena_alloc(ctx.arena, cf->methods_count, sizeof(cp_method));
 
   cf->bootstrap_methods = nullptr;
   cf->indy_insns = nullptr;
@@ -1853,28 +1853,28 @@ parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len, bjvm_classdesc 
   bool in_MethodHandle = utf8_equals(hslc(cf->name), "java/lang/invoke/MethodHandle") ||
                          utf8_equals(hslc(cf->name), "java/lang/invoke/VarHandle");
   for (int i = 0; i < cf->methods_count; ++i) {
-    bjvm_cp_method *method = cf->methods + i;
+    cp_method *method = cf->methods + i;
     *method = parse_method(&reader, &ctx);
     method->my_class = result;
 
     // Mark signature polymorphic functions
-    if (in_MethodHandle && method->access_flags & BJVM_ACCESS_NATIVE) {
+    if (in_MethodHandle && method->access_flags & ACCESS_NATIVE) {
       method->is_signature_polymorphic = true;
     }
   }
 
   // Parse attributes
   cf->attributes_count = reader_next_u16(&reader, "class attributes count");
-  cf->attributes = arena_alloc(ctx.arena, cf->attributes_count, sizeof(bjvm_attribute));
+  cf->attributes = arena_alloc(ctx.arena, cf->attributes_count, sizeof(attribute));
   for (int i = 0; i < cf->attributes_count; i++) {
-    bjvm_attribute *attr = cf->attributes + i;
+    attribute *attr = cf->attributes + i;
     parse_attribute(&reader, &ctx, attr);
 
-    if (attr->kind == BJVM_ATTRIBUTE_KIND_BOOTSTRAP_METHODS) {
+    if (attr->kind == ATTRIBUTE_KIND_BOOTSTRAP_METHODS) {
       cf->bootstrap_methods = &attr->bootstrap_methods;
-    } else if (attr->kind == BJVM_ATTRIBUTE_KIND_SOURCE_FILE) {
+    } else if (attr->kind == ATTRIBUTE_KIND_SOURCE_FILE) {
       cf->source_file = &attr->source_file;
-    } else if (attr->kind == BJVM_ATTRIBUTE_KIND_NEST_HOST) {
+    } else if (attr->kind == ATTRIBUTE_KIND_NEST_HOST) {
       cf->nest_host = attr->nest_host;
     }
   }
@@ -1885,16 +1885,16 @@ parse_result_t bjvm_parse_classfile(const u8 *bytes, size_t len, bjvm_classdesc 
   }
 
   link_bootstrap_methods(cf);
-  result->state = BJVM_CD_STATE_LOADED;
+  result->state = CD_STATE_LOADED;
 
   // Add indy instruction pointers
   for (int i = 0; i < cf->methods_count; ++i) {
-    bjvm_cp_method *method = cf->methods + i;
+    cp_method *method = cf->methods + i;
     if (method->code) {
       // Add pointers to indy instructions for their CallSites to be GC roots
       for (int j = 0; j < method->code->insn_count; ++j) {
-        bjvm_bytecode_insn *insn = method->code->code + j;
-        if (insn->kind == bjvm_insn_invokedynamic) {
+        bytecode_insn *insn = method->code->code + j;
+        if (insn->kind == insn_invokedynamic) {
           arrput(cf->indy_insns, insn);
         }
       }

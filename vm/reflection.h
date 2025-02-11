@@ -4,10 +4,10 @@
 #include <util.h>
 #include <bjvm.h>
 
-slice bjvm_unparse_field_descriptor(slice str, const bjvm_field_descriptor *desc);
-void bjvm_reflect_initialize_field(bjvm_thread *thread, bjvm_classdesc *classdesc, bjvm_cp_field *field);
-void bjvm_reflect_initialize_constructor(bjvm_thread *thread, bjvm_classdesc *classdesc, bjvm_cp_method *method);
-void bjvm_reflect_initialize_method(bjvm_thread *thread, bjvm_classdesc *classdesc, bjvm_cp_method *method);
-object bjvm_reflect_get_method_parameters(bjvm_thread *thread, bjvm_cp_method *method);
+slice unparse_field_descriptor(slice str, const field_descriptor *desc);
+void reflect_initialize_field(vm_thread *thread, classdesc *classdesc, cp_field *field);
+void reflect_initialize_constructor(vm_thread *thread, classdesc *classdesc, cp_method *method);
+void reflect_initialize_method(vm_thread *thread, classdesc *classdesc, cp_method *method);
+object reflect_get_method_parameters(vm_thread *thread, cp_method *method);
 
 #endif

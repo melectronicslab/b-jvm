@@ -6,13 +6,13 @@
 
 DEFINE_ASYNC(monitor_acquire) {
   // since this is a single-threaded vm, we don't need atomic operations
-  self->handle = bjvm_make_handle(args->thread, args->obj);
+  self->handle = make_handle(args->thread, args->obj);
   monitor_data *allocated_data = nullptr; // lazily allocated
 
-  bjvm_header_word volatile *shared_header = &self->handle->obj->header_word;
+  header_word volatile *shared_header = &self->handle->obj->header_word;
   assert((uintptr_t)shared_header % 8 == 0);  // should be aligned due to how bump_allocate works
 
-  bjvm_header_word fetched_header;
+  header_word fetched_header;
 
   __atomic_load(shared_header, &fetched_header, __ATOMIC_ACQUIRE);
   monitor_data *data;
@@ -24,8 +24,8 @@ DEFINE_ASYNC(monitor_acquire) {
     // we need to allocate one ourselves
     if (!allocated_data) allocated_data = allocate_monitor(args->thread);
     if (unlikely(!allocated_data)) { // oom
-      bjvm_drop_handle(args->thread, self->handle);
-      bjvm_out_of_memory(args->thread);
+      drop_handle(args->thread, self->handle);
+      out_of_memory(args->thread);
       ASYNC_RETURN(-1);
     }
 
@@ -33,7 +33,7 @@ DEFINE_ASYNC(monitor_acquire) {
     allocated_data->tid = -1; // not owned (as a microöptimisation, we could claim it here beforehand)
     allocated_data->hold_count = 0;
 
-    bjvm_header_word proposed_header = { .expanded_data = allocated_data };
+    header_word proposed_header = { .expanded_data = allocated_data };
 
     // try to put it in- loop again if CAS fails
     if (__atomic_compare_exchange(shared_header, &fetched_header, &proposed_header,
@@ -67,14 +67,14 @@ DEFINE_ASYNC(monitor_acquire) {
   }
 
   // done acquiring the monitor
-  bjvm_drop_handle(args->thread, self->handle);
+  drop_handle(args->thread, self->handle);
   ASYNC_END(0);
 }
 
-int monitor_release(bjvm_thread *thread, bjvm_obj_header *obj) {
+int monitor_release(vm_thread *thread, obj_header *obj) {
   // since this is a single-threaded vm, we don't need atomic operations
   // no handles necessary because no GC (i hope)
-  bjvm_header_word fetched_header;
+  header_word fetched_header;
   __atomic_load(&obj->header_word, &fetched_header, __ATOMIC_ACQUIRE);
   monitor_data *lock = inspect_monitor(&fetched_header);
 

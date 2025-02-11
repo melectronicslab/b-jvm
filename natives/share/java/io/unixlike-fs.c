@@ -20,9 +20,9 @@ static fs_result get_attributes(slice file_name, boolean_attributes *result);
 __attribute__((constructor)) static void init() {
   active_fs.fs.create_virtual_file = create_virtual_file;
   active_fs.fs.get_attributes = get_attributes;
-  active_fs.synthetic_entries = bjvm_make_hash_table(free, 0.75, 16);
+  active_fs.synthetic_entries = make_hash_table(free, 0.75, 16);
 
-  create_virtual_file(STR("./nio.bjvm_lib"), BA_EXISTS | BA_REGULAR, "", 0);
+  create_virtual_file(STR("./nio.lib"), BA_EXISTS | BA_REGULAR, "", 0);
 
   if (posix_fs_supported()) {
     posix_fs_init(&active_fs);
@@ -35,12 +35,12 @@ void create_virtual_file(slice file_name, boolean_attributes attributes, char co
   file->length = size;
   memcpy(file->data, data, size);
 
-  void *result = bjvm_hash_table_insert(&active_fs.synthetic_entries, file_name.chars, file_name.len, file);
+  void *result = hash_table_insert(&active_fs.synthetic_entries, file_name.chars, file_name.len, file);
   if (result) free(result);
 }
 
 fs_result get_attributes(slice file_name, boolean_attributes *result) {
-  virtual_file *virtual_file = bjvm_hash_table_lookup(&active_fs.synthetic_entries, file_name.chars, file_name.len);
+  virtual_file *virtual_file = hash_table_lookup(&active_fs.synthetic_entries, file_name.chars, file_name.len);
   if (virtual_file) {
     *result = virtual_file->attrs;
     return FS_OK;

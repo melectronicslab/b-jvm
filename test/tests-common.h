@@ -2,8 +2,8 @@
 // Created by alec on 12/21/24.
 //
 
-#ifndef BJVM_TESTS_COMMON_H
-#define BJVM_TESTS_COMMON_H
+#ifndef TESTS_COMMON_H
+#define TESTS_COMMON_H
 
 #include <bjvm.h>
 
@@ -33,7 +33,7 @@ static inline std::string_view to_string_view(heap_string str) {
     }
 
 
-    std::unique_ptr<bjvm_vm, void(*)(bjvm_vm*)> CreateTestVM(bjvm_vm_options options = bjvm_default_vm_options());
+    std::unique_ptr<vm, void(*)(vm*)> CreateTestVM(vm_options options = default_vm_options());
   std::vector<std::string> ListDirectory(const std::string &path,
                                          bool recursive);
   bool EndsWith(const std::string &s, const std::string &suffix);
@@ -56,4 +56,4 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio = true, s
 ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio = true, std::string main_class = "Main", std::string input = "");
 }
 
-#endif // BJVM_TESTS_COMMON_H
+#endif // TESTS_COMMON_H

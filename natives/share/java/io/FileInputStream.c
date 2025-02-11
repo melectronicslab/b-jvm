@@ -19,14 +19,14 @@ DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
   heap_string filename = AsHeapString(args[0].handle->obj, on_oom);
 
   // this method does no allocations or yielding, so we can use the same pointer
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   DCHECK(fd);
   s32 unix_fd = open(filename.chars, O_RDONLY);
   StoreFieldInt(fd, "fd", unix_fd);
 
   if (unix_fd < 0) {
     // TODO use errno to give a better error message
-    bjvm_raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
+    raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
                          hslc(filename));
   }
 
@@ -40,16 +40,16 @@ DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
 DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
   DCHECK(argc == 0);
   // this method does no allocations or yielding, so we can use the same pointer
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   DCHECK(fd);
   s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd < 0) {
-    bjvm_raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
+    raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
                             STR("File not found"));
     return value_null();
   }
 
-  bjvm_obj_header *array = args[0].handle->obj;
+  obj_header *array = args[0].handle->obj;
   if (!array) {
     ThrowLangException(NullPointerException);
     return value_null();
@@ -66,27 +66,27 @@ DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
   }
 
   if (bytes_read < 0) {
-    bjvm_raise_vm_exception(thread, STR("java/io/IOException"),
+    raise_vm_exception(thread, STR("java/io/IOException"),
                             STR("Error reading file"));
     return value_null();
   }
 
-  return (bjvm_stack_value) { .i = bytes_read == 0 ? -1 : (int) res };
+  return (stack_value) { .i = bytes_read == 0 ? -1 : (int) res };
 }
 
 DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   DCHECK(argc == 3);
   // this method does no allocations or yielding, so we can use the same pointer
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   DCHECK(fd);
   s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd < 0) {
-    bjvm_raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
+    raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
                             STR("File not found"));
     return value_null();
   }
 
-  bjvm_obj_header *array = args[0].handle->obj;
+  obj_header *array = args[0].handle->obj;
   if (!array) {
     ThrowLangException(NullPointerException);
     return value_null();
@@ -110,16 +110,16 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   }
 
   if (bytes_read < 0) {
-    bjvm_raise_vm_exception(thread, STR("java/io/IOException"),
+    raise_vm_exception(thread, STR("java/io/IOException"),
                            STR("Error reading file"));
     return value_null();
   }
-  return (bjvm_stack_value) { .i = bytes_read == 0 ? -1 : bytes_read };
+  return (stack_value) { .i = bytes_read == 0 ? -1 : bytes_read };
 }
 
 DECLARE_NATIVE("java/io", FileInputStream, close0, "()V") {
   // this method does no allocations or yielding, so we can use the same pointer
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   DCHECK(fd);
 
   s32 unix_fd = LoadFieldInt(fd, "fd");
@@ -131,11 +131,11 @@ DECLARE_NATIVE("java/io", FileInputStream, close0, "()V") {
 
 DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
   // this method does no allocations or yielding, so we can use the same pointer
-  bjvm_obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
+  obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
   DCHECK(fd);
   s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd == -1) {
-    return (bjvm_stack_value) { .i = 0 };
+    return (stack_value) { .i = 0 };
   }
 
   int available;
@@ -145,10 +145,10 @@ DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
   } else {
     int err = ioctl(unix_fd, FIONREAD, &available);
     if (err < 0) {
-      bjvm_raise_vm_exception(thread, STR("java/io/IOException"), STR("Error getting available bytes"));
+      raise_vm_exception(thread, STR("java/io/IOException"), STR("Error getting available bytes"));
       return value_null();
     }
   }
 
-  return (bjvm_stack_value) { .i = (s32) available };
+  return (stack_value) { .i = (s32) available };
 }

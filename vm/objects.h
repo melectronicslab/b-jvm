@@ -12,18 +12,18 @@ typedef enum : s32 {
   STRING_CODER_UTF16 = 1
 } string_coder_kind;
 
-bjvm_obj_header *MakeJStringFromModifiedUTF8(bjvm_thread *thread, slice data, bool intern);
-bjvm_obj_header *MakeJStringFromCString(bjvm_thread *thread, char const* data, bool intern);
-bjvm_obj_header *MakeJStringFromData(bjvm_thread *thread, slice data, string_coder_kind encoding);
-bjvm_obj_header *InternJString(bjvm_thread *thread, bjvm_obj_header *str);
+obj_header *MakeJStringFromModifiedUTF8(vm_thread *thread, slice data, bool intern);
+obj_header *MakeJStringFromCString(vm_thread *thread, char const* data, bool intern);
+obj_header *MakeJStringFromData(vm_thread *thread, slice data, string_coder_kind encoding);
+obj_header *InternJString(vm_thread *thread, obj_header *str);
 
 /// Helper for java.lang.String#length
-static inline int JavaStringLength(bjvm_thread *thread, bjvm_obj_header *string) {
+static inline int JavaStringLength(vm_thread *thread, obj_header *string) {
   DCHECK(utf8_equals(hslc(string->descriptor->name), "java/lang/String"));
 
-  auto method = bjvm_method_lookup(string->descriptor, STR("length"),
+  auto method = method_lookup(string->descriptor, STR("length"),
                                    STR("()I"), false, false);
-  bjvm_stack_value result = call_interpreter_synchronous(thread, method, (bjvm_stack_value[]){});
+  stack_value result = call_interpreter_synchronous(thread, method, (stack_value[]){});
 
   return result.i;
 }
@@ -31,19 +31,19 @@ static inline int JavaStringLength(bjvm_thread *thread, bjvm_obj_header *string)
 
 /// Extracts the inner array of the given java.lang.String.
 /// The data are either UTF-16 or latin1 encoded.
-static inline bjvm_obj_header *RawStringData([[maybe_unused]] bjvm_thread const *thread, bjvm_obj_header const *string) {
+static inline obj_header *RawStringData([[maybe_unused]] vm_thread const *thread, obj_header const *string) {
   DCHECK(string->descriptor == thread->vm->cached_classdescs->string);
 
-  return ((struct bjvm_native_String*)string)->value;
+  return ((struct native_String*)string)->value;
 }
 
-static inline object AllocateObject(bjvm_thread *thread,
-                                              bjvm_classdesc *descriptor,
+static inline object AllocateObject(vm_thread *thread,
+                                              classdesc *descriptor,
                                               size_t data_size) {
   DCHECK(descriptor);
   DCHECK(descriptor->state >=
-         BJVM_CD_STATE_LINKED); // important to know the size
-  object obj = (object) bump_allocate(thread, sizeof(bjvm_obj_header) + data_size);
+         CD_STATE_LINKED); // important to know the size
+  object obj = (object) bump_allocate(thread, sizeof(obj_header) + data_size);
   if (obj) {
     obj->header_word.expanded_data = (monitor_data*)(uintptr_t)IS_MARK_WORD;
     obj->descriptor = descriptor;

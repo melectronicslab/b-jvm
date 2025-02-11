@@ -6,42 +6,42 @@
 
 #include <bjvm.h>
 
-static size_t allocate_field(size_t *current, bjvm_type_kind kind) {
+static size_t allocate_field(size_t *current, type_kind kind) {
   size_t result;
   switch (kind) {
-  case BJVM_TYPE_KIND_BOOLEAN:
-  case BJVM_TYPE_KIND_BYTE: {
+  case TYPE_KIND_BOOLEAN:
+  case TYPE_KIND_BYTE: {
     result = *current;
     (*current)++;
     break;
   }
-  case BJVM_TYPE_KIND_CHAR:
-  case BJVM_TYPE_KIND_SHORT: {
+  case TYPE_KIND_CHAR:
+  case TYPE_KIND_SHORT: {
     *current = (*current + 1) & ~1;
     result = *current;
     *current += 2;
     break;
   }
-  case BJVM_TYPE_KIND_FLOAT:
-  case BJVM_TYPE_KIND_INT:
+  case TYPE_KIND_FLOAT:
+  case TYPE_KIND_INT:
 #ifdef EMSCRIPTEN
-  case BJVM_TYPE_KIND_REFERENCE:
+  case TYPE_KIND_REFERENCE:
 #endif
     *current = (*current + 3) & ~3;
     result = *current;
     *current += 4;
     break;
-  case BJVM_TYPE_KIND_DOUBLE:
-  case BJVM_TYPE_KIND_LONG:
+  case TYPE_KIND_DOUBLE:
+  case TYPE_KIND_LONG:
 #ifndef EMSCRIPTEN
-  case BJVM_TYPE_KIND_REFERENCE:
+  case TYPE_KIND_REFERENCE:
 #endif
     *current = (*current + 7) & ~7;
     result = *current;
     *current += 8;
     break;
 
-  case BJVM_TYPE_KIND_VOID:
+  case TYPE_KIND_VOID:
     [[fallthrough]];
   default:
     UNREACHABLE();
@@ -50,94 +50,94 @@ static size_t allocate_field(size_t *current, bjvm_type_kind kind) {
 }
 
 // Construct superclass hierarchy, used for fast instanceof checks
-void setup_super_hierarchy(bjvm_classdesc * classdesc) {
-  if (classdesc->super_class) {
-    bjvm_classdesc *super = classdesc->super_class->classdesc;
+void setup_super_hierarchy(classdesc * cd) {
+  if (cd->super_class) {
+    classdesc *super = cd->super_class->classdesc;
     assert(super && "Superclass is resolved");
     assert(super->hierarchy_len > 0 && "Invalid hierarchy length");
 
-    classdesc->hierarchy_len = super->hierarchy_len + 1;
-    classdesc->hierarchy = arena_alloc(&classdesc->arena, super->hierarchy_len + 1, sizeof(bjvm_classdesc *));
-    memcpy(classdesc->hierarchy, super->hierarchy, super->hierarchy_len * sizeof(bjvm_classdesc *));
+    cd->hierarchy_len = super->hierarchy_len + 1;
+    cd->hierarchy = arena_alloc(&cd->arena, super->hierarchy_len + 1, sizeof(classdesc *));
+    memcpy(cd->hierarchy, super->hierarchy, super->hierarchy_len * sizeof(classdesc *));
   } else {
     // java/lang/Object has a superclass hierarchy of length 1, containing only itself
-    classdesc->hierarchy_len = 1;
-    classdesc->hierarchy = arena_alloc(&classdesc->arena, 1, sizeof(bjvm_classdesc *));
+    cd->hierarchy_len = 1;
+    cd->hierarchy = arena_alloc(&cd->arena, 1, sizeof(classdesc *));
   }
 
   // Place ourselves into the hierarchy
-  classdesc->hierarchy[classdesc->hierarchy_len - 1] = classdesc;
+  cd->hierarchy[cd->hierarchy_len - 1] = cd;
 }
 
 
-static int link_array_class(bjvm_thread *thread, bjvm_classdesc *classdesc) {
-  if (classdesc->state >= BJVM_CD_STATE_LINKED)
+static int link_array_class(vm_thread *thread, classdesc *cd) {
+  if (cd->state >= CD_STATE_LINKED)
     return 0;
 
-  bjvm_classdesc_state st = BJVM_CD_STATE_LINKED;
-  classdesc->state = st;
+  classdesc_state st = CD_STATE_LINKED;
+  cd->state = st;
   int status = 0;
-  if (classdesc->base_component) {
-    status = bjvm_link_class(thread, classdesc->base_component);
+  if (cd->base_component) {
+    status = link_class(thread, cd->base_component);
     if (status) {
-      st = BJVM_CD_STATE_LINKAGE_ERROR;
+      st = CD_STATE_LINKAGE_ERROR;
     }
     // Link all higher dimensional components
-    bjvm_classdesc *a = classdesc->base_component;
+    classdesc *a = cd->base_component;
     while (a->array_type) {
       a = a->array_type;
       a->state = st;
     }
   }
-  setup_super_hierarchy(classdesc);
-  bjvm_set_up_function_tables(classdesc);
+  setup_super_hierarchy(cd);
+  set_up_function_tables(cd);
   return status;
 }
 
 // Link the class.
-int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc) {
-  if (classdesc->state != BJVM_CD_STATE_LOADED) {
+int link_class(vm_thread *thread, classdesc *cd) {
+  if (cd->state != CD_STATE_LOADED) {
     return 0;
   }
   // Link superclasses
-  if (classdesc->super_class) {
-    bjvm_classdesc *super = classdesc->super_class->classdesc;
-    int status = bjvm_link_class(thread, super);
+  if (cd->super_class) {
+    classdesc *super = cd->super_class->classdesc;
+    int status = link_class(thread, super);
     if (status) {
-      classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
+      cd->state = CD_STATE_LINKAGE_ERROR;
       return status;
     }
   } else {
-    assert(utf8_equals(hslc(classdesc->name), "java/lang/Object"));
+    assert(utf8_equals(hslc(cd->name), "java/lang/Object"));
   }
 
-  setup_super_hierarchy(classdesc);
+  setup_super_hierarchy(cd);
 
   // Link superinterfaces
-  for (int i = 0; i < classdesc->interfaces_count; ++i) {
-    int status = bjvm_link_class(thread, classdesc->interfaces[i]->classdesc);
+  for (int i = 0; i < cd->interfaces_count; ++i) {
+    int status = link_class(thread, cd->interfaces[i]->classdesc);
     if (status) {
-      classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
+      cd->state = CD_STATE_LINKAGE_ERROR;
       return status;
     }
   }
-  if (classdesc->kind != BJVM_CD_KIND_ORDINARY) {
-    DCHECK(classdesc->kind == BJVM_CD_KIND_ORDINARY_ARRAY);
-    return link_array_class(thread, classdesc);
+  if (cd->kind != CD_KIND_ORDINARY) {
+    DCHECK(cd->kind == CD_KIND_ORDINARY_ARRAY);
+    return link_array_class(thread, cd);
   }
-  classdesc->state = BJVM_CD_STATE_LINKED;
+  cd->state = CD_STATE_LINKED;
   // Link the corresponding array type(s)
-  if (classdesc->array_type) {
-    link_array_class(thread, classdesc->array_type);
+  if (cd->array_type) {
+    link_array_class(thread, cd->array_type);
   }
   // Analyze/rewrite all methods
-  for (int method_i = 0; method_i < classdesc->methods_count; ++method_i) {
-    bjvm_cp_method *method = classdesc->methods + method_i;
+  for (int method_i = 0; method_i < cd->methods_count; ++method_i) {
+    cp_method *method = cd->methods + method_i;
     if (method->code) {
       heap_string error_str;
-      int result = bjvm_analyze_method_code(method, &error_str);
+      int result = analyze_method_code(method, &error_str);
       if (result != 0) {
-        classdesc->state = BJVM_CD_STATE_LINKAGE_ERROR;
+        cd->state = CD_STATE_LINKAGE_ERROR;
         printf("Error analyzing method %.*s: %.*s\n", method->name.len, method->name.chars, error_str.len,
                error_str.chars);
         // TODO raise VerifyError
@@ -148,16 +148,16 @@ int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc) {
 
   // Padding for VM fields (e.g., internal fields used for Reflection)
   int padding =
-      (int)(uintptr_t)bjvm_hash_table_lookup(&thread->vm->class_padding, classdesc->name.chars, classdesc->name.len);
+      (int)(uintptr_t)hash_table_lookup(&thread->vm->class_padding, cd->name.chars, cd->name.len);
 
   // Assign memory locations to all static/non-static fields
-  bjvm_classdesc *super = classdesc->super_class ? classdesc->super_class->classdesc : NULL;
-  size_t static_offset = 0, nonstatic_offset = super ? super->instance_bytes : sizeof(bjvm_obj_header);
+  classdesc *super = cd->super_class ? cd->super_class->classdesc : NULL;
+  size_t static_offset = 0, nonstatic_offset = super ? super->instance_bytes : sizeof(obj_header);
   nonstatic_offset += padding;
-  for (int field_i = 0; field_i < classdesc->fields_count; ++field_i) {
-    bjvm_cp_field *field = classdesc->fields + field_i;
-    bjvm_type_kind kind = field_to_kind(&field->parsed_descriptor);
-    field->byte_offset = field->access_flags & BJVM_ACCESS_STATIC ? allocate_field(&static_offset, kind)
+  for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
+    cp_field *field = cd->fields + field_i;
+    type_kind kind = field_to_kind(&field->parsed_descriptor);
+    field->byte_offset = field->access_flags & ACCESS_STATIC ? allocate_field(&static_offset, kind)
                                                                   : allocate_field(&nonstatic_offset, kind);
 
 #if AGGRESSIVE_DEBUG
@@ -166,33 +166,33 @@ int bjvm_link_class(bjvm_thread *thread, bjvm_classdesc *classdesc) {
 #endif
   }
 
-  bjvm_init_compressed_bitset(&classdesc->static_references, static_offset / sizeof(void *));
-  bjvm_init_compressed_bitset(&classdesc->instance_references, nonstatic_offset / sizeof(void *));
+  init_compressed_bitset(&cd->static_references, static_offset / sizeof(void *));
+  init_compressed_bitset(&cd->instance_references, nonstatic_offset / sizeof(void *));
 
   // Add superclass instance references
   if (super) {
-    bjvm_compressed_bitset bs = super->instance_references;
+    compressed_bitset bs = super->instance_references;
     for (size_t i = 0; i < super->instance_bytes / sizeof(void *); ++i) {
-      if (bjvm_test_compressed_bitset(bs, i)) {
-        bjvm_test_set_compressed_bitset(&classdesc->instance_references, i);
+      if (test_compressed_bitset(bs, i)) {
+        test_set_compressed_bitset(&cd->instance_references, i);
       }
     }
   }
-  for (int field_i = 0; field_i < classdesc->fields_count; ++field_i) {
-    bjvm_cp_field *field = classdesc->fields + field_i;
-    if (field_to_kind(&field->parsed_descriptor) == BJVM_TYPE_KIND_REFERENCE) {
-      bjvm_compressed_bitset *bs =
-          field->access_flags & BJVM_ACCESS_STATIC ? &classdesc->static_references : &classdesc->instance_references;
-      bjvm_test_set_compressed_bitset(bs, field->byte_offset / sizeof(void *));
+  for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
+    cp_field *field = cd->fields + field_i;
+    if (field_to_kind(&field->parsed_descriptor) == TYPE_KIND_REFERENCE) {
+      compressed_bitset *bs =
+          field->access_flags & ACCESS_STATIC ? &cd->static_references : &cd->instance_references;
+      test_set_compressed_bitset(bs, field->byte_offset / sizeof(void *));
     }
   }
 
   // Create static field memory, initializing all to 0
-  classdesc->static_fields = calloc(static_offset, 1);
-  classdesc->instance_bytes = nonstatic_offset;
+  cd->static_fields = calloc(static_offset, 1);
+  cd->instance_bytes = nonstatic_offset;
 
   // Set up vtable and itables
-  bjvm_set_up_function_tables(classdesc);
+  set_up_function_tables(cd);
 
   return 0;
 }

@@ -20,7 +20,7 @@ def process_file(filename):
 
         calls += '\n' + push_call
 
-        decls += f"extern bjvm_native_t {struct_name};\n"
+        decls += f"extern native_t {struct_name};\n"
 
     return decls, calls
 
@@ -40,5 +40,5 @@ if __name__ == "__main__":
     print(f"""#include <bjvm.h>
 
 {decls_}
-const bjvm_native_t *bjvm_natives[] = {{{function_body}}};
+const native_t *bjvm_natives[] = {{{function_body}}};
 const size_t bjvm_natives_count = sizeof(bjvm_natives)/sizeof(*bjvm_natives);""")

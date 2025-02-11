@@ -49,15 +49,15 @@ TEST_CASE("Test STR() macro") {
 TEST_CASE("Compressed bitset") {
   for (int size = 1; size < 256; ++size) {
     std::vector<u8> reference(size);
-    bjvm_compressed_bitset bitset;
-    bjvm_init_compressed_bitset(&bitset, size);
+    compressed_bitset bitset;
+    init_compressed_bitset(&bitset, size);
 
     for (int i = 0; i < 1000; ++i) {
       int index = rand() % size;
       switch (rand() % 4) {
       case 0: {
         int *set_bits = nullptr;
-        bjvm_list_compressed_bitset_bits(bitset, &set_bits);
+        list_compressed_bitset_bits(bitset, &set_bits);
         for (int i = 0; i < arrlen(set_bits); ++i) {
           if (!reference[set_bits[i]])
             REQUIRE(false);
@@ -66,21 +66,21 @@ TEST_CASE("Compressed bitset") {
         break;
       }
       case 1: {
-        bool test = bjvm_test_set_compressed_bitset(&bitset, index);
+        bool test = test_set_compressed_bitset(&bitset, index);
         if (test != reference[index])
           REQUIRE(test == reference[index]);
         reference[index] = true;
         break;
       }
       case 2: {
-        bool test = bjvm_test_reset_compressed_bitset(&bitset, index);
+        bool test = test_reset_compressed_bitset(&bitset, index);
         if (test != reference[index])
           REQUIRE(test == reference[index]);
         reference[index] = false;
         break;
       }
       case 3: {
-        bool test = bjvm_test_compressed_bitset(bitset, index);
+        bool test = test_compressed_bitset(bitset, index);
         if (test != reference[index])
           REQUIRE(test == reference[index]);
         break;
@@ -88,14 +88,14 @@ TEST_CASE("Compressed bitset") {
       }
     }
 
-    bjvm_free_compressed_bitset(bitset);
+    free_compressed_bitset(bitset);
   }
 }
 
 TEST_CASE("parse_field_descriptor valid cases") {
   const char *fields =
       "Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
-  bjvm_field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String,
+  field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String,
       java_lang_Object, B, V, C, Z;
   arena arena;
   arena_init(&arena);
@@ -115,12 +115,12 @@ TEST_CASE("parse_field_descriptor valid cases") {
 
   REQUIRE(utf8_equals(com_example_Example.class_name, "com/example/Example"));
   REQUIRE(com_example_Example.dimensions == 0);
-  REQUIRE(com_example_Example.base_kind == BJVM_TYPE_KIND_REFERENCE);
+  REQUIRE(com_example_Example.base_kind == TYPE_KIND_REFERENCE);
 
-  REQUIRE(Iaaa.base_kind == BJVM_TYPE_KIND_INT);
+  REQUIRE(Iaaa.base_kind == TYPE_KIND_INT);
   REQUIRE(Iaaa.dimensions == 1);
 
-  REQUIRE(Jaa.base_kind == BJVM_TYPE_KIND_LONG);
+  REQUIRE(Jaa.base_kind == TYPE_KIND_LONG);
   REQUIRE(Jaa.dimensions == 3);
 
   REQUIRE(utf8_equals(java_lang_String.class_name, "java/lang/String"));
@@ -129,16 +129,16 @@ TEST_CASE("parse_field_descriptor valid cases") {
   REQUIRE(utf8_equals(java_lang_Object.class_name, "java/lang/Object"));
   REQUIRE(java_lang_Object.dimensions == 2);
 
-  REQUIRE(B.base_kind == BJVM_TYPE_KIND_BYTE);
-  REQUIRE(C.base_kind == BJVM_TYPE_KIND_CHAR);
-  REQUIRE(V.base_kind == BJVM_TYPE_KIND_VOID);
-  REQUIRE(Z.base_kind == BJVM_TYPE_KIND_BOOLEAN);
+  REQUIRE(B.base_kind == TYPE_KIND_BYTE);
+  REQUIRE(C.base_kind == TYPE_KIND_CHAR);
+  REQUIRE(V.base_kind == TYPE_KIND_VOID);
+  REQUIRE(Z.base_kind == TYPE_KIND_BOOLEAN);
 
   arena_uninit(&arena);
 }
 
 TEST_CASE("String hash table") {
-  bjvm_string_hash_table tbl = bjvm_make_hash_table(free, 0.75, 48);
+  string_hash_table tbl = make_hash_table(free, 0.75, 48);
   REQUIRE(tbl.load_factor == 0.75);
   REQUIRE(tbl.entries_cap == 48);
 
@@ -147,32 +147,32 @@ TEST_CASE("String hash table") {
     std::string key = std::to_string(i * 5201);
     std::string value = std::to_string(i);
     reference[key] = value;
-    free(bjvm_hash_table_insert(&tbl, key.c_str(), -1,
+    free(hash_table_insert(&tbl, key.c_str(), -1,
                                 (void *)strdup(value.c_str())));
-    free(bjvm_hash_table_insert(&tbl, key.c_str(), -1,
+    free(hash_table_insert(&tbl, key.c_str(), -1,
                                 (void *)strdup(value.c_str())));
   }
   for (int i = 1; i <= 4999; i += 2) {
     std::string key = std::to_string(i * 5201);
-    free(bjvm_hash_table_delete(&tbl, key.c_str(), -1));
+    free(hash_table_delete(&tbl, key.c_str(), -1));
   }
   REQUIRE(tbl.entries_count == 2500);
   for (int i = 1; i <= 4999; i += 2) {
     std::string key = std::to_string(i * 5201);
-    void *lookup = bjvm_hash_table_lookup(&tbl, key.c_str(), -1);
+    void *lookup = hash_table_lookup(&tbl, key.c_str(), -1);
     REQUIRE(lookup == nullptr);
     std::string value = std::to_string(i);
-    free(bjvm_hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str())));
+    free(hash_table_insert(&tbl, key.c_str(), -1, strdup(value.c_str())));
   }
 
   for (int i = 0; i < 5000; i += 2) {
     std::string key = std::to_string(i * 5201);
-    void *value = bjvm_hash_table_lookup(&tbl, key.c_str(), -1);
+    void *value = hash_table_lookup(&tbl, key.c_str(), -1);
     REQUIRE(value != nullptr);
     REQUIRE(reference[key] == (const char *)value);
   }
 
-  bjvm_free_hash_table(tbl);
+  free_hash_table(tbl);
 }
 
 TEST_CASE("SignaturePolymorphic methods found") {
@@ -426,30 +426,30 @@ TEST_CASE("Deranged CFG") {
 }
 
 TEST_CASE("Immediate dominators computation on cursed CFG") {
-  bjvm_classdesc desc;
+  classdesc desc;
   auto cursed_file = ReadFile("test_files/cfg_fuck/Main.class").value();
-  bjvm_parse_classfile(cursed_file.data(), cursed_file.size(), &desc, nullptr);
+  parse_classfile(cursed_file.data(), cursed_file.size(), &desc, nullptr);
   REQUIRE(utf8_equals(hslc(desc.name), "Main"));
 
-  bjvm_cp_method *m = desc.methods + 4;
+  cp_method *m = desc.methods + 4;
   REQUIRE(utf8_equals(m->name, "main"));
 
-  bjvm_analyze_method_code(m, nullptr);
-  auto *analy = (bjvm_code_analysis *)m->code_analysis;
-  bjvm_scan_basic_blocks(m->code, analy);
-  bjvm_compute_dominator_tree(analy);
+  analyze_method_code(m, nullptr);
+  auto *analy = (code_analysis *)m->code_analysis;
+  scan_basic_blocks(m->code, analy);
+  compute_dominator_tree(analy);
 
-  BENCHMARK("analyze method code") { bjvm_analyze_method_code(m, nullptr); };
+  BENCHMARK("analyze method code") { analyze_method_code(m, nullptr); };
 
   BENCHMARK("scan basic blocks") {
     free(analy->blocks);
     analy->blocks = nullptr;
-    bjvm_scan_basic_blocks(m->code, analy);
+    scan_basic_blocks(m->code, analy);
   };
 
   BENCHMARK("compute dominator tree") {
     analy->dominator_tree_computed = false;
-    bjvm_compute_dominator_tree(analy);
+    compute_dominator_tree(analy);
   };
 
   std::vector<std::pair<int, u32>> doms = {
@@ -462,13 +462,13 @@ TEST_CASE("Immediate dominators computation on cursed CFG") {
     REQUIRE(analy->blocks[a].idom == b);
   }
 
-  int result = bjvm_attempt_reduce_cfg(analy);
+  int result = attempt_reduce_cfg(analy);
   REQUIRE(result == 0);
 
-  bjvm_cp_method *m2 = desc.methods + 5;
-  bjvm_analyze_method_code(m2, nullptr);
+  cp_method *m2 = desc.methods + 5;
+  analyze_method_code(m2, nullptr);
 
-  bjvm_free_classfile(desc);
+  free_classfile(desc);
 }
 
 TEST_CASE("Conflicting defaults") {

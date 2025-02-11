@@ -1,14 +1,14 @@
 #include "natives-dsl.h"
 
-bjvm_cp_entry *lookup_entry(bjvm_obj_header *obj, int index,
-                            bjvm_cp_kind expected) {
-  struct bjvm_native_ConstantPool *mirror = (void *)obj;
-  bjvm_classdesc *desc = mirror->reflected_class;
-  bjvm_constant_pool *pool = desc->pool;
+cp_entry *lookup_entry(obj_header *obj, int index,
+                            cp_kind expected) {
+  struct native_ConstantPool *mirror = (void *)obj;
+  classdesc *desc = mirror->reflected_class;
+  constant_pool *pool = desc->pool;
   if (index < 0 && index >= pool->entries_len) {
     return nullptr;
   }
-  bjvm_cp_entry *entry = &pool->entries[index];
+  cp_entry *entry = &pool->entries[index];
   if (entry->kind != expected) {
     return nullptr;
   }
@@ -17,19 +17,19 @@ bjvm_cp_entry *lookup_entry(bjvm_obj_header *obj, int index,
 
 DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getUTF8At0,
                "(Ljava/lang/Object;I)Ljava/lang/String;") {
-  bjvm_cp_entry *entry = lookup_entry(obj->obj, args[1].i, BJVM_CP_KIND_UTF8);
+  cp_entry *entry = lookup_entry(obj->obj, args[1].i, CP_KIND_UTF8);
   if (!entry) {
-    return (bjvm_stack_value){.obj = nullptr};
+    return (stack_value){.obj = nullptr};
   }
-  return (bjvm_stack_value){.obj = MakeJStringFromModifiedUTF8(thread, entry->utf8, true)};
+  return (stack_value){.obj = MakeJStringFromModifiedUTF8(thread, entry->utf8, true)};
 }
 
 DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getIntAt0,
                "(Ljava/lang/Object;I)I") {
-  bjvm_cp_entry *entry =
-      lookup_entry(obj->obj, args[1].i, BJVM_CP_KIND_INTEGER);
+  cp_entry *entry =
+      lookup_entry(obj->obj, args[1].i, CP_KIND_INTEGER);
   if (!entry) {
-    return (bjvm_stack_value){.obj = nullptr};
+    return (stack_value){.obj = nullptr};
   }
-  return (bjvm_stack_value){.i = (int)entry->integral.value};
+  return (stack_value){.i = (int)entry->integral.value};
 }

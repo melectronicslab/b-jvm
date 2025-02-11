@@ -62,7 +62,7 @@
   __CACHED_GENERAL_CLASSES(X)
 
 /// A list of the names of classes that are cached in the VM.
-/// This list is in the same order as the fields of the bjvm_cached_classdescs
+/// This list is in the same order as the fields of the cached_classdescs
 /// struct.
 static const char *const cached_classdesc_paths[] = {
 #define X(name, str) str,
@@ -75,15 +75,15 @@ static constexpr int cached_classdesc_count =
     sizeof(cached_classdesc_paths) / sizeof(char *);
 
 /// A struct containing commonly used classdescs.
-struct bjvm_cached_classdescs {
-#define X(name, str) bjvm_classdesc *name;
+struct cached_classdescs {
+#define X(name, str) classdesc *name;
   CACHED_CLASSDESCS(X)
 #undef X
 };
 
 // should be layout-compatible with an array of pointers
-static_assert(sizeof(struct bjvm_cached_classdescs) ==
-               sizeof(struct bjvm_cached_classdescs *[cached_classdesc_count]));
+static_assert(sizeof(struct cached_classdescs) ==
+               sizeof(struct cached_classdescs *[cached_classdesc_count]));
 
 #undef __CACHED_EXCEPTION_CLASSES
 #undef __CACHED_REFLECTION_CLASSES

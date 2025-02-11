@@ -1,20 +1,20 @@
 #include <natives-dsl.h>
 
 // invokes call_interpreter and returns the result
-#define IMPL_RUN_ASYNC(thread_, target_, context_) bjvm_stack_value ret; do { \
-  bjvm_thread * thread__ = thread_; \
-  bjvm_obj_header *target__ = target_; \
-  bjvm_obj_header *context__ = context_; \
-  bjvm_classdesc *classdesc__ = target_->descriptor; \
+#define IMPL_RUN_ASYNC(thread_, target_, context_) stack_value ret; do { \
+  vm_thread * thread__ = thread_; \
+  obj_header *target__ = target_; \
+  obj_header *context__ = context_; \
+  classdesc *classdesc__ = target_->descriptor; \
   (void) context__; /* stop the compiler complaining */ \
   \
-  DCHECK(classdesc__->kind == BJVM_CD_KIND_ORDINARY); \
-  bjvm_cp_method *method__ = bjvm_method_lookup(classdesc__, STR("run"), null_str(), true, true); \
+  DCHECK(classdesc__->kind == CD_KIND_ORDINARY); \
+  cp_method *method__ = method_lookup(classdesc__, STR("run"), null_str(), true, true); \
   if (!method__) { \
     /* TODO figure out what JVM normally does here */ \
     UNREACHABLE(); \
   } \
-  bjvm_stack_value method_args__[1] = { (bjvm_stack_value) { .obj = target__ } }; \
+  stack_value method_args__[1] = { (stack_value) { .obj = target__ } }; \
   AWAIT(call_interpreter, thread__, method__, method_args__); \
   ret = get_async_result(call_interpreter); \
 } while (0); \

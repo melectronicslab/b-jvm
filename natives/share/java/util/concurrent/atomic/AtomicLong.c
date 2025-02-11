@@ -2,5 +2,5 @@
 
 DECLARE_NATIVE("java/util/concurrent/atomic", AtomicLong, VMSupportsCS8,
                "()Z") {
-  return (bjvm_stack_value){.i = 1};
+  return (stack_value){.i = 1};
 }

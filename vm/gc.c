@@ -5,16 +5,16 @@
 #include "bjvm.h"
 #include <gc.h>
 
-typedef struct bjvm_gc_ctx {
-  bjvm_vm *vm;
+typedef struct gc_ctx {
+  vm *vm;
 
   // Vector of pointer to pointer to things to rewrite
-  bjvm_obj_header ***roots;
-  bjvm_obj_header **objs;
-  bjvm_obj_header **new_location;
-} bjvm_gc_ctx;
+  obj_header ***roots;
+  obj_header **objs;
+  obj_header **new_location;
+} gc_ctx;
 
-static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
+static int in_heap(gc_ctx *ctx, obj_header *field) {
   return (uintptr_t)field - (uintptr_t)ctx->vm->heap <
          ctx->vm->true_heap_capacity;
 }
@@ -24,13 +24,13 @@ static int in_heap(bjvm_gc_ctx *ctx, bjvm_obj_header *field) {
   {                                                                            \
     __typeof(x) v = (x);                                                       \
     if (*v && in_heap(ctx, (void*)*v)) {                                            \
-      arrput(ctx->roots, (bjvm_obj_header **)v);                                               \
+      arrput(ctx->roots, (obj_header **)v);                                               \
     }                                                                          \
   }
 
-static void enumerate_reflection_roots(bjvm_gc_ctx *ctx, bjvm_classdesc *desc) {
+static void enumerate_reflection_roots(gc_ctx *ctx, classdesc *desc) {
   // Push the mirrors of this base class and all of its array types
-  bjvm_classdesc *array = desc;
+  classdesc *array = desc;
   while (array) {
     PUSH_ROOT(&array->mirror);
     PUSH_ROOT(&array->cp_mirror);
@@ -52,16 +52,16 @@ static void enumerate_reflection_roots(bjvm_gc_ctx *ctx, bjvm_classdesc *desc) {
   // Push all resolved MethodType objects
   if (desc->pool) {
     for (int i = 0; i < desc->pool->entries_len; ++i) {
-      bjvm_cp_entry *ent = desc->pool->entries + i;
-      if (ent->kind == BJVM_CP_KIND_METHOD_HANDLE) {
+      cp_entry *ent = desc->pool->entries + i;
+      if (ent->kind == CP_KIND_METHOD_HANDLE) {
         PUSH_ROOT(&ent->method_handle.resolved_mt);
-      } else if (ent->kind == BJVM_CP_KIND_INVOKE_DYNAMIC) {
+      } else if (ent->kind == CP_KIND_INVOKE_DYNAMIC) {
         PUSH_ROOT(&ent->indy_info.resolved_mt);
-      } else if (ent->kind == BJVM_CP_KIND_METHOD_TYPE) {
+      } else if (ent->kind == CP_KIND_METHOD_TYPE) {
         PUSH_ROOT(&ent->method_type.resolved_mt);
-      } else if (ent->kind == BJVM_CP_KIND_STRING) {
+      } else if (ent->kind == CP_KIND_STRING) {
         PUSH_ROOT(&ent->string.interned);
-      } else if (ent->kind == BJVM_CP_KIND_CLASS) {
+      } else if (ent->kind == CP_KIND_CLASS) {
         PUSH_ROOT(&ent->class_info.vm_object);
       }
     }
@@ -69,18 +69,18 @@ static void enumerate_reflection_roots(bjvm_gc_ctx *ctx, bjvm_classdesc *desc) {
 
   // Push all CallSite objects
   for (int i = 0; i < arrlen(desc->indy_insns); ++i) {
-    bjvm_bytecode_insn *insn = desc->indy_insns[i];
+    bytecode_insn *insn = desc->indy_insns[i];
     PUSH_ROOT(&insn->ic);
   }
 
   // Push all ICed method type objects
   for (int i = 0; i < arrlen(desc->sigpoly_insns); ++i) {
-    bjvm_bytecode_insn *insn = desc->sigpoly_insns[i];
+    bytecode_insn *insn = desc->sigpoly_insns[i];
     PUSH_ROOT(&insn->ic2);
   }
 }
 
-static void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
+static void push_thread_roots(gc_ctx *ctx, vm_thread *thr) {
   int *bitset_list = NULL;
 
   PUSH_ROOT(&thr->thread_obj);
@@ -92,22 +92,22 @@ static void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
   uintptr_t min_frame_addr_scanned = UINTPTR_MAX;
 
   for (int frame_i = arrlen(thr->frames) - 1; frame_i >= 0; --frame_i) {
-    bjvm_stack_frame *raw_frame = thr->frames[frame_i];
-    if (bjvm_is_frame_native(raw_frame))
+    stack_frame *raw_frame = thr->frames[frame_i];
+    if (is_frame_native(raw_frame))
       continue;
-    bjvm_plain_frame *frame = bjvm_get_plain_frame(raw_frame);
-    bjvm_code_analysis *analy = raw_frame->method->code_analysis;
-    bjvm_compressed_bitset refs =
+    plain_frame *frame = get_plain_frame(raw_frame);
+    code_analysis *analy = raw_frame->method->code_analysis;
+    compressed_bitset refs =
         analy->insn_index_to_references[frame->program_counter];
     // List of stack and local values which are references
     // In particular, 0 through max_stack - 1 refer to the stack, and max_stack through max_stack + max_locals - 1
     // refer to the locals array
-    bjvm_list_compressed_bitset_bits(refs, &bitset_list);
+    list_compressed_bitset_bits(refs, &bitset_list);
     // Scan the stack
     int i = 0;
     int max_stack = raw_frame->plain.max_stack;
     for (; i < arrlen(bitset_list) && bitset_list[i] < max_stack; ++i) {
-      bjvm_obj_header **val = &frame->stack[bitset_list[i]].obj;
+      obj_header **val = &frame->stack[bitset_list[i]].obj;
       if ((uintptr_t)val >= min_frame_addr_scanned) {
         // We already processed this part of the stack as part of the inner frame's locals
         continue;
@@ -135,8 +135,8 @@ static void push_thread_roots(bjvm_gc_ctx *ctx, bjvm_thread *thr) {
   arrfree(bitset_list);
 }
 
-static void bjvm_major_gc_enumerate_gc_roots(bjvm_gc_ctx *ctx) {
-  bjvm_vm *vm = ctx->vm;
+static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
+  vm *vm = ctx->vm;
   if (vm->primitive_classes[0]) {
     for (size_t i = 0; i < lengthof(vm->primitive_classes); ++i) {
       enumerate_reflection_roots(ctx, vm->primitive_classes[i]);
@@ -149,49 +149,49 @@ static void bjvm_major_gc_enumerate_gc_roots(bjvm_gc_ctx *ctx) {
   }
 
   // Static fields of bootstrap-loaded classes
-  bjvm_hash_table_iterator it = bjvm_hash_table_get_iterator(&vm->classes);
+  hash_table_iterator it = hash_table_get_iterator(&vm->classes);
   char *key;
   size_t key_len;
-  bjvm_classdesc *desc;
+  classdesc *desc;
   int *bitset_list = NULL;
-  while (bjvm_hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
-    bjvm_list_compressed_bitset_bits(desc->static_references, &bitset_list);
+  while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
+    list_compressed_bitset_bits(desc->static_references, &bitset_list);
     for (int i = 0; i < arrlen(bitset_list); ++i) {
-      bjvm_obj_header **root = ((bjvm_obj_header **)desc->static_fields) + bitset_list[i];
+      obj_header **root = ((obj_header **)desc->static_fields) + bitset_list[i];
       PUSH_ROOT(root);
     }
 
     // Also, push things like Class, Method and Constructors
     enumerate_reflection_roots(ctx, desc);
-    bjvm_hash_table_iterator_next(&it);
+    hash_table_iterator_next(&it);
   }
 
   // main thread group
   PUSH_ROOT(&vm->main_thread_group);
 
   // Modules
-  it = bjvm_hash_table_get_iterator(&vm->modules);
-  bjvm_module *module;
-  while (bjvm_hash_table_iterator_has_next(it, &key, &key_len,
+  it = hash_table_get_iterator(&vm->modules);
+  module *module;
+  while (hash_table_iterator_has_next(it, &key, &key_len,
                                            (void **)&module)) {
     PUSH_ROOT(&module->reflection_object);
-    bjvm_hash_table_iterator_next(&it);
+    hash_table_iterator_next(&it);
   }
 
   // Stack and local variables on active threads
   for (int thread_i = 0; thread_i < arrlen(vm->active_threads); ++thread_i) {
-    bjvm_thread *thr = vm->active_threads[thread_i];
+    vm_thread *thr = vm->active_threads[thread_i];
     push_thread_roots(ctx, thr);
   }
 
   arrfree(bitset_list);
 
   // Interned strings (TODO remove)
-  it = bjvm_hash_table_get_iterator(&vm->interned_strings);
-  bjvm_obj_header *str;
-  while (bjvm_hash_table_iterator_has_next(it, &key, &key_len, (void **)&str)) {
+  it = hash_table_get_iterator(&vm->interned_strings);
+  obj_header *str;
+  while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&str)) {
     PUSH_ROOT(&it.current->data);
-    bjvm_hash_table_iterator_next(&it);
+    hash_table_iterator_next(&it);
   }
 }
 
@@ -200,47 +200,47 @@ static u32 *get_flags(object o) {
   return &get_mark_word(&o->header_word)->data[0];
 }
 
-static void bjvm_mark_reachable(bjvm_gc_ctx *ctx, bjvm_obj_header *obj, int **bitsets, int depth) {
+static void mark_reachable(gc_ctx *ctx, obj_header *obj, int **bitsets, int depth) {
   *get_flags(obj) |= IS_REACHABLE;
   arrput(ctx->objs, obj);
 
   // Visit all instance fields
-  bjvm_classdesc *desc = obj->descriptor;
-  if (desc->kind == BJVM_CD_KIND_ORDINARY) {
-    bjvm_compressed_bitset bits = desc->instance_references;
+  classdesc *desc = obj->descriptor;
+  if (desc->kind == CD_KIND_ORDINARY) {
+    compressed_bitset bits = desc->instance_references;
     int **bitset = &bitsets[depth];
-    bjvm_list_compressed_bitset_bits(bits, bitset);
+    list_compressed_bitset_bits(bits, bitset);
     for (int i = 0; i < arrlen(*bitset); ++i) {
-      bjvm_obj_header *field_obj = *((bjvm_obj_header **)obj + (*bitset)[i]);
+      obj_header *field_obj = *((obj_header **)obj + (*bitset)[i]);
       if (field_obj && !(*get_flags(field_obj) & IS_REACHABLE) && in_heap(ctx, field_obj)) {
         // Visiting instance field at offset on class
-        bjvm_mark_reachable(ctx, field_obj, bitsets, depth + 1);
+        mark_reachable(ctx, field_obj, bitsets, depth + 1);
       }
     }
-  } else if (desc->kind == BJVM_CD_KIND_ORDINARY_ARRAY ||
-             (desc->kind == BJVM_CD_KIND_PRIMITIVE_ARRAY &&
+  } else if (desc->kind == CD_KIND_ORDINARY_ARRAY ||
+             (desc->kind == CD_KIND_PRIMITIVE_ARRAY &&
               desc->dimensions > 1)) {
     // Visit all components
     int arr_len = *ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
-      bjvm_obj_header *arr_element = *((bjvm_obj_header **)ArrayData(obj) + i);
+      obj_header *arr_element = *((obj_header **)ArrayData(obj) + i);
       if (arr_element && !(*get_flags(arr_element) & IS_REACHABLE) && in_heap(ctx, arr_element)) {
-        bjvm_mark_reachable(ctx, arr_element, bitsets, depth + 1);
+        mark_reachable(ctx, arr_element, bitsets, depth + 1);
       }
     }
   }
 }
 
 static int comparator(const void *a, const void *b) {
-  return *(bjvm_obj_header **)a - *(bjvm_obj_header **)b;
+  return *(obj_header **)a - *(obj_header **)b;
 }
 
-static size_t size_of_object(bjvm_obj_header *obj) {
-  if (obj->descriptor->kind == BJVM_CD_KIND_ORDINARY) {
+static size_t size_of_object(obj_header *obj) {
+  if (obj->descriptor->kind == CD_KIND_ORDINARY) {
     return obj->descriptor->instance_bytes;
   }
-  if (obj->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY ||
-      (obj->descriptor->kind == BJVM_CD_KIND_PRIMITIVE_ARRAY &&
+  if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY ||
+      (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY &&
        obj->descriptor->dimensions > 1)) {
     return kArrayDataOffset + *ArrayLength(obj) * sizeof(void *);
   }
@@ -249,62 +249,62 @@ static size_t size_of_object(bjvm_obj_header *obj) {
              sizeof_type_kind(obj->descriptor->primitive_component);
 }
 
-static void relocate_object(const bjvm_gc_ctx *ctx, bjvm_obj_header **obj) {
+static void relocate_object(const gc_ctx *ctx, obj_header **obj) {
   if (!*obj)
     return;
 
   // Binary search for obj in ctx->roots
-  bjvm_obj_header **found = (bjvm_obj_header **)bsearch(
-      obj, ctx->objs, arrlen(ctx->objs), sizeof(bjvm_obj_header *), comparator);
+  obj_header **found = (obj_header **)bsearch(
+      obj, ctx->objs, arrlen(ctx->objs), sizeof(obj_header *), comparator);
   if (found) {
     *obj = ctx->new_location[found - ctx->objs];
   }
 }
 
-static void relocate_static_fields(bjvm_gc_ctx *ctx) {
-  bjvm_vm *vm = ctx->vm;
+static void relocate_static_fields(gc_ctx *ctx) {
+  vm *vm = ctx->vm;
 
   // Static fields of bootstrap-loaded classes
-  bjvm_hash_table_iterator it = bjvm_hash_table_get_iterator(&vm->classes);
+  hash_table_iterator it = hash_table_get_iterator(&vm->classes);
   char *key;
   size_t key_len;
-  bjvm_classdesc *desc;
+  classdesc *desc;
   int *bitset_list = NULL;
-  while (bjvm_hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
-    bjvm_list_compressed_bitset_bits(desc->static_references, &bitset_list);
+  while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
+    list_compressed_bitset_bits(desc->static_references, &bitset_list);
     for (int i = 0; i < arrlen(bitset_list); ++i) {
-      relocate_object(ctx, ((bjvm_obj_header **)desc->static_fields) +
+      relocate_object(ctx, ((obj_header **)desc->static_fields) +
                                bitset_list[i]);
     }
     // Push the mirrors of this base class and all of its array types
-    bjvm_classdesc *array = desc;
+    classdesc *array = desc;
     while (array) {
-      relocate_object(ctx, (bjvm_obj_header **)&array->mirror);
+      relocate_object(ctx, (obj_header **)&array->mirror);
       array = array->array_type;
     }
-    bjvm_hash_table_iterator_next(&it);
+    hash_table_iterator_next(&it);
   }
   arrfree(bitset_list);
 }
 
-void relocate_instance_fields(bjvm_gc_ctx *ctx) {
+void relocate_instance_fields(gc_ctx *ctx) {
   int *bitset = nullptr;
   for (int i = 0; i < arrlen(ctx->objs); ++i) {
-    bjvm_obj_header *obj = ctx->new_location[i];
-    if (obj->descriptor->kind == BJVM_CD_KIND_ORDINARY) {
-      bjvm_classdesc *desc = obj->descriptor;
-      bjvm_compressed_bitset bits = desc->instance_references;
-      bjvm_list_compressed_bitset_bits(bits, &bitset);
+    obj_header *obj = ctx->new_location[i];
+    if (obj->descriptor->kind == CD_KIND_ORDINARY) {
+      classdesc *desc = obj->descriptor;
+      compressed_bitset bits = desc->instance_references;
+      list_compressed_bitset_bits(bits, &bitset);
       for (int j = 0; j < arrlen(bitset); ++j) {
-        bjvm_obj_header **field = (bjvm_obj_header **)obj + bitset[j];
+        obj_header **field = (obj_header **)obj + bitset[j];
         relocate_object(ctx, field);
       }
-    } else if (obj->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY ||
-               (obj->descriptor->kind == BJVM_CD_KIND_PRIMITIVE_ARRAY &&
+    } else if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY ||
+               (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY &&
                 obj->descriptor->dimensions > 1)) {
       int arr_len = *ArrayLength(obj);
       for (int j = 0; j < arr_len; ++j) {
-        bjvm_obj_header **field = (bjvm_obj_header **)ArrayData(obj) + j;
+        obj_header **field = (obj_header **)ArrayData(obj) + j;
         relocate_object(ctx, field);
       }
     }
@@ -312,27 +312,27 @@ void relocate_instance_fields(bjvm_gc_ctx *ctx) {
   arrfree(bitset);
 }
 
-void bjvm_major_gc(bjvm_vm *vm) {
+void major_gc(vm *vm) {
   // TODO wait for all threads to get ready (for now we'll just call this from
   // an already-running thread)
-  bjvm_gc_ctx ctx = {.vm = vm};
-  bjvm_major_gc_enumerate_gc_roots(&ctx);
+  gc_ctx ctx = {.vm = vm};
+  major_gc_enumerate_gc_roots(&ctx);
 
   // Mark phase
   int *bitset_list[1000] = {nullptr};
   for (int i = 0; i < arrlen(ctx.roots); ++i) {
-    bjvm_obj_header *root = *ctx.roots[i];
+    obj_header *root = *ctx.roots[i];
     if (!(*get_flags(root) & IS_REACHABLE))
-      bjvm_mark_reachable(&ctx, root, bitset_list, 0);
+      mark_reachable(&ctx, root, bitset_list, 0);
   }
   for (int i = 0; i < 1000; ++i) {
     arrfree(bitset_list[i]);
   }
 
   // Sort roots by address
-  qsort(ctx.objs, arrlen(ctx.objs), sizeof(bjvm_obj_header *), comparator);
-  bjvm_obj_header **new_location = ctx.new_location =
-      malloc( arrlen(ctx.objs) * sizeof(bjvm_obj_header *));
+  qsort(ctx.objs, arrlen(ctx.objs), sizeof(obj_header *), comparator);
+  obj_header **new_location = ctx.new_location =
+      malloc( arrlen(ctx.objs) * sizeof(obj_header *));
 
   // For now, create a new heap of the same size
   [[maybe_unused]] u8 *new_heap = aligned_alloc(4096, vm->true_heap_capacity),
@@ -343,7 +343,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
   for (int i = 0; i < arrlen(ctx.objs); ++i) {
     // Align to 8 bytes
     write_ptr = (u8 *)(align_up((uintptr_t)write_ptr, 8));
-    bjvm_obj_header *obj = ctx.objs[i];
+    obj_header *obj = ctx.objs[i];
     size_t sz = size_of_object(obj);
 
     DCHECK(write_ptr + sz <= end);
@@ -351,7 +351,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
     *get_flags(obj) &= ~IS_REACHABLE; // clear the reachable flag
     memcpy(write_ptr, obj, sz);
 
-    bjvm_obj_header *new_obj = (bjvm_obj_header *) write_ptr;
+    obj_header *new_obj = (obj_header *) write_ptr;
     new_location[i] = new_obj;
     write_ptr += sz;
 
@@ -371,7 +371,7 @@ void bjvm_major_gc(bjvm_vm *vm) {
   relocate_instance_fields(&ctx);
   relocate_static_fields(&ctx);
   for (int i = 0; i < arrlen(ctx.roots); ++i) {
-    bjvm_obj_header **obj = ctx.roots[i];
+    obj_header **obj = ctx.roots[i];
     relocate_object(&ctx, obj);
   }
 

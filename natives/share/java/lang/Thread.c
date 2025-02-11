@@ -6,7 +6,7 @@ DECLARE_NATIVE("java/lang", Thread, registerNatives, "()V") {
 }
 
 DECLARE_NATIVE("java/lang", Thread, currentThread, "()Ljava/lang/Thread;") {
-  return (bjvm_stack_value){.obj = (void *)thread->thread_obj};
+  return (stack_value){.obj = (void *)thread->thread_obj};
 }
 
 DECLARE_NATIVE("java/lang", Thread, setPriority0, "(I)V") {
@@ -14,11 +14,11 @@ DECLARE_NATIVE("java/lang", Thread, setPriority0, "(I)V") {
 }
 
 DECLARE_NATIVE("java/lang", Thread, isAlive, "()Z") {
-  return (bjvm_stack_value){.i = 1}; // TODO
+  return (stack_value){.i = 1}; // TODO
 }
 
 DECLARE_NATIVE("java/lang", Thread, holdsLock, "(Ljava/lang/Object;)Z") {
-  return (bjvm_stack_value){.i = 0}; // TODO
+  return (stack_value){.i = 0}; // TODO
 }
 
 DECLARE_NATIVE("java/lang", Thread, start0, "()V") {
@@ -26,12 +26,12 @@ DECLARE_NATIVE("java/lang", Thread, start0, "()V") {
   if (!scheduler)
     return value_null();  // TODO throw error instead
 
-  bjvm_thread *vm_thread = bjvm_create_thread(thread->vm, bjvm_default_thread_options());
-  ((struct bjvm_native_Thread*)obj->obj)->eetop = (intptr_t)vm_thread;
+  vm_thread *new_thread = create_thread(thread->vm, default_thread_options());
+  ((struct native_Thread*)obj->obj)->eetop = (intptr_t)new_thread;
 
-  bjvm_cp_method *run = bjvm_method_lookup(obj->obj->descriptor, STR("run"), STR("()V"), false, false);
-  bjvm_stack_value argz[1] = {{.obj = obj->obj}};
-  rr_scheduler_run(scheduler, (call_interpreter_t){{vm_thread, run, argz}});
+  cp_method *run = method_lookup(obj->obj->descriptor, STR("run"), STR("()V"), false, false);
+  stack_value argz[1] = {{.obj = obj->obj}};
+  rr_scheduler_run(scheduler, (call_interpreter_t){{new_thread, run, argz}});
 
   return value_null();
 }
@@ -41,11 +41,11 @@ DECLARE_NATIVE("java/lang", Thread, ensureMaterializedForStackWalk, "(Ljava/lang
 }
 
 DECLARE_NATIVE("java/lang", Thread, getNextThreadIdOffset, "()J") {
-  return (bjvm_stack_value){.l = (intptr_t) &thread->vm->next_thread_id};
+  return (stack_value){.l = (intptr_t) &thread->vm->next_thread_id};
 }
 
 DECLARE_NATIVE("java/lang", Thread, currentCarrierThread, "()Ljava/lang/Thread;") {
-  return (bjvm_stack_value){.obj = (void*)thread->thread_obj};
+  return (stack_value){.obj = (void*)thread->thread_obj};
 }
 
 DECLARE_NATIVE("java/lang", Thread, interrupt0, "()V") {
@@ -65,7 +65,7 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_
 
   if (thread->thread_obj->interrupted) {
     thread->thread_obj->interrupted = false; // throw and reset flag
-    bjvm_raise_vm_exception(thread, STR("java/lang/InterruptedException"), STR("Thread interrupted before sleeping"));
+    raise_vm_exception(thread, STR("java/lang/InterruptedException"), STR("Thread interrupted before sleeping"));
     ASYNC_RETURN_VOID();
   }
 

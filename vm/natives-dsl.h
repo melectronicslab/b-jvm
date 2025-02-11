@@ -12,42 +12,42 @@
 #endif
 
 maybe_extern_begin;
-void push_bjvm_native(slice class_name, slice method_name, slice signature, bjvm_native_callback native);
+void push_native(slice class_name, slice method_name, slice signature, native_callback native);
 
-static inline void __obj_store_field(bjvm_obj_header *thing, slice field_name, bjvm_stack_value value, slice desc) {
-  bjvm_cp_field *field = bjvm_field_lookup(thing->descriptor, field_name, desc);
+static inline void __obj_store_field(obj_header *thing, slice field_name, stack_value value, slice desc) {
+  cp_field *field = field_lookup(thing->descriptor, field_name, desc);
   DCHECK(field);
 
-  bjvm_set_field(thing, field, value);
+  set_field(thing, field, value);
 }
 
-static inline bjvm_stack_value __obj_load_field(bjvm_obj_header *thing, slice field_name, slice desc) {
-  bjvm_cp_field *field = bjvm_field_lookup(thing->descriptor, field_name, desc);
+static inline stack_value __obj_load_field(obj_header *thing, slice field_name, slice desc) {
+  cp_field *field = field_lookup(thing->descriptor, field_name, desc);
   DCHECK(field);
 
-  return bjvm_get_field(thing, field);
+  return get_field(thing, field);
 }
 
 maybe_extern_end;
 
 #define ThrowLangException(exception_name)                                                                             \
-  bjvm_raise_vm_exception(thread, STR("java/lang/" #exception_name), null_str())
+  raise_vm_exception(thread, STR("java/lang/" #exception_name), null_str())
 
 #define ThrowLangExceptionM(exception_name, fmt, ...)                                                                  \
   do {                                                                                                                 \
     char msg[1024];                                                                                                    \
     size_t size = snprintf(msg, 1024, fmt, __VA_ARGS__);                                                               \
     slice msg_slice = {msg, size};                                                                                     \
-    bjvm_raise_vm_exception(thread, STR("java/lang/" exception_name), msg_slice);                                      \
+    raise_vm_exception(thread, STR("java/lang/" exception_name), msg_slice);                                      \
   } while (0)
 
-#define MakeHandle(obj) bjvm_make_handle(thread, obj)
+#define MakeHandle(obj) make_handle(thread, obj)
 
-static inline bjvm_obj_header *check_is_object(bjvm_obj_header *thing) { return thing; }
+static inline obj_header *check_is_object(obj_header *thing) { return thing; }
 
 #define AsHeapString(expr, on_oom)                                                                                     \
   ({                                                                                                                   \
-    bjvm_obj_header *__val = check_is_object(expr);                                                                    \
+    obj_header *__val = check_is_object(expr);                                                                    \
     heap_string __hstr;                                                                                                \
     if (read_string_to_utf8(thread, &__hstr, __val) != 0) {                                                            \
       DCHECK(thread->current_exception);                                                                               \
@@ -56,24 +56,24 @@ static inline bjvm_obj_header *check_is_object(bjvm_obj_header *thing) { return 
     __hstr;                                                                                                            \
   })
 
-static inline object __LoadFieldObject(bjvm_obj_header *thing, slice desc, slice name) {
+static inline object __LoadFieldObject(obj_header *thing, slice desc, slice name) {
   return __obj_load_field(thing, name, desc).obj;
 }
 
-static inline void __StoreFieldObject(bjvm_obj_header *thing, slice desc, slice name, object value) {
-  __obj_store_field(thing, name, (bjvm_stack_value){.obj = value}, desc);
+static inline void __StoreFieldObject(obj_header *thing, slice desc, slice name, object value) {
+  __obj_store_field(thing, name, (stack_value){.obj = value}, desc);
 }
 
 #define StoreFieldObject(obj, type, name, value) __StoreFieldObject(obj, STR("L" type ";"), STR(name), value)
 #define LoadFieldObject(obj, type, name) __LoadFieldObject(obj, STR("L" type ";"), STR(name))
 
 #define GeneratePrimitiveStoreField(type_cap, type, stack_field, desc, modifier)                                       \
-  static inline void __StoreField##type_cap(bjvm_obj_header *thing, slice name, type value) {                          \
-    __obj_store_field(thing, name, (bjvm_stack_value){.stack_field = value modifier}, STR(#desc));                     \
+  static inline void __StoreField##type_cap(obj_header *thing, slice name, type value) {                          \
+    __obj_store_field(thing, name, (stack_value){.stack_field = value modifier}, STR(#desc));                     \
   }
 
 #define GeneratePrimitiveLoadField(type_cap, type, stack_field, desc)                                                  \
-  static inline type __LoadField##type_cap(bjvm_obj_header *thing, slice name) {                                       \
+  static inline type __LoadField##type_cap(obj_header *thing, slice name) {                                       \
     return __obj_load_field(thing, name, STR(#desc)).stack_field;                                                      \
   }
 
@@ -116,22 +116,22 @@ GeneratePrimitiveLoadField(Boolean, jboolean, i, Z);
 
 #define force_expand_args(macro_name, ...) macro_name(__VA_ARGS__)
 
-extern size_t bjvm_native_count;
-extern size_t bjvm_native_capacity;
-extern bjvm_native_t *bjvm_natives;
+extern size_t native_count;
+extern size_t native_capacity;
+extern native_t *natives;
 
 #define DECLARE_NATIVE_CALLBACK(class_name_, method_name_, modifier)                                                   \
-  __attribute__((used)) bjvm_stack_value class_name_##_##method_name_##_cb##modifier(                                  \
-      [[maybe_unused]] bjvm_thread *thread, [[maybe_unused]] bjvm_handle *obj, [[maybe_unused]] bjvm_value *args,      \
+  __attribute__((used)) stack_value class_name_##_##method_name_##_cb##modifier(                                  \
+      [[maybe_unused]] vm_thread *thread, [[maybe_unused]] handle *obj, [[maybe_unused]] value *args,      \
       [[maybe_unused]] u8 argc)
 
 #define create_init_constructor(package_path, class_name_, method_name_, method_descriptor_, modifier, async_sz,       \
                                 variant)                                                                               \
-  __attribute__((used)) bjvm_native_t NATIVE_INFO_##class_name_##_##method_name_##_##modifier = (bjvm_native_t){        \
+  __attribute__((used)) native_t NATIVE_INFO_##class_name_##_##method_name_##_##modifier = (native_t){        \
       .class_path = STR(package_path "/" #class_name_),                                                                                 \
       .method_name = STR(#method_name_),                                                                                    \
       .method_descriptor = STR(method_descriptor_),                                                                         \
-      .callback = (bjvm_native_callback){.async_ctx_bytes = async_sz,                                                  \
+      .callback = (native_callback){.async_ctx_bytes = async_sz,                                                  \
                                          .variant = &class_name_##_##method_name_##_cb##modifier}};
 
 #define DECLARE_NATIVE_(package_path, class_name_, method_name_, method_descriptor_, modifier)                         \
@@ -156,10 +156,10 @@ extern bjvm_native_t *bjvm_natives;
 
 #define create_async_declaration(name, locals, async_methods)                                                          \
   DECLARE_ASYNC(                                                                                                       \
-    bjvm_stack_value, \
+    stack_value, \
     name, \
     locals,\
-    arguments(bjvm_thread *thread; bjvm_handle *obj; bjvm_value *args; u8 argc), \
+    arguments(vm_thread *thread; handle *obj; value *args; u8 argc), \
     async_methods\
   );                   \
   /* the arguments struct for this needs to be compatible with the async_natives_args struct */                        \
@@ -176,9 +176,9 @@ extern bjvm_native_t *bjvm_natives;
 #undef _RELOAD_CACHED_STATE
 
 #define _DECLARE_CACHED_STATE(_)                                                                                       \
-  [[maybe_unused]] bjvm_thread *thread = self->args.thread;                                                            \
-  [[maybe_unused]] bjvm_value *args = self->args.args;                                                                 \
-  [[maybe_unused]] bjvm_handle *obj = self->args.obj;                                                                  \
+  [[maybe_unused]] vm_thread *thread = self->args.thread;                                                            \
+  [[maybe_unused]] value *args = self->args.args;                                                                 \
+  [[maybe_unused]] handle *obj = self->args.obj;                                                                  \
   [[maybe_unused]] u8 argc = self->args.argc;
 
 #define _RELOAD_CACHED_STATE()                                                                                         \
@@ -211,29 +211,29 @@ extern bjvm_native_t *bjvm_natives;
 #define CreateJavaMethodBinding(binding_name, return_type, class_name, method_name, method_descriptor, argc_, args_)   \
   DECLARE_ASYNC(return_type, binding_name, \
     locals(), \
-    bjvm_thread *thread; object receiver; args_;, \
+    vm_thread *thread; object receiver; args_;, \
     invoked_methods(invoked_method(call_interpreter)) \
   );                                                   \
                                                                                                                        \
   DEFINE_ASYNC_(, empty, binding_name) {                                                                               \
     /* inline cache here? */                                                                                           \
-    bjvm_cp_method *method =                                                                                           \
-        bjvm_method_lookup(self->args.receiver->descriptor, STR(method_name), STR(method_descriptor), true, true);     \
+    cp_method *method =                                                                                           \
+        method_lookup(self->args.receiver->descriptor, STR(method_name), STR(method_descriptor), true, true);     \
     DCHECK(method);                                                                                                    \
-    DCHECK((sizeof(self->args) - sizeof(bjvm_thread *)) / sizeof(bjvm_stack_value) ==                                  \
+    DCHECK((sizeof(self->args) - sizeof(vm_thread *)) / sizeof(stack_value) ==                                  \
            method->descriptor->args_count + 1);                                                                        \
-    DCHECK((sizeof(self->args) - sizeof(bjvm_thread *)) % sizeof(bjvm_stack_value) == 0);                              \
+    DCHECK((sizeof(self->args) - sizeof(vm_thread *)) % sizeof(stack_value) == 0);                              \
     AWAIT_INNER_(empty, &self->invoked_async_methods.call_interpreter, call_interpreter, self->args.thread, method,    \
-                 (bjvm_stack_value *)self->args.receiver);                                                             \
-    bjvm_stack_value result = get_async_result(call_interpreter);                                                      \
+                 (stack_value *)self->args.receiver);                                                             \
+    stack_value result = get_async_result(call_interpreter);                                                      \
     ASYNC_END(*((return_type *)&result));                                                                              \
   }
 
 #define CallMethod(receiver, name, desc, result, ...)                                                                  \
   do {                                                                                                                 \
-    bjvm_cp_method *method = bjvm_method_lookup(receiver->descriptor, STR(name), STR(desc), true, true);               \
+    cp_method *method = method_lookup(receiver->descriptor, STR(name), STR(desc), true, true);               \
     DCHECK(method);                                                                                                    \
-    bjvm_stack_value args[] = {receiver, __VA_ARGS__};                                                                 \
+    stack_value args[] = {receiver, __VA_ARGS__};                                                                 \
     DCHECK((sizeof(args) / sizeof(args[0])) == method->descriptor.args_count);                                         \
     AWAIT(call_interpreter, thread, method, &args);                                                                    \
     if (result != nullptr) {                                                                                           \

@@ -11,16 +11,16 @@
 
 DECLARE_NATIVE("java/lang", System, mapLibraryName,
                "(Ljava/lang/String;)Ljava/lang/String;") {
-  struct bjvm_native_String *orig_name = (struct bjvm_native_String *)args[0].handle->obj;
+  struct native_String *orig_name = (struct native_String *)args[0].handle->obj;
 
   heap_string str = AsHeapString((object)orig_name, on_oom);
 
-  if (heap_str_append(&str, STR(".bjvm_lib"))) {
+  if (heap_str_append(&str, STR(".lib"))) {
     thread->current_exception = thread->out_of_mem_error;
     goto on_oom;
   }
 
-  bjvm_obj_header *result = MakeJStringFromData(thread, hslc(str), orig_name->coder);
+  obj_header *result = MakeJStringFromData(thread, hslc(str), orig_name->coder);
   if (!result) {
     thread->current_exception = thread->out_of_mem_error;
     goto on_oom;
@@ -28,7 +28,7 @@ DECLARE_NATIVE("java/lang", System, mapLibraryName,
 
   free_heap_str(str);
 
-  return (bjvm_stack_value) {.obj = result };
+  return (stack_value) {.obj = result };
 
 on_oom:
   return value_null();
@@ -37,14 +37,14 @@ on_oom:
 DECLARE_NATIVE("java/lang", System, arraycopy,
                "(Ljava/lang/Object;ILjava/lang/Object;II)V") {
   DCHECK(argc == 5);
-  bjvm_obj_header *src = args[0].handle->obj;
-  bjvm_obj_header *dest = args[2].handle->obj;
+  obj_header *src = args[0].handle->obj;
+  obj_header *dest = args[2].handle->obj;
   if (src == nullptr || dest == nullptr) {
     ThrowLangException(NullPointerException);
     return value_null();
   }
-  bool src_not_array = src->descriptor->kind == BJVM_CD_KIND_ORDINARY;
-  if (src_not_array || dest->descriptor->kind == BJVM_CD_KIND_ORDINARY) {
+  bool src_not_array = src->descriptor->kind == CD_KIND_ORDINARY;
+  if (src_not_array || dest->descriptor->kind == CD_KIND_ORDINARY) {
     // Can't copy non-array objects to each other
     ThrowLangException(ArrayStoreException);
     return value_null();
@@ -77,14 +77,14 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
   // instanceof the destination class, then we don't need to perform any checks.
   // Otherwise, we need to perform an instanceof check on each element and raise
   // an ArrayStoreException as appropriate.
-  if (src_is_1d_primitive || bjvm_instanceof(src->descriptor->one_fewer_dim,
+  if (src_is_1d_primitive || instanceof(src->descriptor->one_fewer_dim,
                                              dest->descriptor->one_fewer_dim)) {
     size_t element_size = sizeof(void *);
 
     if (src_is_1d_primitive) {
       switch (src->descriptor->primitive_component) {
 #define CASE(type, underlying)                                                 \
-  case BJVM_TYPE_KIND_##type:                                                  \
+  case TYPE_KIND_##type:                                                  \
     element_size = sizeof(underlying);                                         \
     break;
         CASE(BYTE, s8)
@@ -111,14 +111,14 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
 
   for (int i = 0; i < length; ++i) {
     // may-alias case handled above
-    bjvm_obj_header *src_elem =
-        ((bjvm_obj_header **)ArrayData(src))[src_pos + i];
-    if (src_elem && !bjvm_instanceof(src_elem->descriptor,
+    obj_header *src_elem =
+        ((obj_header **)ArrayData(src))[src_pos + i];
+    if (src_elem && !instanceof(src_elem->descriptor,
                                      dest->descriptor->one_fewer_dim)) {
       ThrowLangException(ArrayStoreException);
       return value_null();
     }
-    ((bjvm_obj_header **)ArrayData(dest))[dest_pos + i] = src_elem;
+    ((obj_header **)ArrayData(dest))[dest_pos + i] = src_elem;
   }
 
   return value_null();
@@ -130,39 +130,39 @@ DECLARE_NATIVE("java/lang", System, registerNatives, "()V") {
 
 DECLARE_NATIVE("java/lang", System, setOut0, "(Ljava/io/PrintStream;)V") {
   // Look up the field System.out
-  bjvm_classdesc *system_class =
+  classdesc *system_class =
       bootstrap_lookup_class(thread, STR("java/lang/System"));
-  bjvm_cp_field *out_field = bjvm_field_lookup(
+  cp_field *out_field = field_lookup(
       system_class, STR("out"), STR("Ljava/io/PrintStream;"));
   void *field = &system_class->static_fields[out_field->byte_offset];
-  *(bjvm_obj_header **)field = args[0].handle->obj;
+  *(obj_header **)field = args[0].handle->obj;
   return value_null();
 }
 
 DECLARE_NATIVE("java/lang", System, setIn0, "(Ljava/io/InputStream;)V") {
   // Look up the field System.in
-  bjvm_classdesc *system_class =
+  classdesc *system_class =
       bootstrap_lookup_class(thread, STR("java/lang/System"));
-  bjvm_cp_field *in_field = bjvm_field_lookup(
+  cp_field *in_field = field_lookup(
       system_class, STR("in"), STR("Ljava/io/InputStream;"));
   void *field = &system_class->static_fields[in_field->byte_offset];
-  *(bjvm_obj_header **)field = args[0].handle->obj;
+  *(obj_header **)field = args[0].handle->obj;
   return value_null();
 }
 
 DECLARE_NATIVE("java/lang", System, setErr0, "(Ljava/io/PrintStream;)V") {
-  bjvm_classdesc *system_class =
+  classdesc *system_class =
       bootstrap_lookup_class(thread, STR("java/lang/System"));
-  bjvm_cp_field *out_field = bjvm_field_lookup(
+  cp_field *out_field = field_lookup(
       system_class, STR("err"), STR("Ljava/io/PrintStream;"));
   void *field = &system_class->static_fields[out_field->byte_offset];
-  *(bjvm_obj_header **)field = args[0].handle->obj;
+  *(obj_header **)field = args[0].handle->obj;
   return value_null();
 }
 
 DECLARE_NATIVE("java/lang", System, identityHashCode, "(Ljava/lang/Object;)I") {
   assert(argc == 1);
-  return (bjvm_stack_value) {.i = get_object_hash_code(args[0].handle->obj) };
+  return (stack_value) {.i = get_object_hash_code(args[0].handle->obj) };
 }
 
 s64 micros() {
@@ -178,9 +178,9 @@ s64 micros() {
 }
 
 DECLARE_NATIVE("java/lang", System, currentTimeMillis, "()J") {
-  return (bjvm_stack_value){.l = micros() / 1000};
+  return (stack_value){.l = micros() / 1000};
 }
 
 DECLARE_NATIVE("java/lang", System, nanoTime, "()J") {
-  return (bjvm_stack_value){.l = micros() * 1000};
+  return (stack_value){.l = micros() * 1000};
 }

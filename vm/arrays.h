@@ -2,8 +2,8 @@
 // Created by alec on 12/20/24.
 //
 
-#ifndef BJVM_ARRAYS_H
-#define BJVM_ARRAYS_H
+#ifndef ARRAYS_H
+#define ARRAYS_H
 
 #include "bjvm.h"
 #include <types.h>
@@ -14,52 +14,52 @@ extern "C" {
 
 #define ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
-static int constexpr kArrayLengthOffset = sizeof(bjvm_obj_header);
+static int constexpr kArrayLengthOffset = sizeof(obj_header);
 /// Array data starts after the length field -- aligning to the size of a
 /// pointer Not sure if it's worth the memory savings to align to the size of
 /// the element
 static int constexpr kArrayDataOffset =
-    ALIGN_UP(sizeof(bjvm_obj_header) + sizeof(int), alignof(bjvm_obj_header *));
+    ALIGN_UP(sizeof(obj_header) + sizeof(int), alignof(obj_header *));
 
 static int constexpr kArrayHeaderSize =
-    kArrayDataOffset - sizeof(bjvm_obj_header);
+    kArrayDataOffset - sizeof(obj_header);
 
 #undef ALIGN_UP
 
 static int constexpr kArrayMaxDimensions = 255;
 
-static inline bool Is1DPrimitiveArray(bjvm_obj_header *src) {
-  return src->descriptor->kind == BJVM_CD_KIND_PRIMITIVE_ARRAY &&
+static inline bool Is1DPrimitiveArray(obj_header *src) {
+  return src->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY &&
          src->descriptor->dimensions == 1;
 }
 
-static inline bool Is1DReferenceArray(bjvm_obj_header *src) {
-  return src->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY &&
+static inline bool Is1DReferenceArray(obj_header *src) {
+  return src->descriptor->kind == CD_KIND_ORDINARY_ARRAY &&
          src->descriptor->dimensions == 1;
 }
 
-static inline int *ArrayLength(bjvm_obj_header *obj) {
+static inline int *ArrayLength(obj_header *obj) {
   return (int *)((char *)obj + kArrayLengthOffset);
 }
 
-static inline void *ArrayData(bjvm_obj_header *obj) {
+static inline void *ArrayData(obj_header *obj) {
   return (char *)obj + kArrayDataOffset;
 }
 
-static inline bjvm_obj_header *ReferenceArrayLoad(bjvm_obj_header *array,
+static inline obj_header *ReferenceArrayLoad(obj_header *array,
                                                   int index) {
-  DCHECK(array->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY);
+  DCHECK(array->descriptor->kind == CD_KIND_ORDINARY_ARRAY);
   DCHECK(index >= 0 && index < *ArrayLength(array));
 
-  return *((bjvm_obj_header **)ArrayData(array) + index);
+  return *((obj_header **)ArrayData(array) + index);
 }
 
-static inline void ReferenceArrayStore(bjvm_obj_header *array, int index,
-                                       bjvm_obj_header *val) {
-  DCHECK(array->descriptor->kind == BJVM_CD_KIND_ORDINARY_ARRAY);
+static inline void ReferenceArrayStore(obj_header *array, int index,
+                                       obj_header *val) {
+  DCHECK(array->descriptor->kind == CD_KIND_ORDINARY_ARRAY);
   DCHECK(index >= 0 && index < *ArrayLength(array));
 
-  *((bjvm_obj_header **)ArrayData(array) + index) = val;
+  *((obj_header **)ArrayData(array) + index) = val;
 }
 
 static inline void ByteArrayStoreBlock(object array, s32 offset, s32 length, u8 const *data) {
@@ -73,12 +73,12 @@ static inline void ByteArrayStoreBlock(object array, s32 offset, s32 length, u8 
 }
 
 #define MAKE_PRIMITIVE_LOAD_STORE(name, type)                                  \
-  static inline type name##ArrayLoad(bjvm_obj_header *array, int index) {      \
+  static inline type name##ArrayLoad(obj_header *array, int index) {      \
     DCHECK(Is1DPrimitiveArray(array));                                         \
     DCHECK(index >= 0 && index < *ArrayLength(array));                         \
     return *((type *)ArrayData(array) + index);                                \
   }                                                                            \
-  static inline void name##ArrayStore(bjvm_obj_header *array, int index,       \
+  static inline void name##ArrayStore(obj_header *array, int index,       \
                                       type val) {                              \
     DCHECK(Is1DPrimitiveArray(array));                                         \
     DCHECK(index >= 0 && index < *ArrayLength(array));                         \
@@ -95,30 +95,29 @@ MAKE_PRIMITIVE_LOAD_STORE(Double, double)
 
 #undef MAKE_PRIMITIVE_LOAD_STORE
 
-bjvm_classdesc *make_array_classdesc(bjvm_thread *thread,
-                                     bjvm_classdesc *classdesc);
+classdesc *make_array_classdesc(vm_thread *thread,
+                                     classdesc *classdesc);
 
-bjvm_obj_header *CreateArray(bjvm_thread *thread, bjvm_classdesc *desc,
+obj_header *CreateArray(vm_thread *thread, classdesc *desc,
                              int const *dim_sizes, int total_dimensions);
 
-static inline bjvm_obj_header *
-CreateObjectArray1D(bjvm_thread *thread, bjvm_classdesc *inner_type, int size) {
-  auto desc = make_array_classdesc(thread, inner_type);
-  return CreateArray(thread, desc, &size, 1);
-}
 
-static inline bjvm_obj_header *CreatePrimitiveArray1D(bjvm_thread *thread,
-                                                      bjvm_type_kind inner_type,
+__attribute__((noinline))
+obj_header *
+CreateObjectArray1D(vm_thread *thread, classdesc *inner_type, int size) ;
+
+static inline obj_header *CreatePrimitiveArray1D(vm_thread *thread,
+                                                      type_kind inner_type,
                                                       int count) {
   auto desc = make_array_classdesc(
-      thread, bjvm_primitive_classdesc(thread, inner_type));
+      thread, primitive_classdesc(thread, inner_type));
   return CreateArray(thread, desc, &count, 1);
 }
 
-static inline bjvm_obj_header *CreateByteArray(bjvm_thread *thread,
+static inline obj_header *CreateByteArray(vm_thread *thread,
                                                u8 *data, int length) {
-  bjvm_obj_header *result =
-      CreatePrimitiveArray1D(thread, BJVM_TYPE_KIND_BYTE, length);
+  obj_header *result =
+      CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, length);
   if (!result)
     return nullptr;
   memcpy(ArrayData(result), data, length);
@@ -129,4 +128,4 @@ static inline bjvm_obj_header *CreateByteArray(bjvm_thread *thread,
 }
 #endif
 
-#endif // BJVM_ARRAYS_H
+#endif // ARRAYS_H

@@ -48,8 +48,8 @@ enum {
   FIXED_LENGTH = 1 + _user_name_NDX,
 };
 
-static bjvm_handle *make_string_array(bjvm_thread *thread, int length) {
-  bjvm_handle *arr = bjvm_make_handle(thread,
+static handle *make_string_array(vm_thread *thread, int length) {
+  handle *arr = make_handle(thread,
   CreateArray(thread, thread->vm->cached_classdescs->string->array_type, (int[]) { length }, 1));
   DCHECK(arr->obj);
   return arr;
@@ -58,7 +58,7 @@ static bjvm_handle *make_string_array(bjvm_thread *thread, int length) {
 // TODO read the properties from the VM instead of hardcoding them
 DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties,
                "()[Ljava/lang/String;") {
-  bjvm_handle *props = make_string_array(thread, FIXED_LENGTH);
+  handle *props = make_string_array(thread, FIXED_LENGTH);
 
   INIT_STACK_STRING(cwd, 1024);
   CHECK(cwd.chars == getcwd(cwd.chars, 1024));
@@ -69,7 +69,7 @@ DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties,
 
 #define SET_PROP(index, value) \
   { \
-    bjvm_obj_header *str = MakeJStringFromCString(thread, value, true); \
+    obj_header *str = MakeJStringFromCString(thread, value, true); \
     ReferenceArrayStore(props->obj, index, str); \
   }
 
@@ -113,14 +113,14 @@ DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties,
   SET_PROP(_user_name_NDX, "user");
   SET_PROP(_user_home_NDX, "/home/user");
 
-  bjvm_stack_value result = (bjvm_stack_value){.obj = props->obj};
-  bjvm_drop_handle(thread, props);
+  stack_value result = (stack_value){.obj = props->obj};
+  drop_handle(thread, props);
   return result;
 }
 
 DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, vmProperties,
                "()[Ljava/lang/String;") {
-  bjvm_handle *props = make_string_array(thread, 2);
+  handle *props = make_string_array(thread, 2);
 
   SET_PROP(0, "java.home");
   char cwd[1024] = {0};
@@ -131,5 +131,5 @@ DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, vmProperties,
 
   SET_PROP(1, java_home.chars);
 
-  return (bjvm_stack_value){.obj = props->obj};
+  return (stack_value){.obj = props->obj};
 }

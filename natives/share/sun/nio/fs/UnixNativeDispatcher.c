@@ -11,12 +11,12 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
-static bjvm_obj_header* create_unix_exception(bjvm_thread *thread, int errno_code) {
-  bjvm_classdesc *classdesc = bootstrap_lookup_class(thread, STR("sun/nio/fs/UnixException"));
-  bjvm_obj_header *obj = new_object(thread, classdesc);
+static obj_header* create_unix_exception(vm_thread *thread, int errno_code) {
+  classdesc *classdesc = bootstrap_lookup_class(thread, STR("sun/nio/fs/UnixException"));
+  obj_header *obj = new_object(thread, classdesc);
 
-  bjvm_cp_method *method = bjvm_method_lookup(classdesc, STR("<init>"), STR("(I)V"), true, false);
-  call_interpreter_synchronous(thread, method, (bjvm_stack_value[]){{.obj = obj}, {.i = errno_code}}); // constructor is void method
+  cp_method *method = method_lookup(classdesc, STR("<init>"), STR("(I)V"), true, false);
+  call_interpreter_synchronous(thread, method, (stack_value[]){{.obj = obj}, {.i = errno_code}}); // constructor is void method
 
   return obj;
 }
@@ -32,12 +32,12 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, getcwd, "()[B") {
     return value_null();
   }
   cwd.len = strlen(cwd.chars);
-  bjvm_obj_header *array = CreatePrimitiveArray1D(thread, BJVM_TYPE_KIND_BYTE, cwd.len);
+  obj_header *array = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, cwd.len);
   if (!array) {
     return value_null();
   }
   memcpy(ArrayData(array), cwd.chars, cwd.len);
-  return (bjvm_stack_value){.obj = array};
+  return (stack_value){.obj = array};
 }
 
 
@@ -50,9 +50,9 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
   uintptr_t buf = args[0].l;
   int result = stat((char*)buf, &st);
   if (result)
-    return (bjvm_stack_value){.i = errno};
+    return (stack_value){.i = errno};
 
-  bjvm_obj_header *attrs = args[1].handle->obj;
+  obj_header *attrs = args[1].handle->obj;
 
 #define MapAttrLong(name, value) StoreFieldLong(attrs, (#name), value)
 #define MapAttrInt(name, value) StoreFieldInt(attrs, (#name), value)
@@ -88,12 +88,12 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
 #undef MapAttrLong
   #undef MapAttrInt
 
-  return (bjvm_stack_value){.i = 0};
+  return (stack_value){.i = 0};
 }
 
 DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, open0, "(JII)I") {
   int result = open((char const*)args[0].l, args[1].i, args[2].i);
-  if (result >= 0) return (bjvm_stack_value){.i = result};
+  if (result >= 0) return (stack_value){.i = result};
 
   thread->current_exception = create_unix_exception(thread, errno);
   return value_null();
@@ -108,11 +108,11 @@ DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, size0, "(Ljava/io/FileDescr
     thread->current_exception = create_unix_exception(thread, errno);
     return value_null();
   }
-  return (bjvm_stack_value){.l = st.st_size};
+  return (stack_value){.l = st.st_size};
 }
 
 DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, allocationGranularity0, "()J") {
-  return (bjvm_stack_value){.l = 4096};
+  return (stack_value){.l = 4096};
 }
 
 // (fd: FileDescriptor, prot:Int, pos: Long, len: Long, isSync: Boolean) -> Long
@@ -129,7 +129,7 @@ DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, map0, "(Ljava/io/FileDescri
     return value_null();
   }
   arrput(thread->vm->mmap_allocations, ((mmap_allocation) { result, len }));
-  return (bjvm_stack_value){.l = (s64)result};
+  return (stack_value){.l = (s64)result};
 }
 
 DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, unmap0, "(JJ)V") {

@@ -10,7 +10,7 @@ typedef struct {
 } pending_call;
 
 typedef struct {
-  bjvm_thread *thread;
+  vm_thread *thread;
   // pending calls for this thread (processed in order)
   pending_call *call_queue;
   rr_wakeup_info *wakeup_info;
@@ -26,7 +26,7 @@ void free_thread_info(thread_info * info) {
   free(info);
 }
 
-void rr_scheduler_init(rr_scheduler *scheduler, bjvm_vm *vm) {
+void rr_scheduler_init(rr_scheduler *scheduler, vm *vm) {
   scheduler->vm = vm;
   scheduler->_impl = calloc(1, sizeof(impl));
 }
@@ -135,7 +135,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   if (!info)
     return SCHEDULER_RESULT_DONE;
 
-  bjvm_thread *thread = info->thread;
+  vm_thread *thread = info->thread;
   const int MICROSECONDS_TO_RUN = 30000;
 
   thread->fuel = 50000;
@@ -162,10 +162,10 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     rec->status = SCHEDULER_RESULT_DONE;
     rec->returned = call->call._result;
 
-    if (field_to_kind(&call->call.args.method->descriptor->return_type) == BJVM_TYPE_KIND_REFERENCE &&
+    if (field_to_kind(&call->call.args.method->descriptor->return_type) == TYPE_KIND_REFERENCE &&
       rec->returned.obj) {
       // Create a handle
-      rec->js_handle = bjvm_make_js_handle(scheduler->vm, rec->returned.obj);
+      rec->js_handle = make_js_handle(scheduler->vm, rec->returned.obj);
     } else {
       rec->js_handle = -1;  // no handle here
     }
@@ -180,7 +180,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   return arrlen(impl->round_robin) ? SCHEDULER_RESULT_MORE : SCHEDULER_RESULT_DONE;
 }
 
-static thread_info *get_or_create_thread_info(impl *impl, bjvm_thread *thread) {
+static thread_info *get_or_create_thread_info(impl *impl, vm_thread *thread) {
   for (int i = 0; i < arrlen(impl->round_robin); i++) {
     if (impl->round_robin[i]->thread == thread) {
       return impl->round_robin[i];
@@ -209,7 +209,7 @@ scheduler_status_t rr_scheduler_execute_immediately(execution_record *record) {
 
         if (fut.status == FUTURE_NOT_READY) {
           // Raise IllegalStateException
-          bjvm_raise_vm_exception(record->thread, STR("java/lang/IllegalStateException"),
+          raise_vm_exception(record->thread, STR("java/lang/IllegalStateException"),
             STR("Cannot synchronously execute this method"));
           return SCHEDULER_RESULT_INVAL;
         }
@@ -228,12 +228,12 @@ scheduler_status_t rr_scheduler_execute_immediately(execution_record *record) {
 }
 
 execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t call) {
-  bjvm_thread *thread = call.args.thread;
+  vm_thread *thread = call.args.thread;
   thread_info *info = get_or_create_thread_info(scheduler->_impl, thread);
 
   // Copy the arguments object
-  bjvm_stack_value *args_copy = calloc(bjvm_argc(call.args.method), sizeof(bjvm_stack_value));
-  memcpy(args_copy, call.args.args, sizeof(bjvm_stack_value) * bjvm_argc(call.args.method));
+  stack_value *args_copy = calloc(method_argc(call.args.method), sizeof(stack_value));
+  memcpy(args_copy, call.args.args, sizeof(stack_value) * method_argc(call.args.method));
   call.args.args = args_copy;
 
   pending_call pending = {.call = call, .record = calloc(1, sizeof(execution_record))};
@@ -250,7 +250,7 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
 
 void free_execution_record(execution_record *record) {
   if (record->js_handle != -1) {
-    bjvm_drop_js_handle(record->vm, record->js_handle);
+    drop_js_handle(record->vm, record->js_handle);
   }
   impl *I = record->_impl;
   for (int i = 0; i < arrlen(I->executions); i++) {
