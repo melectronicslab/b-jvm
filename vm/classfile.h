@@ -509,7 +509,6 @@ typedef enum {
 typedef struct bjvm_method_descriptor {
   bjvm_field_descriptor *args;
   int args_count;
-  int args_cap;
   bjvm_field_descriptor return_type;
 } bjvm_method_descriptor;
 
@@ -591,6 +590,8 @@ struct bjvm_bc_iinc_data {
 };
 
 typedef struct bjvm_bytecode_insn {
+  // Please don't change the offsets of "kind" and "tos_before" as the interpreter intrinsic rewriter uses these offsets
+  // directly.
   bjvm_insn_code_kind kind;
   u8 args;
   bjvm_reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
@@ -845,6 +846,9 @@ typedef struct bjvm_classdesc {
   int hierarchy_len;
 
   arena arena; // most things are allocated in here
+
+  // The tid of the thread which is initializing this class
+  s32 initializing_thread;
 } bjvm_classdesc;
 
 heap_string insn_to_string(const bjvm_bytecode_insn *insn, int insn_index);

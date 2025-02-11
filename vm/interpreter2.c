@@ -17,7 +17,17 @@
 // before loading the value from the stack and using the appropriate jump table.
 //
 // The general signature is (thread, frame, insns, pc, sp, tos). At appropriate points (whenever the frame might be
-// read back, e.g. for GC purposes, or when interrupting), the TOS value and
+// read back, e.g. for GC purposes, or when interrupting), the TOS value and program counter are written to the stack.
+//
+// JS CASE
+//
+// To force the tail calls to use a funcref table instead of a normal call_indirect to an untyped table, we use
+// intrinsics that are lowered in a separate post-processing pass. This reads the jump tables and builds a single
+// funcref table, in which kind * 4 + tos_before is the index of the implementation for bytecode "kind" with starting
+// tos-type "tos_before". Non-existent entries are replaced with nop_impl_*, so that the funcref table is non-nullable
+// and the only check that occurs is a bounds check against the table size.
+
+[[maybe_unused]] static int cow = 0;
 
 #define DEBUG_CHECK();
 #if 0
@@ -30,12 +40,12 @@
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
-  dump_frame(stdout, frame);                                                                                           \
+  dump_frame(stdout, frame);
   /* DCHECK(stack_depth(frame) == sp - frame->plain.stack); */
 #endif
 
-// If true, use a sequence of tail calls rather than computed goto and an aggressively inlined function. We try to make
-// the code reasonably generic to handle both cases efficiently.
+// If true, use a sequence of tail calls rather than computed goto. We try to make the code reasonably generic to handle
+// both cases efficiently.
 #define DO_TAILS 1
 
 #if DO_TAILS
@@ -70,9 +80,12 @@
 #endif
 
 #define MAX_INSN_KIND (bjvm_insn_dsqrt + 1)
+#include "monitors.h"
 #include "reflection.h"
 
 #include <instrumentation.h>
+#include <roundrobin_scheduler.h>
+#include <sys/time.h>
 
 #ifndef __OPTIMIZE__
 #pragma GCC optimize("O1")
@@ -91,12 +104,44 @@ static bytecode_handler_t jmp_table_float[MAX_INSN_KIND];
 // Used when the TOS is double (wasm signature: f64)
 static bytecode_handler_t jmp_table_double[MAX_INSN_KIND];
 
-const static bytecode_handler_t *bytecode_tables[4] = {
+[[maybe_unused]] const static bytecode_handler_t *bytecode_tables[4] = {
     [TOS_VOID] = jmp_table_void,
     [TOS_INT] = jmp_table_int,
     [TOS_FLOAT] = jmp_table_float,
     [TOS_DOUBLE] = jmp_table_double,
 };
+
+extern int64_t __interpreter_intrinsic_next_polymorphic(ARGS_VOID);
+extern int64_t __interpreter_intrinsic_next_void(ARGS_VOID);
+extern int64_t __interpreter_intrinsic_next_int(ARGS_INT);
+extern int64_t __interpreter_intrinsic_next_double(ARGS_DOUBLE);
+extern int64_t __interpreter_intrinsic_next_float(ARGS_FLOAT);
+
+// These point into .rodata and are used to recover the function pointers for the funcref jump tables.
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_void_table_base() {
+  return jmp_table_void;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_int_table_base() {
+  return jmp_table_int;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_float_table_base() {
+  return jmp_table_float;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *__interpreter_intrinsic_double_table_base() {
+  return jmp_table_double;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int32_t __interpreter_intrinsic_max_insn() {
+  return MAX_INSN_KIND;
+}
 
 #if DO_TAILS
 
@@ -107,7 +152,7 @@ const static bytecode_handler_t *bytecode_tables[4] = {
     [[maybe_unused]] s64 a_undef = 0;                                                                                                   \
     [[maybe_unused]] float b_undef = 0;                                                                                                     \
     [[maybe_unused]] double c_undef = 0;                                                                                                    \
-    MUSTTAIL return (expr);                                                                                                               \
+    expr                                                                                                               \
   } while (0);
 #else
 #define WITH_UNDEF(expr)                                                                                               \
@@ -120,6 +165,41 @@ const static bytecode_handler_t *bytecode_tables[4] = {
   } while (0);
 #endif
 
+#ifdef EMSCRIPTEN
+
+#define JMP_INT(tos)                                                                                                   \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
+#define JMP_FLOAT(tos)                                                                                                 \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
+#define JMP_DOUBLE(tos)                                                                                                \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
+
+#define NEXT_INT(tos)                                                                                                  \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos, b_undef, c_undef);)
+#define NEXT_FLOAT(tos)                                                                                                \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos, c_undef);)
+#define NEXT_DOUBLE(tos)                                                                                               \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, tos);)
+
+#define JMP_VOID                                                                                                       \
+  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef);)
+// Jump to the instruction at pc + 1, with nothing in the top of the stack.
+#define NEXT_VOID                                                                                                      \
+WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef);)
+
+// Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
+// look it up from the analyzed tos type.
+#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return __interpreter_intrinsic_next_polymorphic(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
+
+// Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
+// look it up from the analyzed tos type.
+#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return __interpreter_intrinsic_next_polymorphic(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d);
+
+#else // !ifdef EMSCRIPTEN
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
   s64 __tos = (s64)(tos);                                                                                      \
@@ -152,8 +232,18 @@ const static bytecode_handler_t *bytecode_tables[4] = {
 #define NEXT_VOID                                                                                                      \
   WITH_UNDEF(                                                                                                          \
       jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef));
-#else
-#endif
+
+#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return bytecode_tables[insn->tos_after][insns[1].kind](thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
+
+#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
+bjvm_stack_value __tos = (tos);                                                                                      \
+MUSTTAIL return bytecode_tables[insn->tos_before][insns[0].kind](thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d);
+
+
+#endif  // ifdef EMSCRIPTEN
+#endif  // DO_TAILS
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos)                                                                                                     \
@@ -176,32 +266,9 @@ const static bytecode_handler_t *bytecode_tables[4] = {
       double: (*(sp - 1)).d,                                                                                           \
       bjvm_obj_header *: (*(sp - 1)).obj);
 
-// Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
-// look it up from the analyzed tos type.
-#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
-  bytecode_handler_t handler = bytecode_tables[insn->tos_after][insns[1].kind];                                        \
-  bjvm_stack_value __tos = (tos);                                                                                      \
-  MUSTTAIL return handler(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f, __tos.d);
-
-// Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
-// look it up from the analyzed tos type.
-#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
-  switch (insn->tos_before) {                                                                                          \
-  case TOS_VOID: {                                                                                                     \
-    JMP_VOID                                                                                                           \
-  }                                                                                                                    \
-  case TOS_INT: {                                                                                                      \
-    JMP_INT((tos).l)                                                                                                   \
-  }                                                                                                                    \
-  case TOS_FLOAT: {                                                                                                    \
-    JMP_FLOAT((tos).f)                                                                                                 \
-  }                                                                                                                    \
-  case TOS_DOUBLE: {                                                                                                   \
-    JMP_DOUBLE((tos).d)                                                                                                \
-  }                                                                                                                    \
-  default:                                                                                                             \
-    __builtin_unreachable();                                                                                           \
-  }
+int calc(bjvm_insn_code_kind kind, bjvm_reduced_tos_kind tos_) {
+  return kind + tos_ * MAX_INSN_KIND;
+}
 
 // For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsptions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
@@ -293,6 +360,11 @@ DECLARE_ASYNC(int, resolve_invokestatic,
               invoked_method(resolve_methodref)
 );
 
+DECLARE_ASYNC(int, resolve_new_inst,
+  locals(bjvm_classdesc *classdesc),
+  arguments(bjvm_thread *thread; bjvm_bytecode_insn *inst;),
+  invoked_methods(invoked_method(bjvm_initialize_class)));
+
 DECLARE_ASYNC(int, resolve_insn,
               locals(),
               arguments(bjvm_thread *thread; bjvm_bytecode_insn *inst; bjvm_plain_frame *frame; bjvm_stack_value *sp_;),
@@ -300,25 +372,29 @@ DECLARE_ASYNC(int, resolve_insn,
                 invoked_method(resolve_getstatic_putstatic)
                 invoked_method(resolve_getfield_putfield)
                 invoked_method(resolve_invokestatic)
+                invoked_method(resolve_new_inst)
               )
 );
 
 DEFINE_ASYNC(resolve_insn) {
-  switch (args->inst->kind) {
-  case bjvm_insn_getstatic:
-  case bjvm_insn_putstatic:
+  u16 kind = args->inst->kind;
+  if (kind == bjvm_insn_getstatic || kind == bjvm_insn_putstatic) {
     AWAIT(resolve_getstatic_putstatic, args->thread, args->inst);
     ASYNC_RETURN(get_async_result(resolve_getstatic_putstatic));
-  case bjvm_insn_getfield:
-  case bjvm_insn_putfield:
+  }
+  if (kind == bjvm_insn_getfield || kind == bjvm_insn_putfield) {
     AWAIT(resolve_getfield_putfield, args->thread, args->inst, args->frame, args->sp_);
     ASYNC_RETURN(get_async_result(resolve_getfield_putfield));
-  case bjvm_insn_invokestatic:
+  }
+  if (kind == bjvm_insn_new) {
+    AWAIT(resolve_new_inst, args->thread, args->inst);
+    ASYNC_RETURN(get_async_result(resolve_new_inst));
+  }
+  if (kind == bjvm_insn_invokestatic) {
     AWAIT(resolve_invokestatic, args->thread, args->inst);
     ASYNC_RETURN(get_async_result(resolve_invokestatic));
-  default:
-    UNREACHABLE();
   }
+  UNREACHABLE();
   ASYNC_END_VOID();
 }
 
@@ -334,23 +410,25 @@ typedef enum {
   CONT_INVOKE,
   CONT_INVOKESIGPOLY, // tos must be reloaded
   CONT_RUN_NATIVE,
+  CONT_MONITOR_ENTER,
+  CONT_RESUME_INSN,
 } continuation_point;
 
 typedef struct {
-  async_wakeup_info *wakeup;
+  void *wakeup;
   continuation_point pnt;
 
   union {
     resolve_insn_t resolve_insn;
     bjvm_invokevirtual_signature_polymorphic_t sigpoly;
     bjvm_run_native_t run_native;
+    monitor_acquire_t acquire_monitor;
     struct {
       bjvm_stack_frame *frame;
       u8 argc;
       bool returns;
     } interp_call;
   } ctx;
-
 } continuation_frame;
 
 struct async_stack {
@@ -366,13 +444,14 @@ static s32 grow_async_stack(bjvm_thread *thread) {
   if (new_capacity == 0)
     new_capacity = 4;
 
-  thread->async_stack = stk =
+  stk =
       realloc(thread->async_stack, sizeof(struct async_stack) + new_capacity * sizeof(continuation_frame));
   ;
   if (unlikely(!stk)) {
     thread->current_exception = thread->stack_overflow_error;
     return -1;
   }
+  thread->async_stack = stk;
 
   stk->max_height = new_capacity;
   return 0;
@@ -398,10 +477,50 @@ static continuation_frame *async_stack_pop(bjvm_thread *thread) {
   return &thread->async_stack->frames[--thread->async_stack->height];
 }
 
-static async_wakeup_info *async_stack_top(bjvm_thread *thread) {
-  DCHECK(thread->async_stack->height > 0);
+static void *async_stack_top(bjvm_thread *thread) {
+  assert(thread->async_stack->height > 0);
   return thread->async_stack->frames[thread->async_stack->height - 1].wakeup;
 }
+
+/** FUEL CHECKING */
+
+
+__attribute__((noinline)) static bool refuel_check(bjvm_thread *thread) {
+  const int REFUEL = 50000;
+  thread->fuel = REFUEL;
+
+  if (thread->synchronous_depth)  // we're in a synchronous call, don't try to yield
+    return false;
+
+  // Get the current time in milliseconds since 1970
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  u64 now = tv.tv_sec * 1000000 + tv.tv_usec;
+  if (thread->yield_at_time != 0 && now >= thread->yield_at_time) {
+    arrlast(thread->frames)->is_async_suspended = true;
+
+    continuation_frame *cont = async_stack_push(thread);
+    // Provide a way for us to free the wakeup info. There will never be multiple refuel checks in flight within a
+    // single thread.
+    rr_wakeup_info *wakeup = thread->refuel_wakeup_info ? thread->refuel_wakeup_info
+      : (thread->refuel_wakeup_info = malloc(sizeof(rr_wakeup_info)));
+    wakeup->kind = RR_WAKEUP_YIELDING;
+    *cont = (continuation_frame){.pnt = CONT_RESUME_INSN,
+                                 .wakeup = (void*)wakeup};
+    return true;
+  }
+  return false;
+}
+
+static bool fuel_check_impl(bjvm_thread *thread) {
+  if (unlikely(thread->fuel-- == 0)) {
+    return refuel_check(thread);
+  }
+  return false;
+}
+
+#define FUEL_CHECK if (fuel_check_impl(thread)) { SPILL(tos); return 0; }
+#define FUEL_CHECK_VOID if (fuel_check_impl(thread)) { SPILL_VOID return 0; }
 
 /** BYTECODE IMPLEMENTATIONS */
 
@@ -525,7 +644,6 @@ force_inline static s64 putstatic_impl_void(ARGS_VOID) {
   if (thread->current_exception) {
     return 0;
   }
-
   STACK_POLYMORPHIC_JMP(*(sp - 1));
 }
 FORWARD_TO_NULLARY(putstatic)
@@ -539,7 +657,6 @@ force_inline static s64 getstatic_L_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_L)
 
 force_inline static s64 getstatic_F_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -548,7 +665,6 @@ force_inline static s64 getstatic_F_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_F)
 
 force_inline static s64 getstatic_D_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -557,7 +673,6 @@ force_inline static s64 getstatic_D_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_D)
 
 force_inline static s64 getstatic_J_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -566,7 +681,6 @@ force_inline static s64 getstatic_J_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_J)
 
 force_inline static s64 getstatic_I_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -575,7 +689,6 @@ force_inline static s64 getstatic_I_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_I)
 
 force_inline static s64 getstatic_S_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -584,7 +697,6 @@ force_inline static s64 getstatic_S_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_S)
 
 force_inline static s64 getstatic_C_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -593,7 +705,6 @@ force_inline static s64 getstatic_C_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_C)
 
 force_inline static s64 getstatic_B_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -602,7 +713,6 @@ force_inline static s64 getstatic_B_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_B)
 
 force_inline static s64 getstatic_Z_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -611,7 +721,6 @@ force_inline static s64 getstatic_Z_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(getstatic_Z)
 
 static s64 putstatic_B_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   *(s8 *)insn->ic = (s8)tos;
   --sp;
@@ -619,7 +728,6 @@ static s64 putstatic_B_impl_int(ARGS_INT) {
 }
 
 static s64 putstatic_C_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   *(u16 *)insn->ic = (u16)tos;
   --sp;
@@ -627,7 +735,6 @@ static s64 putstatic_C_impl_int(ARGS_INT) {
 }
 
 static s64 putstatic_S_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   *(s16 *)insn->ic = (s16)tos;
   --sp;
@@ -642,7 +749,6 @@ static s64 putstatic_I_impl_int(ARGS_INT) {
 }
 
 static s64 putstatic_J_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   *(s64 *)insn->ic = tos;
   --sp;
@@ -650,7 +756,6 @@ static s64 putstatic_J_impl_int(ARGS_INT) {
 }
 
 static s64 putstatic_F_impl_float(ARGS_FLOAT) {
-
   DEBUG_CHECK();
   *(float *)insn->ic = tos;
   --sp;
@@ -658,7 +763,6 @@ static s64 putstatic_F_impl_float(ARGS_FLOAT) {
 }
 
 static s64 putstatic_D_impl_double(ARGS_DOUBLE) {
-
   DEBUG_CHECK();
   *(double *)insn->ic = tos;
   --sp;
@@ -666,7 +770,6 @@ static s64 putstatic_D_impl_double(ARGS_DOUBLE) {
 }
 
 static s64 putstatic_L_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   *(bjvm_obj_header **)insn->ic = (bjvm_obj_header *)tos;
   --sp;
@@ -674,7 +777,6 @@ static s64 putstatic_L_impl_int(ARGS_INT) {
 }
 
 static s64 putstatic_Z_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   *(s8 *)insn->ic = (s8)tos;
   --sp;
@@ -758,7 +860,6 @@ static s64 getfield_impl_int(ARGS_INT) {
 }
 
 force_inline static s64 putfield_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   SPILL_VOID
   TryResolve(thread, insn, &frame->plain, sp);
@@ -767,7 +868,6 @@ force_inline static s64 putfield_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(putfield)
 
 static s64 getfield_B_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -779,7 +879,6 @@ static s64 getfield_B_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_C_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -791,7 +890,6 @@ static s64 getfield_C_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_S_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -803,7 +901,6 @@ static s64 getfield_S_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_I_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -815,7 +912,6 @@ static s64 getfield_I_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_J_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -827,7 +923,6 @@ static s64 getfield_J_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_F_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -839,7 +934,6 @@ static s64 getfield_F_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_D_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -851,7 +945,6 @@ static s64 getfield_D_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_L_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -863,7 +956,6 @@ static s64 getfield_L_impl_int(ARGS_INT) {
 }
 
 static s64 getfield_Z_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL_VOID
@@ -875,7 +967,6 @@ static s64 getfield_Z_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_B_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -890,7 +981,6 @@ static s64 putfield_B_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_C_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -905,7 +995,6 @@ static s64 putfield_C_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_S_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -920,7 +1009,6 @@ static s64 putfield_S_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_I_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -935,7 +1023,6 @@ static s64 putfield_I_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_J_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -950,7 +1037,6 @@ static s64 putfield_J_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_L_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -965,7 +1051,6 @@ static s64 putfield_L_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_Z_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -980,7 +1065,6 @@ static s64 putfield_Z_impl_int(ARGS_INT) {
 }
 
 static s64 putfield_F_impl_float(ARGS_FLOAT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -995,7 +1079,6 @@ static s64 putfield_F_impl_float(ARGS_FLOAT) {
 }
 
 static s64 putfield_D_impl_double(ARGS_DOUBLE) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (sp - 2)->obj;
   if (unlikely(!obj)) {
@@ -1014,7 +1097,7 @@ static s64 putfield_D_impl_double(ARGS_DOUBLE) {
 // Binary operation on two integers (ints or longs)
 #define INTEGER_BIN_OP(which, eval)                                                                                    \
   force_inline static s64 which##_impl_int(ARGS_INT) {                                                             \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     s64 a = (sp - 2)->l, b = tos;                                                                                  \
     s64 result = eval;                                                                                             \
     sp--;                                                                                                              \
@@ -1044,7 +1127,7 @@ INTEGER_BIN_OP(lushr, (s64)((u64)a >> (b & 0x3f)))
 
 #define INTEGER_UN_OP(which, eval, NEXT)                                                                               \
   force_inline static s64 which##_impl_int(ARGS_INT) {                                                             \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     s64 a = tos;                                                                                                   \
     NEXT(eval)                                                                                                         \
   }
@@ -1065,14 +1148,14 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 
 #define FLOAT_BIN_OP(which, eval, out_float, out_double, NEXT1, NEXT2)                                                 \
   force_inline static s64 f##which##_impl_float(ARGS_FLOAT) {                                                      \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     float a = (sp - 2)->f, b = tos;                                                                                    \
     out_float result = eval;                                                                                           \
     sp--;                                                                                                              \
     NEXT1(result)                                                                                                      \
   }                                                                                                                    \
   force_inline static s64 d##which##_impl_double(ARGS_DOUBLE) {                                                    \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     double a = (sp - 2)->d, b = tos;                                                                                   \
     out_double result = eval;                                                                                          \
     sp--;                                                                                                              \
@@ -1081,7 +1164,7 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 
 #define FLOAT_UN_OP(which, eval, out, NEXT)                                                                            \
   force_inline static s64 which##_impl_float(ARGS_FLOAT) {                                                         \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     float a = tos;                                                                                                     \
     out result = eval;                                                                                                 \
     NEXT(result)                                                                                                       \
@@ -1089,7 +1172,7 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 
 #define DOUBLE_UN_OP(which, eval, out, NEXT)                                                                           \
   force_inline static s64 which##_impl_double(ARGS_DOUBLE) {                                                       \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     double a = tos;                                                                                                    \
     out result = eval;                                                                                                 \
     NEXT(result)                                                                                                       \
@@ -1113,7 +1196,6 @@ DOUBLE_UN_OP(d2l, double_to_long(a), s64, NEXT_INT)
 DOUBLE_UN_OP(d2f, (float)a, float, NEXT_FLOAT)
 
 static s64 idiv_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   int a = (sp - 2)->i, b = (int)tos;
   if (unlikely(b == 0)) {
@@ -1126,7 +1208,6 @@ static s64 idiv_impl_int(ARGS_INT) {
 }
 
 static s64 ldiv_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   s64 a = (sp - 2)->l, b = tos;
   if (unlikely(b == 0)) {
@@ -1139,7 +1220,6 @@ static s64 ldiv_impl_int(ARGS_INT) {
 }
 
 static s64 lcmp_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   s64 a = (sp - 2)->l, b = tos;
   sp--;
@@ -1147,7 +1227,6 @@ static s64 lcmp_impl_int(ARGS_INT) {
 }
 
 static s64 irem_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   int a = (sp - 2)->i, b = (int)tos;
   if (unlikely(b == 0)) {
@@ -1160,7 +1239,6 @@ static s64 irem_impl_int(ARGS_INT) {
 }
 
 static s64 lrem_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   s64 a = (sp - 2)->l, b = tos;
   if (unlikely(b == 0)) {
@@ -1187,7 +1265,7 @@ static s64 arraylength_impl_int(ARGS_INT) {
 
 #define ARRAY_LOAD(which, load, type, NEXT)                                                                            \
   static s64 which##_impl_int(ARGS_INT) {                                                                          \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     bjvm_obj_header *array = (bjvm_obj_header *)(sp - 2)->obj;                                                         \
     int index = (int)tos;                                                                                              \
     if (unlikely(!array)) {                                                                                            \
@@ -1217,7 +1295,7 @@ ARRAY_LOAD(caload, CharArrayLoad, s64, NEXT_INT)
 
 #define ARRAY_STORE(which, tt1, args, tt3, store)                                                                      \
   static s64 which##_impl_##tt1(args) {                                                                            \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
     bjvm_obj_header *array = (bjvm_obj_header *)(sp - 3)->obj;                                                         \
     int index = (int)(sp - 2)->i;                                                                                      \
     if (unlikely(!array)) {                                                                                            \
@@ -1247,7 +1325,6 @@ ARRAY_STORE(castore, int, ARGS_INT, u16, CharArrayStore)
 // We implement aastore separately because it needs an additional instanceof check for ArrayStoreExceptions.
 // <array> <index> <value>  ->  <void>
 static s64 aastore_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *array = (bjvm_obj_header *)(sp - 3)->obj;
   bjvm_obj_header *value = (bjvm_obj_header *)tos;
@@ -1319,6 +1396,7 @@ static s64 dreturn_impl_double(ARGS_DOUBLE) {
 
 static s64 goto_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
+  FUEL_CHECK_VOID
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1327,6 +1405,7 @@ static s64 goto_impl_void(ARGS_VOID) {
 
 static s64 goto_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
+  FUEL_CHECK
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1335,6 +1414,7 @@ static s64 goto_impl_double(ARGS_DOUBLE) {
 
 static s64 goto_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK();
+  FUEL_CHECK
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1343,6 +1423,7 @@ static s64 goto_impl_float(ARGS_FLOAT) {
 
 static s64 goto_impl_int(ARGS_INT) {
   DEBUG_CHECK();
+  FUEL_CHECK
   s32 delta = (s32)insn->index - (s32)pc;
   pc = insn->index;
   insns += delta;
@@ -1350,7 +1431,6 @@ static s64 goto_impl_int(ARGS_INT) {
 }
 
 static s64 tableswitch_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   s32 index = (s32)tos;
   s32 low = insn->tableswitch->low;
@@ -1370,7 +1450,6 @@ static s64 tableswitch_impl_int(ARGS_INT) {
 }
 
 static s64 lookupswitch_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   struct bjvm_bc_lookupswitch_data data = *insn->lookupswitch;
 
@@ -1399,7 +1478,8 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
 
 #define MAKE_INT_BRANCH_AGAINST_0(which, op)                                                                           \
   static s64 which##_impl_int(ARGS_INT) {                                                                          \
-    DEBUG_CHECK();;                                                                                                       \
+  DEBUG_CHECK();                                                                                                       \
+    FUEL_CHECK\
     u16 old_pc = pc;                                                                                              \
     pc = ((s32)tos op 0) ? insn->index : (u32)(pc + 1);                                                                 \
     insns += (s32)pc - (s32)old_pc;                                                                            \
@@ -1418,7 +1498,8 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
 
 #define MAKE_INT_BRANCH(which, op)                                                                                     \
   static s64 which##_impl_int(ARGS_INT) {                                                                          \
-    DEBUG_CHECK();                                                                                                        \
+  DEBUG_CHECK();                                                                                                        \
+    FUEL_CHECK\
     s64 a = (sp - 2)->i, b = (int)tos;                                                                             \
     u16 old_pc = pc;                                                                                              \
     pc = a op b ? insn->index : (u32)(pc + 1);                                                                              \
@@ -1435,8 +1516,8 @@ MAKE_INT_BRANCH(if_icmpgt, >)
 MAKE_INT_BRANCH(if_icmple, <=)
 
 static s64 if_acmpeq_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
+  FUEL_CHECK
   bjvm_obj_header *a = (sp - 2)->obj, *b = (bjvm_obj_header *)tos;
   int old_pc = pc;
   pc = a == b ? (insn->index - 1) : pc;
@@ -1446,8 +1527,8 @@ static s64 if_acmpeq_impl_int(ARGS_INT) {
 }
 
 static s64 if_acmpne_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
+  FUEL_CHECK
   bjvm_obj_header *a = (sp - 2)->obj, *b = (bjvm_obj_header *)tos;
   int old_pc = pc;
   pc = a != b ? (insn->index - 1) : pc;
@@ -1458,9 +1539,14 @@ static s64 if_acmpne_impl_int(ARGS_INT) {
 
 /** Monitors */
 
-// TODO actually implement this stuff
-static s64 monitorenter_impl_int(ARGS_INT) {
+// Push the necessary continuation frame for a monitorenter instruction that is contended.
+void push_async_monitor_enter(bjvm_thread *thread, bjvm_stack_frame *frame, monitor_acquire_t *ctx) {
+  continuation_frame *cont = async_stack_push(thread);
+  frame->is_async_suspended = true;
+  *cont = (continuation_frame) { .pnt = CONT_MONITOR_ENTER, .ctx.acquire_monitor = *ctx };
+}
 
+static s64 monitorenter_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   if (unlikely(!tos)) {
     SPILL(tos);
@@ -1468,16 +1554,37 @@ static s64 monitorenter_impl_int(ARGS_INT) {
     return 0;
   }
 
+  do {
+    monitor_acquire_t ctx = { .args = {thread, (bjvm_obj_header *)tos} };
+    future_t fut = monitor_acquire(&ctx);
+    if (unlikely(thread->current_exception)) {  // oom
+      return 0;
+    }
+    if (fut.status == FUTURE_NOT_READY) {  // monitor is contended
+      push_async_monitor_enter(thread, frame, &ctx);
+      return 0;
+    }
+  } while (0);
+
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
 }
 
 static s64 monitorexit_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   if (unlikely(!tos)) {
-    SPILL(tos);
+    SPILL_VOID
     raise_null_pointer_exception(thread);
+    return 0;
+  }
+
+  bjvm_obj_header *obj = (bjvm_obj_header *) tos;
+  int result = monitor_release(thread, obj);
+  assert(!thread->current_exception && "monitor_release raised an exception");
+
+  if (unlikely(result)) {
+    SPILL_VOID
+    raise_illegal_monitor_state_exception(thread);
     return 0;
   }
 
@@ -1487,8 +1594,19 @@ static s64 monitorexit_impl_int(ARGS_INT) {
 
 /** New object creation */
 
-force_inline static s64 new_impl_void(ARGS_VOID) {
+DEFINE_ASYNC(resolve_new_inst) {
+  bjvm_classdesc *classdesc = self->classdesc = args->inst->cp->class_info.classdesc;
+  AWAIT(bjvm_initialize_class, args->thread, classdesc);
+  if (self->classdesc->state < BJVM_CD_STATE_INITIALIZING) {  // linkage error, etc.
+    ASYNC_RETURN(-1);
+  }
+  args->inst->kind = bjvm_insn_new_resolved;
+  args->inst->classdesc = self->classdesc;
+  ASYNC_END(0);
+}
 
+
+force_inline static s64 new_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
 
@@ -1497,25 +1615,12 @@ force_inline static s64 new_impl_void(ARGS_VOID) {
   if (error)
     return 0;
 
-  if (insn->cp->class_info.classdesc->state < BJVM_CD_STATE_INITIALIZED) {
-    bjvm_initialize_class_t init = {};
-    init.args.thread = thread;
-    init.args.classdesc = insn->cp->class_info.classdesc;
-    future_t fut = bjvm_initialize_class(&init);
-    CHECK(fut.status == FUTURE_READY); // for now
-    if (thread->current_exception)
-      return 0;
-  }
-
-  insn->kind = bjvm_insn_new_resolved;
-  insn->classdesc = info->classdesc;
-
+  TryResolve(thread, insn, &frame->plain, sp);
   JMP_VOID
 }
 FORWARD_TO_NULLARY(new)
 
 force_inline static s64 new_resolved_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   SPILL_VOID
   bjvm_obj_header *obj = new_object(thread, insn->classdesc);
@@ -1702,6 +1807,9 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
   future_t fut = resolve_methodref(&ctx);
+  if (fut.status != FUTURE_READY) {
+    printf("Method: %.*s on %.*s\n", fmt_slice(ctx.args.info->nat->name), fmt_slice(ctx.args.info->class_info->name));
+  }
   CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
@@ -1802,7 +1910,6 @@ __attribute__((noinline)) static s64 invokespecial_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(invokespecial)
 
 force_inline static s64 invokespecial_resolved_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != BJVM_TYPE_KIND_VOID;
@@ -1832,7 +1939,6 @@ force_inline static s64 invokespecial_resolved_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(invokespecial_resolved)
 
 __attribute__((noinline)) static s64 invokeinterface_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_cp_method_info *method_info = &insn->cp->methodref;
   int argc = insn->args = method_info->descriptor->args_count + 1;
@@ -2022,7 +2128,9 @@ __attribute__((noinline)) static s64 invokedynamic_impl_void(ARGS_VOID) {
 #define insn (&insns[0])
       insn;
   ctx.args.indy = indy;
+  thread->synchronous_depth++;
   future_t fut = indy_resolve(&ctx);
+  thread->synchronous_depth--;
   CHECK(fut.status == FUTURE_READY);
 
   if (thread->current_exception) {
@@ -2117,7 +2225,6 @@ force_inline static s64 dload_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(dload)
 
 force_inline static s64 lload_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   NEXT_INT(get_local(frame, insn)->l)
@@ -2146,7 +2253,6 @@ static s64 istore_impl_int(ARGS_INT) {
 }
 
 static s64 fstore_impl_float(ARGS_FLOAT) {
-
   DEBUG_CHECK();
   get_local(frame, insn)->f = tos;
   sp--;
@@ -2154,7 +2260,6 @@ static s64 fstore_impl_float(ARGS_FLOAT) {
 }
 
 static s64 dstore_impl_double(ARGS_DOUBLE) {
-
   DEBUG_CHECK();
   get_local(frame, insn)->d = tos;
   sp--;
@@ -2162,7 +2267,6 @@ static s64 dstore_impl_double(ARGS_DOUBLE) {
 }
 
 static s64 lstore_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   get_local(frame, insn)->l = tos;
   sp--;
@@ -2170,7 +2274,6 @@ static s64 lstore_impl_int(ARGS_INT) {
 }
 
 static s64 iinc_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
@@ -2178,7 +2281,6 @@ static s64 iinc_impl_void(ARGS_VOID) {
 }
 
 static s64 iinc_impl_double(ARGS_DOUBLE) {
-
   DEBUG_CHECK();
   int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
@@ -2186,7 +2288,6 @@ static s64 iinc_impl_double(ARGS_DOUBLE) {
 }
 
 static s64 iinc_impl_float(ARGS_FLOAT) {
-
   DEBUG_CHECK();
   int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
@@ -2194,7 +2295,6 @@ static s64 iinc_impl_float(ARGS_FLOAT) {
 }
 
 static s64 iinc_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   int *a = &frame_locals(frame)[insn->iinc.index].i;
   __builtin_add_overflow(*a, insn->iinc.const_, a);
@@ -2204,7 +2304,6 @@ static s64 iinc_impl_int(ARGS_INT) {
 /** Constant-pushing instructions */
 
 static s64 aconst_null_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   NEXT_INT((s64)0)
@@ -2212,7 +2311,6 @@ static s64 aconst_null_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(aconst_null)
 
 static s64 ldc_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   bjvm_cp_entry *ent = insn->cp;
@@ -2256,7 +2354,6 @@ static s64 ldc_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(ldc)
 
 static s64 ldc2_w_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   bjvm_cp_entry *ent = insn->cp;
@@ -2274,7 +2371,6 @@ static s64 ldc2_w_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(ldc2_w)
 
 static s64 iconst_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   NEXT_INT(insn->integer_imm)
@@ -2282,7 +2378,6 @@ static s64 iconst_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(iconst)
 
 static s64 fconst_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   NEXT_FLOAT(insn->f_imm);
@@ -2290,7 +2385,6 @@ static s64 fconst_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(fconst)
 
 static s64 dconst_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   NEXT_DOUBLE(insn->d_imm);
@@ -2298,7 +2392,6 @@ static s64 dconst_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(dconst)
 
 static s64 lconst_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp++;
   NEXT_INT(insn->integer_imm);
@@ -2308,7 +2401,6 @@ FORWARD_TO_NULLARY(lconst)
 /** Stack manipulation instructions */
 
 static s64 pop_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -2316,7 +2408,6 @@ static s64 pop_impl_void(ARGS_VOID) {
 FORWARD_TO_NULLARY(pop)
 
 static s64 pop2_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   sp -= 2;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -2325,7 +2416,6 @@ FORWARD_TO_NULLARY(pop2)
 
 // Never directly called
 static s64 swap_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_stack_value tmp = *(sp - 1);
   *(sp - 1) = *(sp - 2);
@@ -2334,26 +2424,23 @@ static s64 swap_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(swap)
 
-static s64 nop_impl_void(ARGS_VOID) {
-
+EMSCRIPTEN_KEEPALIVE  // read by the intrinsic converter
+s64 nop_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   NEXT_VOID
 }
 
-static s64 nop_impl_double(ARGS_DOUBLE) {
-
+s64 nop_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
   NEXT_DOUBLE(tos)
 }
 
-static s64 nop_impl_float(ARGS_FLOAT) {
-
+s64 nop_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK();
   NEXT_FLOAT(tos)
 }
 
-static s64 nop_impl_int(ARGS_INT) {
-
+s64 nop_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   NEXT_INT(tos)
 }
@@ -2364,13 +2451,11 @@ static s64 dup_impl_int(ARGS_INT) {
 }
 
 static s64 dup_impl_float(ARGS_FLOAT) {
-
   DEBUG_CHECK();(sp++ - 1)->f = tos;
   NEXT_FLOAT(tos)
 }
 
 static s64 dup_impl_double(ARGS_DOUBLE) {
-
   DEBUG_CHECK();(sp++ - 1)->d = tos;
   NEXT_DOUBLE(tos)
 }
@@ -2380,7 +2465,6 @@ static s64 dup_impl_double(ARGS_DOUBLE) {
 
 // ..., val2, val1 -> ..., val2, val1, val2, val1
 static s64 dup2_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_stack_value val1 = *(sp - 1), val2 = *(sp - 2);
   *(sp) = val2;
@@ -2392,7 +2476,6 @@ FORWARD_TO_NULLARY(dup2)
 
 // ..., val2, val1 -> ..., val1, val2, val1
 static s64 dup_x1_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_stack_value val1 = *(sp - 1), val2 = *(sp - 2);
   *(sp - 2) = val1;
@@ -2405,7 +2488,6 @@ FORWARD_TO_NULLARY(dup_x1)
 
 // ..., val3, val2, val1 -> val1, val3, val2, val1
 static s64 dup_x2_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_stack_value val1 = *(sp - 1), val2 = *(sp - 2), val3 = *(sp - 3);
   *(sp - 3) = val1;
@@ -2419,7 +2501,6 @@ FORWARD_TO_NULLARY(dup_x2)
 
 // ..., val3, val2, val1 -> ..., val2, val1, val3, val2, val1
 static s64 dup2_x1_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_stack_value val1 = *(sp - 1), val2 = *(sp - 2), val3 = *(sp - 3);
   *(sp - 3) = val2;
@@ -2434,7 +2515,6 @@ FORWARD_TO_NULLARY(dup2_x1)
 
 // ..., val4, val3, val2, val1 -> ..., val2, val1, val4, val3, val2, val1
 static s64 dup2_x2_impl_void(ARGS_VOID) {
-
   DEBUG_CHECK();
   bjvm_stack_value val1 = *(sp - 1), val2 = *(sp - 2), val3 = *(sp - 3), val4 = *(sp - 4);
   *(sp - 4) = val2;
@@ -2448,7 +2528,7 @@ static s64 dup2_x2_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(dup2_x2)
 
-force_inline static s64 entry(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
+static s64 entry_impl_void(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
 
 /** Misc. */
 static s64 athrow_impl_int(ARGS_INT) {
@@ -2473,22 +2553,17 @@ static s64 checkcast_impl_int(ARGS_INT) {
 }
 
 static s64 checkcast_resolved_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   if (obj && unlikely(!bjvm_instanceof(obj->descriptor, insn->classdesc))) {
-    INIT_STACK_STRING(complaint, 1000);
-    complaint = bprintf(complaint, "Expected instance of %.*s, got %.*s", fmt_slice(insn->classdesc->name),
-                        fmt_slice(obj->descriptor->name));
     SPILL(tos)
-    bjvm_raise_vm_exception(thread, STR("java/lang/ClassCastException"), complaint);
+    raise_class_cast_exception(thread, obj->descriptor, insn->classdesc);
     return 0;
   }
   NEXT_INT(tos)
 }
 
 static s64 instanceof_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_cp_class_info *info = &insn->cp->class_info;
   SPILL(tos)
@@ -2503,7 +2578,6 @@ static s64 instanceof_impl_int(ARGS_INT) {
 }
 
 static s64 instanceof_resolved_impl_int(ARGS_INT) {
-
   DEBUG_CHECK();
   bjvm_obj_header *obj = (bjvm_obj_header *)tos;
   int result = obj ? bjvm_instanceof(obj->descriptor, insn->classdesc) : 0;
@@ -2523,9 +2597,9 @@ static bjvm_exception_table_entry *find_exception_handler(bjvm_thread *thread, b
   if (!table)
     return nullptr;
 
-  u16 const pc = frame->plain.program_counter;
+  int const pc = frame->plain.program_counter;
 
-  for (u16 i = 0; i < table->entries_count; ++i) {
+  for (int i = 0; i < table->entries_count; ++i) {
     bjvm_exception_table_entry *ent = &table->entries[i];
 
     if (ent->start_insn <= pc && pc < ent->end_insn) {
@@ -2548,9 +2622,10 @@ static bjvm_exception_table_entry *find_exception_handler(bjvm_thread *thread, b
 }
 
 // NOLINTNEXTLINE(misc-no-recursion)
-static s64 async_resume(ARGS_VOID) {
+static s64 async_resume_impl_void(ARGS_VOID) {
   // we need to pop (not peek) because if we re-enter this method, it'll need to pop its fram
   continuation_frame cont = *async_stack_pop(thread);
+
   bjvm_stack_value result;
   future_t fut;
 
@@ -2568,10 +2643,22 @@ static s64 async_resume(ARGS_VOID) {
     }
     break;
 
+  case CONT_RESUME_INSN: {
+    fut.status = FUTURE_READY;
+    needs_polymorphic_jump = true;
+    break;
+  }
+
   case CONT_INVOKE:
     result = bjvm_interpret_2(&fut, thread, cont.ctx.interp_call.frame);
     sp -= cont.ctx.interp_call.argc; // todo: wrong union member
     has_result = cont.ctx.interp_call.returns;
+    advance_pc = true;
+    break;
+
+  case CONT_MONITOR_ENTER:
+    fut = monitor_acquire(&cont.ctx.acquire_monitor);
+    sp--; // todo: why are we doing this unconditionally
     advance_pc = true;
     break;
 
@@ -2592,11 +2679,10 @@ static s64 async_resume(ARGS_VOID) {
     return 0;
   }
 
+  frame->is_async_suspended = false;
   if (unlikely(thread->current_exception)) {
     return 0;
   }
-
-  frame->is_async_suspended = false;
 
   if (has_result) {
     *sp++ = result;
@@ -2636,7 +2722,8 @@ static inline bjvm_stack_value interpret_native_frame(future_t *fut, bjvm_thread
   }
 }
 
-static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
+__attribute__((noinline))
+static bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
   bjvm_stack_value result;
 
   do {
@@ -2647,15 +2734,15 @@ static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *
     bjvm_bytecode_insn *insns = frame_->method->code->code;
 
     if (unlikely(frame_->is_async_suspended)) {
-      result.l = async_resume(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
+      result.l = async_resume_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
     } else {
-      result.l = entry(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
+      result.l = entry_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
     }
 
     // we really should just have all the methods return a future_t via a pointer, but whatever
     if (unlikely(frame_->is_async_suspended)) {
       // reconstruct future to return
-      async_wakeup_info *wk = async_stack_top(thread);
+      void *wk = async_stack_top(thread);
       *fut = (future_t){FUTURE_NOT_READY, wk};
       return (bjvm_stack_value){0};
     }
@@ -2680,9 +2767,33 @@ static inline bjvm_stack_value interpret_java_frame(future_t *fut, bjvm_thread *
   return result;
 }
 
+object get_sync_object(bjvm_thread *thread, bjvm_stack_frame* frame) {
+  u16 flags = frame->method->access_flags;
+  object synchronized_on = nullptr;
+  if (unlikely(flags & BJVM_ACCESS_SYNCHRONIZED)) {
+    if (flags & BJVM_ACCESS_STATIC) {  // synchronize on the .class
+      synchronized_on = (void*)bjvm_get_class_mirror(thread, frame->method->my_class);
+    } else {  // synchronize on "this"
+      synchronized_on = frame_locals(frame)[0].obj;
+    }
+    assert(synchronized_on && "is null");
+  }
+  return synchronized_on;
+}
+
 // NOLINTNEXTLINE(misc-no-recursion)
 bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack_frame *frame_) {
   InstrumentMethodEntry(thread, frame_);
+
+  object synchronized_on = get_sync_object(thread, frame_);
+  if (unlikely(synchronized_on)) {
+    monitor_acquire_t ctx = { .args = {thread, synchronized_on} };
+    future_t fut = monitor_acquire(&ctx);
+    if (fut.status == FUTURE_NOT_READY) {
+      push_async_monitor_enter(thread, frame_, &ctx);
+      return value_null();
+    }
+  }
 
   bjvm_stack_value result;
   if (unlikely(bjvm_is_frame_native(frame_))) {
@@ -2692,6 +2803,17 @@ bjvm_stack_value bjvm_interpret_2(future_t *fut, bjvm_thread *thread, bjvm_stack
   }
 
   if (likely(fut->status == FUTURE_READY)) {
+    synchronized_on = get_sync_object(thread, frame_);  // re-compute in case of intervening GC
+    if (unlikely(synchronized_on)) {
+      int err = monitor_release(thread, synchronized_on);
+      if (err) {
+        // the current exception is replaced with an IllegalMonitorStateException
+        thread->current_exception = nullptr;
+        raise_illegal_monitor_state_exception(thread);
+        return value_null();
+      }
+    }
+
     InstrumentMethodReturn(thread, frame_);
   }
 
