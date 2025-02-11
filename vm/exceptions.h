@@ -34,7 +34,7 @@ void raise_null_pointer_exception(vm_thread *thread) ;
 
 // Raise an ArrayStoreException.
 __attribute__((noinline))
-void raise_array_store_exception(vm_thread *thread, slice class_name) ;
+void raise_array_store_exception(vm_thread *thread, const heap_string *class_name) ;
 
 // Raise an IncompatibleClassChangeError.
 __attribute__((noinline))

@@ -72,8 +72,8 @@ void raise_null_pointer_exception(vm_thread *thread){
   raise_vm_exception(thread, STR("java/lang/NullPointerException"), null_str());
 }
 
-void raise_array_store_exception(vm_thread *thread, slice class_name){
-  raise_vm_exception(thread, STR("java/lang/ArrayStoreException"), class_name);
+void raise_array_store_exception(vm_thread *thread, const heap_string *class_name){
+  raise_vm_exception(thread, STR("java/lang/ArrayStoreException"), hslc(*(heap_string*)class_name));
 }
 
 void raise_incompatible_class_change_error(vm_thread *thread, const slice complaint){

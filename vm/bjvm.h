@@ -81,6 +81,7 @@ typedef union {
 // null
 static inline stack_value value_null() { return (stack_value){.obj = nullptr}; }
 
+__attribute__((noinline))
 bool instanceof(const classdesc *o, const classdesc *target);
 
 typedef struct {

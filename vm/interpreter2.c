@@ -1,3 +1,36 @@
+// Interpreter version 2, based on tail calls.
+//
+// There are implementations for TOS types of int/long/reference, float, and double. Some instruction/TOS
+// combinations are impossible (rejected by the verifier) and are thus omitted. The execution of "stack polymorphic"
+// instructions like pop will consult the TOS stack type that the instruction is annotated with (during analysis),
+// before loading the value from the stack and using the appropriate jump table.
+//
+// The general signature is (thread, frame, insns, pc, sp, tos). At appropriate points (whenever the frame might be
+// read back, e.g. for GC purposes, or when interrupting), the TOS value and program counter are written to the stack.
+//
+// In tail call mode, JMP_VOID etc. macros select the correct bytecode to jump to. In asm this will compile down
+// to a single branch instruction. Otherwise, they return the appropriate jump table value (kind * 4 + tos_type) for
+// the switch-loop to jump to.
+//
+// In non-tail-call mode, important for in-browser performance, the generator loosely controls inlining by assuming
+// that inlining will occur, then preventing the inlining of certain functions through a funcref
+// (__interpreter_intrinsic_force_outline). This is done because the WASM runtime often aggressively inlines functions,
+// shooting itself in the foot by spilling the most important values (e.g. "insns", "sp") out of registers. The live
+// ranges of these variables are simply too large for typical JIT register allocation algorithms to work well.
+//
+// Failure to inline is verified by the postprocessor, which expects no user-stack allocation to occur.
+//
+// JS POSTPROCESSING
+//
+// To force the tail calls to use a funcref table instead of a normal call_indirect to an untyped table, we use
+// intrinsics that are lowered in a separate post-processing pass. This reads the jump tables and builds a single
+// funcref table, in which kind * 4 + tos_before is the index of the implementation for bytecode "kind" with starting
+// tos-type "tos_before". Non-existent entries are replaced with nop_impl_*, so that the funcref table is non-nullable
+// and the only check that occurs is a bounds check against the table size.
+//
+// The tail-call implementation is only fast on Firefox. Until the other JS engines get their shit together, to support
+// decent performance on Safari and Chrome, we use the while loop/switch statement.
+
 #include "arrays.h"
 #include "bjvm.h"
 #include "classfile.h"
@@ -8,26 +41,6 @@
 
 #include <exceptions.h>
 #include <linkage.h>
-
-// Interpreter v2 naming conventions:
-//
-// There are implementations for TOS types of int/long/reference, float, and double. Some instruction/TOS
-// combinations are impossible (rejected by the verifier) and are thus omitted. The execution of "stack polymorphic"
-// instructions like pop will consult the TOS stack type that the instruction is annotated with (during analysis),
-// before loading the value from the stack and using the appropriate jump table.
-//
-// The general signature is (thread, frame, insns, pc, sp, tos). At appropriate points (whenever the frame might be
-// read back, e.g. for GC purposes, or when interrupting), the TOS value and program counter are written to the stack.
-//
-// JS CASE
-//
-// To force the tail calls to use a funcref table instead of a normal call_indirect to an untyped table, we use
-// intrinsics that are lowered in a separate post-processing pass. This reads the jump tables and builds a single
-// funcref table, in which kind * 4 + tos_before is the index of the implementation for bytecode "kind" with starting
-// tos-type "tos_before". Non-existent entries are replaced with nop_impl_*, so that the funcref table is non-nullable
-// and the only check that occurs is a bounds check against the table size.
-
-[[maybe_unused]] static int cow = 0;
 
 #define DEBUG_CHECK();
 #if 0
@@ -46,7 +59,11 @@
 
 // If true, use a sequence of tail calls rather than computed goto. We try to make the code reasonably generic to handle
 // both cases efficiently.
+#ifdef EMSCRIPTEN
+#define DO_TAILS 0
+#else
 #define DO_TAILS 1
+#endif
 
 #if DO_TAILS
 #define sp sp_
@@ -65,19 +82,23 @@
 #define ARGS_FLOAT ARGS_BASE, [[maybe_unused]] s64 arg_1, [[maybe_unused]] float tos_, [[maybe_unused]] double arg_3
 
 #else
-#error "Not implemented"
+#define sp (*sp_)
+#define pc (*pc_)
+#define tos (*tos_)
+
+#define ARGS_BASE                                                                                                      \
+[[maybe_unused]] vm_thread *thread, [[maybe_unused]] stack_frame *frame,                                      \
+[[maybe_unused]] bytecode_insn *insns, [[maybe_unused]] u16 *pc_,                                       \
+[[maybe_unused]] stack_value **sp_
+
+#define ARGS_VOID ARGS_BASE, [[maybe_unused]] s64 *arg_1, [[maybe_unused]] float *arg_2, [[maybe_unused]] double *arg_3
+#define ARGS_INT ARGS_BASE, [[maybe_unused]] s64 *tos_, [[maybe_unused]] float *arg_2, [[maybe_unused]] double *arg_3
+#define ARGS_DOUBLE ARGS_BASE, [[maybe_unused]] s64 *arg_1, [[maybe_unused]] float *arg_2, [[maybe_unused]] double *tos_
+#define ARGS_FLOAT ARGS_BASE, [[maybe_unused]] s64 *arg_1, [[maybe_unused]] float *tos_, [[maybe_unused]] double *arg_3
 #endif
 
 // The current instruction
 #define insn (&insns[0])
-
-// Indicates that the following return must be a tail call. Supported by modern clang and GCC (but GCC support seems
-// somewhat buggy...)
-#ifdef __clang__
-#define MUSTTAIL [[clang::musttail]]
-#else
-#define MUSTTAIL
-#endif
 
 #define MAX_INSN_KIND (insn_dsqrt + 1)
 #include "monitors.h"
@@ -86,11 +107,6 @@
 #include <instrumentation.h>
 #include <roundrobin_scheduler.h>
 #include <sys/time.h>
-
-#ifndef __OPTIMIZE__
-#pragma GCC optimize("O1")
-#endif
-#pragma GCC optimize("optimize-sibling-calls")
 
 typedef s64 (*bytecode_handler_t)(ARGS_VOID);
 
@@ -116,6 +132,10 @@ extern int64_t __interpreter_intrinsic_next_void(ARGS_VOID);
 extern int64_t __interpreter_intrinsic_next_int(ARGS_INT);
 extern int64_t __interpreter_intrinsic_next_double(ARGS_DOUBLE);
 extern int64_t __interpreter_intrinsic_next_float(ARGS_FLOAT);
+
+// Call the bytecode implementation through a funcref table. This prevents inlining by the runtime and regalloc from
+// dying.
+extern int64_t __interpreter_intrinsic_notco_call_outlined(ARGS_VOID, int index);
 
 // These point into .rodata and are used to recover the function pointers for the funcref jump tables.
 EMSCRIPTEN_KEEPALIVE
@@ -143,7 +163,21 @@ int32_t __interpreter_intrinsic_max_insn() {
   return MAX_INSN_KIND;
 }
 
+#define MUSTTAIL // to allow compilation without -mtail-call
+
 #if DO_TAILS
+
+// Indicates that the following return must be a tail call. Supported by modern clang and GCC (but GCC support seems
+// somewhat buggy..., so we use -foptimize-sibling-calls and disable ASAN and pray.)
+#ifdef __clang__
+#undef MUSTTAIL
+#define MUSTTAIL [[clang::musttail]]
+#endif
+
+#ifndef __OPTIMIZE__
+#pragma GCC optimize("O1")
+#endif
+#pragma GCC optimize("optimize-sibling-calls")
 
 #ifdef EMSCRIPTEN
 // Sad :(
@@ -240,9 +274,34 @@ MUSTTAIL return bytecode_tables[insn->tos_after][insns[1].kind](thread, frame, i
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
 stack_value __tos = (tos);                                                                                      \
 MUSTTAIL return bytecode_tables[insn->tos_before][insns[0].kind](thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d);
-
-
 #endif  // ifdef EMSCRIPTEN
+#else  // !DO_TAILS
+
+bool *tos_;  // used by JMP_* and NEXT_* to detect what type of function we're in.
+
+s64 *arg_1;  // not actually used, just to silence compiler errors in not-taken branches
+float *arg_2;
+double *arg_3;
+
+#define JMP_VOID return 4 * insn->kind;
+#define NEXT_VOID pc++; return 4 * (insn + 1)->kind;
+
+#define SET_INT(tos) *(_Generic((*tos_), s64: true, default: false) ? (s64*)tos_ : arg_1) = (s64)tos;
+#define SET_FLOAT(tos) *(_Generic((*tos_), float: true, default: false) ? (float*)tos_ : arg_2) = tos;
+#define SET_DOUBLE(tos) *(_Generic((*tos_), double: true, default: false) ? (double*)tos_ : arg_3) = tos;
+
+#define JMP_INT(tos) SET_INT(tos); return 4 * insn->kind + TOS_INT;
+#define NEXT_INT(tos) SET_INT(tos); pc++; return 4 * (insn + 1)->kind + TOS_INT;
+
+#define JMP_FLOAT(tos) SET_FLOAT(tos); return 4 * insn->kind + TOS_FLOAT;
+#define NEXT_FLOAT(tos) SET_FLOAT(tos); pc++; return 4 * (insn + 1)->kind + TOS_FLOAT;
+
+#define JMP_DOUBLE(tos) SET_DOUBLE(tos); return 4 * insn->kind + TOS_DOUBLE;
+#define NEXT_DOUBLE(tos) SET_DOUBLE(tos); pc++; return 4 * (insn + 1)->kind + TOS_DOUBLE;
+
+#define STACK_POLYMORPHIC_JMP(tos) SET_FLOAT((tos).f); SET_INT((tos).l); SET_DOUBLE((tos).d); return 4 * insn->kind + insn->tos_before;
+#define STACK_POLYMORPHIC_NEXT(tos) SET_FLOAT((tos).f); SET_INT((tos).l); SET_DOUBLE((tos).d); pc++; return 4 * (insn + 1)->kind + insn->tos_after;
+
 #endif  // DO_TAILS
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
@@ -266,26 +325,22 @@ MUSTTAIL return bytecode_tables[insn->tos_before][insns[0].kind](thread, frame, 
       double: (*(sp - 1)).d,                                                                                           \
       obj_header *: (*(sp - 1)).obj);
 
-int calc(insn_code_kind kind, reduced_tos_kind tos_) {
-  return kind + tos_ * MAX_INSN_KIND;
-}
-
 // For a bytecode that takes no arguments, given an implementation for the int TOS type, generate adapter funcsptions
 // which push the current TOS value onto the stack and then call the void TOS implementation.
 #define FORWARD_TO_NULLARY(which) \
   static s64 which##_impl_int(ARGS_INT) {                                                                          \
     *(sp - 1) = (stack_value){.l = tos};                                                                          \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, tos, arg_2, arg_3);                                    \
+    MUSTTAIL return which##_impl_void(thread, frame, insns, pc_, sp_, tos_, arg_2, arg_3);                                    \
   }                                                                                                                    \
                                                                                                                        \
   static s64 which##_impl_float(ARGS_FLOAT) {                                                                      \
     *(sp - 1) = (stack_value){.f = tos};                                                                          \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, tos, arg_3);                                    \
+    MUSTTAIL return which##_impl_void(thread, frame, insns, pc_, sp_, arg_1, tos_, arg_3);                                    \
   }                                                                                                                    \
                                                                                                                        \
   static s64 which##_impl_double(ARGS_DOUBLE) {                                                                    \
     *(sp - 1) = (stack_value){.d = tos};                                                                          \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc, sp, arg_1, arg_2, tos);                                    \
+    MUSTTAIL return which##_impl_void(thread, frame, insns, pc_, sp_, arg_1, arg_2, tos_);                                    \
   }
 
 /** Helper functions */
@@ -1343,7 +1398,7 @@ static s64 aastore_impl_int(ARGS_INT) {
   // Instanceof check against the component type
   if (value && !instanceof(value->descriptor, array->descriptor->one_fewer_dim)) {
     SPILL(tos);
-    raise_array_store_exception(thread, hslc(value->descriptor->name));
+    raise_array_store_exception(thread, &value->descriptor->name);
     return 0;
   }
   ReferenceArrayStore(array, index, value);
@@ -1732,7 +1787,10 @@ __attribute__((noinline)) static s64 invokestatic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokestatic)
 
-static inline u8 attempt_invoke(vm_thread *thread, stack_frame *invoked_frame,
+#ifdef EMSCRIPTEN
+__attribute__((noinline))
+#endif
+static u8 attempt_invoke(vm_thread *thread, stack_frame *invoked_frame,
                                      stack_frame *outer_frame, u8 argc, bool returns,
                                      stack_value *result) {
   future_t fut;
@@ -1806,10 +1864,9 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   resolve_methodref_t ctx = {};
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
+  thread->synchronous_depth++; // TODO remove
   future_t fut = resolve_methodref(&ctx);
-  if (fut.status != FUTURE_READY) {
-    printf("Method: %.*s on %.*s\n", fmt_slice(ctx.args.info->nat->name), fmt_slice(ctx.args.info->class_info->name));
-  }
+  thread->synchronous_depth--;
   CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
@@ -2528,8 +2585,6 @@ static s64 dup2_x2_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(dup2_x2)
 
-static s64 entry_impl_void(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
-
 /** Misc. */
 static s64 athrow_impl_int(ARGS_INT) {
   DEBUG_CHECK();
@@ -2584,10 +2639,102 @@ static s64 instanceof_resolved_impl_int(ARGS_INT) {
   NEXT_INT(result)
 }
 
-static s64 sqrt_impl_double(ARGS_DOUBLE) {
+static s64 dsqrt_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
   NEXT_DOUBLE(sqrt(tos))
 }
+
+[[maybe_unused]] static s64 notco_fallback(ARGS_VOID, int index) {
+  return bytecode_tables[index & 0x3][index >> 2](thread, frame, insns, pc_, sp_, arg_1, arg_2, arg_3);
+}
+
+#if DO_TAILS
+static s64 entry_impl_void(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
+#else
+__attribute__((noinline))
+static s64 entry_notco(vm_thread *thread, stack_frame *frame, bytecode_insn *code,
+  u16 pc_, stack_value *sp_, unsigned handler_i) {
+  struct {
+    stack_value *temp_sp_;
+    int64_t temp_int_tos;
+    double temp_double_tos;
+    float temp_float_tos;
+    u16 temp_pc;
+  } spill;
+
+  int64_t int_tos = (sp_ - 1)->l;
+  double double_tos = (sp_ - 1)->d;
+  float float_tos = (sp_ - 1)->f;
+
+  while (true) {
+    // printf("pc: %d, sp: %d, tos_int: %lld, tos_double: %f, tos_float: %f\n", pc_, (int)(sp_ - frame->plain.stack), int_tos, double_tos, float_tos);
+    bytecode_insn *insns = code + pc_;
+
+    enum {
+      tos_int = TOS_INT,
+      tos_double = TOS_DOUBLE,
+      tos_float = TOS_FLOAT,
+      tos_void = TOS_VOID,
+    };
+
+    switch (handler_i) {
+
+#define INL(insn__, tos__) \
+    case 4 * insn_##insn__ + tos_##tos__: \
+      handler_i = insn__##_impl_##tos__(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos); \
+      break;
+
+#include "interpreter2-notco.inc"
+
+    case 4 * insn_return + TOS_INT:
+    case 4 * insn_return + TOS_DOUBLE:
+    case 4 * insn_return + TOS_FLOAT:
+    case 4 * insn_return + TOS_VOID:
+      return return_impl_void(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+
+    case 4 * insn_areturn + TOS_INT:
+      return areturn_impl_int(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+    case 4 * insn_dreturn + TOS_DOUBLE:
+      return dreturn_impl_double(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+    case 4 * insn_freturn + TOS_FLOAT:
+      return freturn_impl_float(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+    case 4 * insn_ireturn + TOS_INT:
+      return ireturn_impl_int(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+    case 4 * insn_lreturn + TOS_INT:
+      return lreturn_impl_int(thread, frame, insns, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+
+    case 0:  // special value in case of exception or suspend (theoretically also nop_impl_void, but javac doesn't use that)
+      DCHECK(thread->current_exception || frame->is_async_suspended);
+      return 0;
+    default: {
+      // outlined case
+      spill.temp_pc = pc_;
+      spill.temp_sp_ = sp_;
+      spill.temp_double_tos = double_tos;
+      spill.temp_float_tos = float_tos;
+      spill.temp_int_tos = int_tos;
+
+#ifdef EMSCRIPTEN
+#define notco_call __interpreter_intrinsic_notco_call_outlined
+#else
+#define notco_call notco_fallback
+#endif
+
+      handler_i = notco_call(thread, frame, code + pc_,
+        &spill.temp_pc, &spill.temp_sp_, &spill.temp_int_tos, &spill.temp_float_tos, &spill.temp_double_tos, (int)handler_i);
+
+      pc_ = spill.temp_pc;
+      sp_ = spill.temp_sp_;
+      int_tos = spill.temp_int_tos;
+      float_tos = spill.temp_float_tos;
+      double_tos = spill.temp_double_tos;
+
+      break;
+    }
+    }
+  }
+}
+#endif
 
 static exception_table_entry *find_exception_handler(vm_thread *thread, stack_frame *frame,
                                                           classdesc *exception_type) {
@@ -2597,12 +2744,12 @@ static exception_table_entry *find_exception_handler(vm_thread *thread, stack_fr
   if (!table)
     return nullptr;
 
-  int const pc = frame->plain.program_counter;
+  int const pc_ = frame->plain.program_counter;
 
   for (int i = 0; i < table->entries_count; ++i) {
     exception_table_entry *ent = &table->entries[i];
 
-    if (ent->start_insn <= pc && pc < ent->end_insn) {
+    if (ent->start_insn <= pc_ && pc_ < ent->end_insn) {
       if (ent->catch_type) {
         int error = resolve_class(thread, ent->catch_type) || link_class(thread, ent->catch_type->classdesc);
         if (error)
@@ -2728,16 +2875,31 @@ static stack_value interpret_java_frame(future_t *fut, vm_thread *thread, stack_
 
   do {
     interpret_begin:
-      plain_frame *frame = get_plain_frame(frame_);
+    plain_frame *frame = get_plain_frame(frame_);
     stack_value *sp_ = &frame->stack[stack_depth(frame_)];
     u16 pc_ = frame->program_counter;
     bytecode_insn *insns = frame_->method->code->code;
+    [[maybe_unused]] unsigned handler_i = 4 * (insns + pc_)->kind + (insns + pc_)->tos_before;
 
     if (unlikely(frame_->is_async_suspended)) {
+#if DO_TAILS
       result.l = async_resume_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
-    } else {
+#else
+      handler_i = async_resume_impl_void(thread, frame_, insns + pc_, &pc_, &sp_,
+        &(sp_ - 1)->l, &(sp_ - 1)->f, &(sp_ - 1)->d);
+#endif
+    }
+
+#if DO_TAILS
+    else {
       result.l = entry_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
     }
+#else
+    if (likely(!frame_->is_async_suspended && !thread->current_exception)) {
+      // In the no-tails case, sp, pc, etc. will have been set up appropriately for this call
+      result.l = entry_notco(thread, frame_, insns, pc_, sp_, handler_i);
+    }
+#endif
 
     // we really should just have all the methods return a future_t via a pointer, but whatever
     if (unlikely(frame_->is_async_suspended)) {
@@ -2824,6 +2986,8 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *frame_) {
 
 #define PAGE_ALIGN _Alignas(4096)
 
+// This comment is searched by codegen and should precede the table list vvv
+// CODEGEN BEGIN TABLES
 PAGE_ALIGN static s64 (*jmp_table_void[MAX_INSN_KIND])(ARGS_VOID) = {
     [insn_nop] = nop_impl_void,
     [insn_aconst_null] = aconst_null_impl_void,
@@ -2936,7 +3100,7 @@ PAGE_ALIGN static s64 (*jmp_table_double[MAX_INSN_KIND])(ARGS_VOID) = {
     [insn_getstatic_Z] = getstatic_Z_impl_double,
     [insn_getstatic_L] = getstatic_L_impl_double,
     [insn_putstatic_D] = putstatic_D_impl_double,
-    [insn_dsqrt] = sqrt_impl_double};
+    [insn_dsqrt] = dsqrt_impl_double};
 
 PAGE_ALIGN static s64 (*jmp_table_int[MAX_INSN_KIND])(ARGS_VOID) = {
     [insn_nop] = nop_impl_int,

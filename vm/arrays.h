@@ -101,11 +101,10 @@ classdesc *make_array_classdesc(vm_thread *thread,
 obj_header *CreateArray(vm_thread *thread, classdesc *desc,
                              int const *dim_sizes, int total_dimensions);
 
-static inline obj_header *
-CreateObjectArray1D(vm_thread *thread, classdesc *inner_type, int size) {
-  auto desc = make_array_classdesc(thread, inner_type);
-  return CreateArray(thread, desc, &size, 1);
-}
+
+__attribute__((noinline))
+obj_header *
+CreateObjectArray1D(vm_thread *thread, classdesc *inner_type, int size) ;
 
 static inline obj_header *CreatePrimitiveArray1D(vm_thread *thread,
                                                       type_kind inner_type,

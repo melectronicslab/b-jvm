@@ -182,3 +182,8 @@ obj_header *CreateArray(vm_thread *thread, classdesc *desc,
   drop_handle(thread, arr);
   return result;
 }
+
+obj_header * CreateObjectArray1D(vm_thread *thread, classdesc *inner_type, int size){
+  auto desc = make_array_classdesc(thread, inner_type);
+  return CreateArray(thread, desc, &size, 1);
+}
