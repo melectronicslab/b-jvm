@@ -24,13 +24,13 @@ vm *ffi_create_vm(const char* classpath, write_bytes stdout_, write_bytes stderr
 }
 
 EMSCRIPTEN_KEEPALIVE
-thread *ffi_create_thread(vm *vm) {
-  thread *thr = create_thread(vm, default_thread_options());
+vm_thread *ffi_create_thread(vm *vm) {
+  vm_thread *thr = create_thread(vm, default_thread_options());
   return thr;
 }
 
 EMSCRIPTEN_KEEPALIVE
-classdesc *ffi_get_class(thread *thr, const char *name) {
+classdesc *ffi_get_class(vm_thread *thr, const char *name) {
   classdesc *clazz = bootstrap_lookup_class(thr, (slice){.chars=(char*)name, .len=(int)strlen(name)});
   if (!clazz) return nullptr;
   initialize_class_t ctx = {.args = {thr, clazz}};
@@ -40,12 +40,12 @@ classdesc *ffi_get_class(thread *thr, const char *name) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-obj_header *ffi_get_current_exception(thread *thr) {
+obj_header *ffi_get_current_exception(vm_thread *thr) {
   return thr->current_exception;
 }
 
 EMSCRIPTEN_KEEPALIVE
-void ffi_clear_current_exception(thread *thr) {
+void ffi_clear_current_exception(vm_thread *thr) {
   thr->current_exception = nullptr;
 }
 
@@ -54,9 +54,9 @@ classdesc *ffi_get_classdesc(obj_header *obj) {
   return obj->descriptor;
 }
 
-bool check_casts(thread * thread, cp_method * method, stack_value * args) {
+bool check_casts(vm_thread * thread, cp_method * method, stack_value * args) {
   // Perform the moral equivalent of a checkcast instruction
-  int argc = argc(method);
+  int argc = method_argc(method);
   for (int i = 0; i < argc; i++) {
     field_descriptor *arg;
     if (method->access_flags & ACCESS_STATIC) {
@@ -112,7 +112,7 @@ bool ffi_rr_record_is_ready(execution_record *record) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-execution_record *ffi_rr_schedule(thread *thread, cp_method *method, stack_value *args) {
+execution_record *ffi_rr_schedule(vm_thread *thread, cp_method *method, stack_value *args) {
   call_interpreter_t call = {.args = {thread, method, args}};
   CHECK(thread->vm->scheduler && "No scheduler set");
   return rr_scheduler_run(thread->vm->scheduler, call);
@@ -142,7 +142,7 @@ void ffi_free_rr_scheduler(rr_scheduler *scheduler) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-call_interpreter_t *ffi_async_run(thread *thread, cp_method *method, stack_value *args) {
+call_interpreter_t *ffi_async_run(vm_thread *thread, cp_method *method, stack_value *args) {
   call_interpreter_t *ctx = malloc(sizeof(call_interpreter_t));
 
   if (check_casts(thread, method, args)) {
@@ -154,7 +154,7 @@ call_interpreter_t *ffi_async_run(thread *thread, cp_method *method, stack_value
 }
 
 EMSCRIPTEN_KEEPALIVE
-object ffi_allocate_object(thread *thr, cp_method *method) {
+object ffi_allocate_object(vm_thread *thr, cp_method *method) {
   classdesc *clazz = method->my_class;
   return AllocateObject(thr, clazz, clazz->instance_bytes);
 }
