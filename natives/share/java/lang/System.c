@@ -9,8 +9,7 @@
 #define USE_SYS_TIME
 #endif
 
-DECLARE_NATIVE("java/lang", System, mapLibraryName,
-               "(Ljava/lang/String;)Ljava/lang/String;") {
+DECLARE_NATIVE("java/lang", System, mapLibraryName, "(Ljava/lang/String;)Ljava/lang/String;") {
   struct native_String *orig_name = (struct native_String *)args[0].handle->obj;
 
   heap_string str = AsHeapString((object)orig_name, on_oom);
@@ -28,14 +27,13 @@ DECLARE_NATIVE("java/lang", System, mapLibraryName,
 
   free_heap_str(str);
 
-  return (stack_value) {.obj = result };
+  return (stack_value){.obj = result};
 
 on_oom:
   return value_null();
 }
 
-DECLARE_NATIVE("java/lang", System, arraycopy,
-               "(Ljava/lang/Object;ILjava/lang/Object;II)V") {
+DECLARE_NATIVE("java/lang", System, arraycopy, "(Ljava/lang/Object;ILjava/lang/Object;II)V") {
   DCHECK(argc == 5);
   obj_header *src = args[0].handle->obj;
   obj_header *dest = args[2].handle->obj;
@@ -49,11 +47,9 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
     ThrowLangException(ArrayStoreException);
     return value_null();
   }
-  bool src_is_1d_primitive = Is1DPrimitiveArray(src),
-       dst_is_1d_primitive = Is1DPrimitiveArray(dest);
+  bool src_is_1d_primitive = Is1DPrimitiveArray(src), dst_is_1d_primitive = Is1DPrimitiveArray(dest);
   if (src_is_1d_primitive != dst_is_1d_primitive ||
-      (src_is_1d_primitive && src->descriptor->primitive_component !=
-                                  dest->descriptor->primitive_component)) {
+      (src_is_1d_primitive && src->descriptor->primitive_component != dest->descriptor->primitive_component)) {
     ThrowLangException(ArrayStoreException);
     return value_null();
   }
@@ -65,8 +61,7 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
   int dest_length = *ArrayLength(dest);
   // Verify that everything is in bounds
   // TODO add more descriptive error messages
-  if (src_pos < 0 || dest_pos < 0 || length < 0 ||
-      (s64)src_pos + length > src_length ||
+  if (src_pos < 0 || dest_pos < 0 || length < 0 || (s64)src_pos + length > src_length ||
       (s64)dest_pos + length > dest_length) {
     ThrowLangException(ArrayIndexOutOfBoundsException);
     return value_null();
@@ -77,15 +72,14 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
   // instanceof the destination class, then we don't need to perform any checks.
   // Otherwise, we need to perform an instanceof check on each element and raise
   // an ArrayStoreException as appropriate.
-  if (src_is_1d_primitive || instanceof(src->descriptor->one_fewer_dim,
-                                             dest->descriptor->one_fewer_dim)) {
+  if (src_is_1d_primitive || instanceof(src->descriptor->one_fewer_dim, dest->descriptor->one_fewer_dim)) {
     size_t element_size = sizeof(void *);
 
     if (src_is_1d_primitive) {
       switch (src->descriptor->primitive_component) {
-#define CASE(type, underlying)                                                 \
-  case TYPE_KIND_##type:                                                  \
-    element_size = sizeof(underlying);                                         \
+#define CASE(type, underlying)                                                                                         \
+  case TYPE_KIND_##type:                                                                                               \
+    element_size = sizeof(underlying);                                                                                 \
     break;
         CASE(BYTE, s8)
         CASE(CHAR, u16)
@@ -102,8 +96,7 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
       }
     }
 
-    memmove((char *)ArrayData(dest) + dest_pos * element_size,
-            (char *)ArrayData(src) + src_pos * element_size,
+    memmove((char *)ArrayData(dest) + dest_pos * element_size, (char *)ArrayData(src) + src_pos * element_size,
             length * element_size);
 
     return value_null();
@@ -111,10 +104,8 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
 
   for (int i = 0; i < length; ++i) {
     // may-alias case handled above
-    obj_header *src_elem =
-        ((obj_header **)ArrayData(src))[src_pos + i];
-    if (src_elem && !instanceof(src_elem->descriptor,
-                                     dest->descriptor->one_fewer_dim)) {
+    obj_header *src_elem = ((obj_header **)ArrayData(src))[src_pos + i];
+    if (src_elem && !instanceof(src_elem->descriptor, dest->descriptor->one_fewer_dim)) {
       ThrowLangException(ArrayStoreException);
       return value_null();
     }
@@ -124,16 +115,12 @@ DECLARE_NATIVE("java/lang", System, arraycopy,
   return value_null();
 }
 
-DECLARE_NATIVE("java/lang", System, registerNatives, "()V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/lang", System, registerNatives, "()V") { return value_null(); }
 
 DECLARE_NATIVE("java/lang", System, setOut0, "(Ljava/io/PrintStream;)V") {
   // Look up the field System.out
-  classdesc *system_class =
-      bootstrap_lookup_class(thread, STR("java/lang/System"));
-  cp_field *out_field = field_lookup(
-      system_class, STR("out"), STR("Ljava/io/PrintStream;"));
+  classdesc *system_class = bootstrap_lookup_class(thread, STR("java/lang/System"));
+  cp_field *out_field = field_lookup(system_class, STR("out"), STR("Ljava/io/PrintStream;"));
   void *field = &system_class->static_fields[out_field->byte_offset];
   *(obj_header **)field = args[0].handle->obj;
   return value_null();
@@ -141,20 +128,16 @@ DECLARE_NATIVE("java/lang", System, setOut0, "(Ljava/io/PrintStream;)V") {
 
 DECLARE_NATIVE("java/lang", System, setIn0, "(Ljava/io/InputStream;)V") {
   // Look up the field System.in
-  classdesc *system_class =
-      bootstrap_lookup_class(thread, STR("java/lang/System"));
-  cp_field *in_field = field_lookup(
-      system_class, STR("in"), STR("Ljava/io/InputStream;"));
+  classdesc *system_class = bootstrap_lookup_class(thread, STR("java/lang/System"));
+  cp_field *in_field = field_lookup(system_class, STR("in"), STR("Ljava/io/InputStream;"));
   void *field = &system_class->static_fields[in_field->byte_offset];
   *(obj_header **)field = args[0].handle->obj;
   return value_null();
 }
 
 DECLARE_NATIVE("java/lang", System, setErr0, "(Ljava/io/PrintStream;)V") {
-  classdesc *system_class =
-      bootstrap_lookup_class(thread, STR("java/lang/System"));
-  cp_field *out_field = field_lookup(
-      system_class, STR("err"), STR("Ljava/io/PrintStream;"));
+  classdesc *system_class = bootstrap_lookup_class(thread, STR("java/lang/System"));
+  cp_field *out_field = field_lookup(system_class, STR("err"), STR("Ljava/io/PrintStream;"));
   void *field = &system_class->static_fields[out_field->byte_offset];
   *(obj_header **)field = args[0].handle->obj;
   return value_null();
@@ -162,7 +145,7 @@ DECLARE_NATIVE("java/lang", System, setErr0, "(Ljava/io/PrintStream;)V") {
 
 DECLARE_NATIVE("java/lang", System, identityHashCode, "(Ljava/lang/Object;)I") {
   assert(argc == 1);
-  return (stack_value) {.i = get_object_hash_code(args[0].handle->obj) };
+  return (stack_value){.i = get_object_hash_code(args[0].handle->obj)};
 }
 
 s64 micros() {
@@ -177,10 +160,6 @@ s64 micros() {
 #endif
 }
 
-DECLARE_NATIVE("java/lang", System, currentTimeMillis, "()J") {
-  return (stack_value){.l = micros() / 1000};
-}
+DECLARE_NATIVE("java/lang", System, currentTimeMillis, "()J") { return (stack_value){.l = micros() / 1000}; }
 
-DECLARE_NATIVE("java/lang", System, nanoTime, "()J") {
-  return (stack_value){.l = micros() * 1000};
-}
+DECLARE_NATIVE("java/lang", System, nanoTime, "()J") { return (stack_value){.l = micros() * 1000}; }

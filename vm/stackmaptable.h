@@ -49,4 +49,4 @@ int stack_map_frame_iterator_next(stack_map_frame_iterator *iter, const char **e
 // Frees the iterator
 void stack_map_frame_iterator_uninit(stack_map_frame_iterator *iter);
 
-#endif //STACKMAPTABLE_H
+#endif // STACKMAPTABLE_H

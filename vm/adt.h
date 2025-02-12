@@ -28,8 +28,7 @@ typedef struct {
 } arena;
 
 void arena_init(arena *a);
-__attribute__((malloc, alloc_size(2, 3))) void *
-arena_alloc(arena *a, size_t count, size_t bytes);
+__attribute__((malloc, alloc_size(2, 3))) void *arena_alloc(arena *a, size_t count, size_t bytes);
 slice arena_make_str(arena *a, const char *bytes, int len);
 void arena_uninit(arena *a);
 
@@ -50,13 +49,10 @@ void init_compressed_bitset(compressed_bitset *bs, int bits_capacity);
 void free_compressed_bitset(compressed_bitset bits);
 bool is_bitset_compressed(compressed_bitset bits);
 compressed_bitset empty_bitset();
-void list_compressed_bitset_bits(compressed_bitset bits,
-                                                    int **stbds_vector);
+void list_compressed_bitset_bits(compressed_bitset bits, int **stbds_vector);
 bool test_compressed_bitset(compressed_bitset bits, size_t bit_index);
-bool test_reset_compressed_bitset(compressed_bitset *bits,
-                                       size_t bit_index);
-bool test_set_compressed_bitset(compressed_bitset *bits,
-                                     size_t bit_index);
+bool test_reset_compressed_bitset(compressed_bitset *bits, size_t bit_index);
+bool test_set_compressed_bitset(compressed_bitset *bits, size_t bit_index);
 
 typedef struct hash_table_entry {
   struct hash_table_entry *next;
@@ -88,20 +84,14 @@ typedef struct string_builder {
 } string_builder;
 
 void string_builder_init(string_builder *builder);
-void string_builder_append(string_builder *builder, const char *fmt,
-                                ...);
+void string_builder_append(string_builder *builder, const char *fmt, ...);
 void string_builder_free(string_builder *builder);
 
-string_hash_table make_hash_table(void (*free_fn)(void *),
-                                            double load_factor,
-                                            size_t initial_capacity);
+string_hash_table make_hash_table(void (*free_fn)(void *), double load_factor, size_t initial_capacity);
 
-hash_table_iterator
-hash_table_get_iterator(string_hash_table *tbl);
+hash_table_iterator hash_table_get_iterator(string_hash_table *tbl);
 
-bool hash_table_iterator_has_next(hash_table_iterator iter,
-                                       char **key, size_t *key_len,
-                                       void **value);
+bool hash_table_iterator_has_next(hash_table_iterator iter, char **key, size_t *key_len, void **value);
 
 bool hash_table_iterator_next(hash_table_iterator *iter);
 
@@ -111,16 +101,13 @@ void hash_table_reserve(string_hash_table *tbl, size_t new_capacity);
  * Insert the key/value pair into the hash table and return the old value, if
  * any. Ownership of the key is passed into the function.
  */
-void *hash_table_insert_impl(string_hash_table *tbl, char *key,
-                                  int len, void *value, bool copy_key);
+void *hash_table_insert_impl(string_hash_table *tbl, char *key, int len, void *value, bool copy_key);
 
 /**
  * Insert the key/value pair into the hash table and return the old value, if
  * any. If len = -1, the key is treated as a null-terminated string literal.
  */
-[[nodiscard]] void *hash_table_insert(string_hash_table *tbl,
-                                           const char *key, int len,
-                                           void *value);
+[[nodiscard]] void *hash_table_insert(string_hash_table *tbl, const char *key, int len, void *value);
 
 /**
  * Delete the key from the hash table and return the old value, if any. If len =
@@ -128,14 +115,12 @@ void *hash_table_insert_impl(string_hash_table *tbl, char *key,
  * of this function to the free function, as long as it accepts nullptr
  * pointers.
  */
-[[nodiscard]] void *hash_table_delete(string_hash_table *tbl,
-                                           const char *key, int len);
+[[nodiscard]] void *hash_table_delete(string_hash_table *tbl, const char *key, int len);
 
 /**
  * Look up the value in the hash table.
  */
-void *hash_table_lookup(string_hash_table *tbl, const char *key,
-                             int len);
+void *hash_table_lookup(string_hash_table *tbl, const char *key, int len);
 
 void free_hash_table(string_hash_table tbl);
 

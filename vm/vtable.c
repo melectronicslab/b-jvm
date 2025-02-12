@@ -2,8 +2,7 @@
 #include "bjvm.h"
 #include "classfile.h"
 
-static bool same_runtime_package(const classdesc *a,
-                                 const classdesc *b) {
+static bool same_runtime_package(const classdesc *a, const classdesc *b) {
   // Find last slash in both names, and compare the strings up to that point.
   const char *as = strrchr(a->name.chars, '/');
   const char *bs = strrchr(b->name.chars, '/');
@@ -11,14 +10,12 @@ static bool same_runtime_package(const classdesc *a,
     // both are in the root package
     return as == bs;
   ptrdiff_t a_count = as - a->name.chars, b_count = bs - b->name.chars;
-  return a_count == b_count &&
-         memcmp(a->name.chars, b->name.chars, a_count) == 0;
+  return a_count == b_count && memcmp(a->name.chars, b->name.chars, a_count) == 0;
 }
 
 // The overrides relation is transitive, so we build it up during vtable
 // creation.
-static bool method_overrides(const cp_method *overrides,
-                             const cp_method *overridden) {
+static bool method_overrides(const cp_method *overrides, const cp_method *overridden) {
   if (overrides == nullptr)
     return false;
   // See JVMS 5.4.5: Criteria are that the overriding method is not private,
@@ -26,26 +23,20 @@ static bool method_overrides(const cp_method *overrides,
   // the same run-time package as the overridden method.
   if (overrides->access_flags & ACCESS_PRIVATE)
     return false;
-  if (0 ==
-      (overrides->access_flags & (ACCESS_PROTECTED | ACCESS_PUBLIC)))
+  if (0 == (overrides->access_flags & (ACCESS_PROTECTED | ACCESS_PUBLIC)))
     return same_runtime_package(overrides->my_class, overridden->my_class);
   return true;
 }
 
 static bool vtable_include(const cp_method *method) {
-  return !method->is_ctor &&
-         !method->is_clinit &&
-         !(method->access_flags & ACCESS_STATIC) && !method->overrides;
+  return !method->is_ctor && !method->is_clinit && !(method->access_flags & ACCESS_STATIC) && !method->overrides;
 }
 
 static cp_method *get_unambiguous_method(itable_method_t m) {
-  return (cp_method *)(m & ~(ITABLE_METHOD_BIT_INVALID |
-                                  ITABLE_METHOD_BIT_AMBIGUOUS));
+  return (cp_method *)(m & ~(ITABLE_METHOD_BIT_INVALID | ITABLE_METHOD_BIT_AMBIGUOUS));
 }
 
-static bool is_ambiguous(itable_method_t m) {
-  return m & ITABLE_METHOD_BIT_AMBIGUOUS;
-}
+static bool is_ambiguous(itable_method_t m) { return m & ITABLE_METHOD_BIT_AMBIGUOUS; }
 
 static itable_method_t mark_ambiguous(itable_method_t m) {
   return m | ITABLE_METHOD_BIT_INVALID | ITABLE_METHOD_BIT_AMBIGUOUS;
@@ -64,8 +55,7 @@ static itable copy_itable(const itable *src) {
   result.interface = src->interface;
   ptrdiff_t c = arrlen(src->methods);
   if (c) {
-    memcpy(arraddnptr(result.methods, c), src->methods,
-           c * sizeof(itable_method_t));
+    memcpy(arraddnptr(result.methods, c), src->methods, c * sizeof(itable_method_t));
   }
   return result;
 }
@@ -74,15 +64,12 @@ static itable copy_itable(const itable *src) {
 static slice identify(slice *scratch, const cp_method *method) {
   char *write = stpncpy(scratch->chars, method->name.chars, scratch->len);
   *write++ = ':';
-  write = stpncpy(write, method->unparsed_descriptor.chars,
-                  scratch->chars + scratch->len + 1 - write);
+  write = stpncpy(write, method->unparsed_descriptor.chars, scratch->chars + scratch->len + 1 - write);
   scratch->len = write - scratch->chars;
   return *scratch;
 }
 
-static void merge_itable(itable *dst, const itable *src,
-                         string_hash_table poisoned,
-                         classdesc *classdesc) {
+static void merge_itable(itable *dst, const itable *src, string_hash_table poisoned, classdesc *classdesc) {
   INIT_STACK_STRING(scratch, 1024);
   DCHECK(dst->interface == src->interface);
   DCHECK(arrlen(dst->methods) == arrlen(src->methods));
@@ -109,8 +96,7 @@ static void merge_itable(itable *dst, const itable *src,
 
     // Then check to see if the class or a superclass has a matching method
     // which overrides the method in question.
-    cp_method *maybe_overrides = method_lookup(
-        classdesc, d_method->name, d_method->unparsed_descriptor, true, false);
+    cp_method *maybe_overrides = method_lookup(classdesc, d_method->name, d_method->unparsed_descriptor, true, false);
     if (method_overrides(maybe_overrides, d_method)) {
       result = make(maybe_overrides); // unambiguous of course
     }
@@ -119,9 +105,7 @@ static void merge_itable(itable *dst, const itable *src,
 }
 
 static bool itable_include(const cp_method *method) {
-  return !method->is_ctor &&
-         !method->is_clinit &&
-         !(method->access_flags & (ACCESS_STATIC | ACCESS_PRIVATE));
+  return !method->is_ctor && !method->is_clinit && !(method->access_flags & (ACCESS_STATIC | ACCESS_PRIVATE));
 }
 
 static void setup_itables(classdesc *super, classdesc *cd) {
@@ -144,11 +128,9 @@ static void setup_itables(classdesc *super, classdesc *cd) {
     else
       iface = super;
     DCHECK(iface, "Superclass or -interface not resolved");
-    for (int itable_i = 0; itable_i < arrlen(iface->itables.interfaces);
-         ++itable_i) {
+    for (int itable_i = 0; itable_i < arrlen(iface->itables.interfaces); ++itable_i) {
       itable *super_itable = iface->itables.entries + itable_i;
-      for (int method_i = 0; method_i < arrlen(super_itable->methods);
-           ++method_i) {
+      for (int method_i = 0; method_i < arrlen(super_itable->methods); ++method_i) {
         itable_method_t ref = super_itable->methods[method_i];
         cp_method *underlying = get_unambiguous_method(ref);
         // Skip methods which are defined in a class, since those take
@@ -156,15 +138,12 @@ static void setup_itables(classdesc *super, classdesc *cd) {
         if (!(underlying->my_class->access_flags & ACCESS_INTERFACE))
           continue;
         slice ident = identify(&scratch, underlying);
-        void *existing =
-            hash_table_lookup(&discovered, ident.chars, ident.len);
+        void *existing = hash_table_lookup(&discovered, ident.chars, ident.len);
         if ((existing && existing != underlying) || is_ambiguous(ref)) {
           // Ambiguity across superinterfaces :o
-          (void)hash_table_insert(&ambiguous, ident.chars, ident.len,
-                                       (void *)1);
+          (void)hash_table_insert(&ambiguous, ident.chars, ident.len, (void *)1);
         } else if (existing == nullptr) {
-          (void)hash_table_insert(&discovered, ident.chars, ident.len,
-                                       underlying);
+          (void)hash_table_insert(&discovered, ident.chars, ident.len, underlying);
         }
       }
     }
@@ -179,12 +158,9 @@ static void setup_itables(classdesc *super, classdesc *cd) {
   // rules, which prioritise superclasses.
   for (int iface_i = 0; iface_i <= cd->interfaces_count; ++iface_i) {
     classdesc *iface;
-    iface = iface_i < cd->interfaces_count
-                ? cd->interfaces[iface_i]->classdesc
-                : super;
+    iface = iface_i < cd->interfaces_count ? cd->interfaces[iface_i]->classdesc : super;
     DCHECK(iface, "Superclass or -interface not resolved");
-    for (int itable_i = 0; itable_i < arrlen(iface->itables.interfaces);
-         ++itable_i) {
+    for (int itable_i = 0; itable_i < arrlen(iface->itables.interfaces); ++itable_i) {
       // Look if we already implement this interface, and if so, merge with
       // what we have.
       const itable *super_itable = iface->itables.entries + itable_i;
@@ -223,8 +199,7 @@ void set_up_function_tables(classdesc *cd) {
     classdesc *super = cd->super_class->classdesc;
     for (size_t i = 0; i < arrlenu(super->vtable.methods); ++i) {
       cp_method *method = super->vtable.methods[i];
-      cp_method *replacement = method_lookup(
-          cd, method->name, method->unparsed_descriptor, false, false);
+      cp_method *replacement = method_lookup(cd, method->name, method->unparsed_descriptor, false, false);
       if (method_overrides(replacement, method)) {
         replacement->vtable_index = method->vtable_index;
         DCHECK(method->vtable_index == i);
@@ -275,18 +250,15 @@ void free_function_tables(classdesc *classdesc) {
 }
 
 cp_method *vtable_lookup(classdesc const *classdesc, size_t index) {
-  DCHECK(index < arrlenu(classdesc->vtable.methods) &&
-         "vtable index out of range");
+  DCHECK(index < arrlenu(classdesc->vtable.methods) && "vtable index out of range");
   return classdesc->vtable.methods[index];
 }
 
-cp_method *itable_lookup(classdesc const *cd,
-                                   classdesc const *interface, size_t index) {
+cp_method *itable_lookup(classdesc const *cd, classdesc const *interface, size_t index) {
   for (int i = 0; i < arrlen(cd->itables.interfaces); ++i) {
     if (cd->itables.interfaces[i] == interface) {
       itable itable = cd->itables.entries[i];
-      DCHECK(index < arrlenu(itable.methods) &&
-             "itable index out of range");
+      DCHECK(index < arrlenu(itable.methods) && "itable index out of range");
       itable_method_t m = itable.methods[index];
       if (m & ITABLE_METHOD_BIT_INVALID) {
         return nullptr;

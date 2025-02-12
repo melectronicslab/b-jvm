@@ -1,6 +1,6 @@
 
-#include <natives-dsl.h>
 #include "cached_classdescs.h"
+#include <natives-dsl.h>
 
 #include <unistd.h>
 
@@ -49,15 +49,14 @@ enum {
 };
 
 static handle *make_string_array(vm_thread *thread, int length) {
-  handle *arr = make_handle(thread,
-  CreateArray(thread, thread->vm->cached_classdescs->string->array_type, (int[]) { length }, 1));
+  handle *arr =
+      make_handle(thread, CreateArray(thread, thread->vm->cached_classdescs->string->array_type, (int[]){length}, 1));
   DCHECK(arr->obj);
   return arr;
 }
 
 // TODO read the properties from the VM instead of hardcoding them
-DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties,
-               "()[Ljava/lang/String;") {
+DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties, "()[Ljava/lang/String;") {
   handle *props = make_string_array(thread, FIXED_LENGTH);
 
   INIT_STACK_STRING(cwd, 1024);
@@ -67,10 +66,10 @@ DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties,
   INIT_STACK_STRING(jre, 1024);
   jre = bprintf(jre, "%.*s/jre", fmt_slice(cwd));
 
-#define SET_PROP(index, value) \
-  { \
-    obj_header *str = MakeJStringFromCString(thread, value, true); \
-    ReferenceArrayStore(props->obj, index, str); \
+#define SET_PROP(index, value)                                                                                         \
+  {                                                                                                                    \
+    obj_header *str = MakeJStringFromCString(thread, value, true);                                                     \
+    ReferenceArrayStore(props->obj, index, str);                                                                       \
   }
 
   SET_PROP(_file_encoding_NDX, "UTF-8");
@@ -118,8 +117,7 @@ DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, platformProperties,
   return result;
 }
 
-DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, vmProperties,
-               "()[Ljava/lang/String;") {
+DECLARE_NATIVE("jdk/internal/util", SystemProps_Raw, vmProperties, "()[Ljava/lang/String;") {
   handle *props = make_string_array(thread, 2);
 
   SET_PROP(0, "java.home");

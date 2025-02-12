@@ -4,5 +4,4 @@
 
 #include "classloader.h"
 
-
 classloader bootstrap_classloader = {};

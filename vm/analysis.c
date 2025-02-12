@@ -15,7 +15,7 @@
 
 typedef struct {
   type_kind type;
-  stack_variable_source source;  // used for NPE reason analysis
+  stack_variable_source source; // used for NPE reason analysis
 } analy_stack_entry;
 
 // State of the stack (or local variable table) during analysis, indexed after
@@ -26,8 +26,8 @@ typedef struct {
   int entries_cap;
 } analy_stack_state;
 
-#define CASE(K)                                                                \
-  case insn_##K:                                                          \
+#define CASE(K)                                                                                                        \
+  case insn_##K:                                                                                                       \
     return #K;
 
 const char *insn_code_name(insn_code_kind code) {
@@ -259,7 +259,7 @@ const char *type_kind_to_string(type_kind kind) {
 }
 
 char *class_info_entry_to_string(cp_kind kind, const cp_class_info *ent) {
-  char const* start;
+  char const *start;
   switch (kind) {
   case CP_KIND_CLASS:
     start = "Class: ";
@@ -270,27 +270,24 @@ char *class_info_entry_to_string(cp_kind kind, const cp_class_info *ent) {
   case CP_KIND_PACKAGE:
     start = "Package: ";
     break;
-  default: UNREACHABLE();
+  default:
+    UNREACHABLE();
   }
 
   char result[1000];
-  snprintf(result, sizeof(result), "%s%.*s", start, ent->name.len,
-           ent->name.chars);
+  snprintf(result, sizeof(result), "%s%.*s", start, ent->name.len, ent->name.chars);
   return strdup(result);
 }
 
-char *
-name_and_type_entry_to_string(const cp_name_and_type *name_and_type) {
+char *name_and_type_entry_to_string(const cp_name_and_type *name_and_type) {
   char result[1000];
-  snprintf(result, sizeof(result), "NameAndType: %.*s:%.*s",
-           name_and_type->name.len, name_and_type->name.chars,
+  snprintf(result, sizeof(result), "NameAndType: %.*s:%.*s", name_and_type->name.len, name_and_type->name.chars,
            name_and_type->descriptor.len, name_and_type->descriptor.chars);
   return strdup(result);
 }
 
 char *indy_entry_to_string(const cp_indy_info *indy_info) {
-  char *name_and_type = name_and_type_entry_to_string(
-      indy_info->name_and_type); // TODO add bootstrap method
+  char *name_and_type = name_and_type_entry_to_string(indy_info->name_and_type); // TODO add bootstrap method
   return name_and_type;
 }
 
@@ -316,13 +313,14 @@ char *constant_pool_entry_to_string(const cp_entry *ent) {
   case CP_KIND_DOUBLE:
     snprintf(result, sizeof(result), "%.15gd", (float)ent->floating.value);
     break;
-  case CP_KIND_MODULE: [[fallthrough]];
-  case CP_KIND_PACKAGE: [[fallthrough]];
+  case CP_KIND_MODULE:
+    [[fallthrough]];
+  case CP_KIND_PACKAGE:
+    [[fallthrough]];
   case CP_KIND_CLASS:
     return class_info_entry_to_string(ent->kind, &ent->class_info);
   case CP_KIND_STRING: {
-    snprintf(result, sizeof(result), "String: '%.*s'", ent->string.chars.len,
-             ent->string.chars.chars);
+    snprintf(result, sizeof(result), "String: '%.*s'", ent->string.chars.len, ent->string.chars.chars);
     break;
   }
   case CP_KIND_FIELD_REF: {
@@ -338,9 +336,7 @@ char *constant_pool_entry_to_string(const cp_entry *ent) {
   case CP_KIND_INTERFACE_METHOD_REF: {
     char *class_name = class_info_entry_to_string(CP_KIND_CLASS, ent->field.class_info);
     char *field_name = name_and_type_entry_to_string(ent->field.nat);
-    snprintf(result, sizeof(result), "%s: %s; %s",
-             ent->kind == CP_KIND_METHOD_REF ? "MethodRef"
-                                                  : "InterfaceMethodRef",
+    snprintf(result, sizeof(result), "%s: %s; %s", ent->kind == CP_KIND_METHOD_REF ? "MethodRef" : "InterfaceMethodRef",
              class_name, field_name);
     free(class_name);
     free(field_name);
@@ -363,7 +359,7 @@ char *constant_pool_entry_to_string(const cp_entry *ent) {
   return strdup(result);
 }
 
-int method_argc(const cp_method *method){
+int method_argc(const cp_method *method) {
   bool nonstatic = !(method->access_flags & ACCESS_STATIC);
   return method->descriptor->args_count + (nonstatic ? 1 : 0);
 }
@@ -371,8 +367,7 @@ int method_argc(const cp_method *method){
 heap_string insn_to_string(const bytecode_insn *insn, int insn_index) {
   heap_string result = make_heap_str(10);
   int write = 0;
-  write = build_str(&result, write, "%04d = pc %04d: ", insn_index,
-                    insn->original_pc);
+  write = build_str(&result, write, "%04d = pc %04d: ", insn_index, insn->original_pc);
   write = build_str(&result, write, "%s ", insn_code_name(insn->kind));
   if (insn->kind <= insn_swap) {
     // no operands
@@ -392,21 +387,15 @@ heap_string insn_to_string(const bytecode_insn *insn, int insn_index) {
   } else if (insn->kind == insn_dconst || insn->kind == insn_fconst) {
     write = build_str(&result, write, "%.15g", insn->f_imm);
   } else if (insn->kind == insn_tableswitch) {
-    write = build_str(&result, write, "[ default -> %d",
-                      insn->tableswitch->default_target);
-    for (int i = 0, j = insn->tableswitch->low;
-         i < insn->tableswitch->targets_count; ++i, ++j) {
-      write = build_str(&result, write, ", %d -> %d", j,
-                        insn->tableswitch->targets[i]);
+    write = build_str(&result, write, "[ default -> %d", insn->tableswitch->default_target);
+    for (int i = 0, j = insn->tableswitch->low; i < insn->tableswitch->targets_count; ++i, ++j) {
+      write = build_str(&result, write, ", %d -> %d", j, insn->tableswitch->targets[i]);
     }
     write = build_str(&result, write, " ]");
   } else if (insn->kind == insn_lookupswitch) {
-    write = build_str(&result, write, "[ default -> %d",
-                      insn->lookupswitch->default_target);
+    write = build_str(&result, write, "[ default -> %d", insn->lookupswitch->default_target);
     for (int i = 0; i < insn->lookupswitch->targets_count; ++i) {
-      write =
-          build_str(&result, write, ", %d -> %d", insn->lookupswitch->keys[i],
-                    insn->lookupswitch->targets[i]);
+      write = build_str(&result, write, ", %d -> %d", insn->lookupswitch->keys[i], insn->lookupswitch->targets[i]);
     }
     write = build_str(&result, write, " ]");
   } else {
@@ -430,8 +419,7 @@ char *print_analy_stack_state(const analy_stack_state *state) {
   char *write = buf;
   write = stpncpy(write, "[ ", end - write);
   for (int i = 0; i < state->entries_count; ++i) {
-    write = stpncpy(write, type_kind_to_string(state->entries[i].type),
-                    end - write);
+    write = stpncpy(write, type_kind_to_string(state->entries[i].type), end - write);
     if (i + 1 < state->entries_count)
       write = stpncpy(write, ", ", end - write);
   }
@@ -443,30 +431,21 @@ char *print_analy_stack_state(const analy_stack_state *state) {
  * Copy the stack state in st to the (possibly already allocated) stack state in
  * out.
  */
-void copy_analy_stack_state(analy_stack_state st,
-                            analy_stack_state *out) {
+void copy_analy_stack_state(analy_stack_state st, analy_stack_state *out) {
   if (out->entries_cap < st.entries_count || !out->entries) {
     out->entries_cap = st.entries_count + 2 /* we'll probably push more */;
-    out->entries = realloc(out->entries,
-                           out->entries_cap * sizeof(analy_stack_entry));
+    out->entries = realloc(out->entries, out->entries_cap * sizeof(analy_stack_entry));
     DCHECK(out->entries);
   }
-  memcpy(out->entries, st.entries,
-         st.entries_count * sizeof(analy_stack_entry));
+  memcpy(out->entries, st.entries, st.entries_count * sizeof(analy_stack_entry));
   out->entries_count = st.entries_count;
 }
 
-bool is_kind_wide(type_kind kind) {
-  return kind == TYPE_KIND_LONG || kind == TYPE_KIND_DOUBLE;
-}
+bool is_kind_wide(type_kind kind) { return kind == TYPE_KIND_LONG || kind == TYPE_KIND_DOUBLE; }
 
-bool is_field_wide(field_descriptor desc) {
-  return is_kind_wide(desc.base_kind) && !desc.dimensions;
-}
+bool is_field_wide(field_descriptor desc) { return is_kind_wide(desc.base_kind) && !desc.dimensions; }
 
-void write_kinds_to_bitset(const analy_stack_state *inferred_stack,
-                           int offset,
-                           compressed_bitset *compressed_bitset,
+void write_kinds_to_bitset(const analy_stack_state *inferred_stack, int offset, compressed_bitset *compressed_bitset,
                            type_kind test) {
   for (int i = 0; i < inferred_stack->entries_count; ++i) {
     if (inferred_stack->entries[i].type == test)
@@ -476,30 +455,20 @@ void write_kinds_to_bitset(const analy_stack_state *inferred_stack,
 
 /** Possible value "sources" for NPE analysis */
 static analy_stack_entry parameter_source(type_kind type, int j) {
-  return (analy_stack_entry){
-    type,
-    {.kind = VARIABLE_SRC_KIND_PARAMETER, .index = j}};
+  return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_PARAMETER, .index = j}};
 }
 
-static analy_stack_entry this_source() {
-  return parameter_source(TYPE_KIND_REFERENCE, 0);
-}
+static analy_stack_entry this_source() { return parameter_source(TYPE_KIND_REFERENCE, 0); }
 
 static analy_stack_entry insn_source(type_kind type, int j) {
-  return (analy_stack_entry){
-    type,
-    {.kind = VARIABLE_SRC_KIND_INSN, .index = j}};
+  return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_INSN, .index = j}};
 }
 
 static analy_stack_entry local_source(type_kind type, int pc) {
-  return (analy_stack_entry){
-    type,
-    {.kind = VARIABLE_SRC_KIND_LOCAL, .index = pc}};
+  return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_LOCAL, .index = pc}};
 }
 
-int locals_on_method_entry(const cp_method *method,
-                                analy_stack_state *locals,
-                                int **locals_swizzle) {
+int locals_on_method_entry(const cp_method *method, analy_stack_state *locals, int **locals_swizzle) {
   const attribute_code *code = method->code;
   const method_descriptor *desc = method->descriptor;
   DCHECK(code);
@@ -561,56 +530,55 @@ struct method_analysis_ctx {
 };
 
 // Pop a value from the analysis stack and return it.
-#define POP_VAL                                                                \
-  ({                                                                           \
-    if (ctx->stack.entries_count == 0)                                         \
-      goto stack_underflow;                                                    \
-    ctx->stack.entries[--ctx->stack.entries_count];                            \
+#define POP_VAL                                                                                                        \
+  ({                                                                                                                   \
+    if (ctx->stack.entries_count == 0)                                                                                 \
+      goto stack_underflow;                                                                                            \
+    ctx->stack.entries[--ctx->stack.entries_count];                                                                    \
   })
 // Pop a value from the analysis stack and assert its kind.
-#define POP_KIND(kind)                                                         \
-  {                                                                            \
-    analy_stack_entry popped_kind = POP_VAL;                              \
-    if (kind != popped_kind.type)                                              \
-      goto stack_type_mismatch;                                                \
-       \
+#define POP_KIND(kind)                                                                                                 \
+  {                                                                                                                    \
+    analy_stack_entry popped_kind = POP_VAL;                                                                           \
+    if (kind != popped_kind.type)                                                                                      \
+      goto stack_type_mismatch;                                                                                        \
   }
 #define POP(kind) POP_KIND(TYPE_KIND_##kind)
 // Push a kind to the analysis stack.
-#define PUSH_ENTRY(kind)                                                        \
-  {                                                                            \
-    if (ctx->stack.entries_count == ctx->stack.entries_cap)                    \
-      goto stack_overflow;                                                     \
-    if (kind.type != TYPE_KIND_VOID) {                                     \
-      ctx->stack.entries[ctx->stack.entries_count++] = kind; \
-     if (kind.type == 0) UNREACHABLE(); \
-}  \
+#define PUSH_ENTRY(kind)                                                                                               \
+  {                                                                                                                    \
+    if (ctx->stack.entries_count == ctx->stack.entries_cap)                                                            \
+      goto stack_overflow;                                                                                             \
+    if (kind.type != TYPE_KIND_VOID) {                                                                                 \
+      ctx->stack.entries[ctx->stack.entries_count++] = kind;                                                           \
+      if (kind.type == 0)                                                                                              \
+        UNREACHABLE();                                                                                                 \
+    }                                                                                                                  \
   }
 #define PUSH(kind) PUSH_ENTRY(insn_source(TYPE_KIND_##kind, insn_index))
 
 // Set the kind of the local variable, in pre-swizzled indices.
-#define SET_LOCAL(index, kind)                                                 \
-  {                                                                            \
-    if (index >= ctx->code->max_locals)                                        \
-      goto local_overflow;                                                     \
-    ctx->locals.entries[index] = local_source(TYPE_KIND_##kind, insn_index);   \
+#define SET_LOCAL(index, kind)                                                                                         \
+  {                                                                                                                    \
+    if (index >= ctx->code->max_locals)                                                                                \
+      goto local_overflow;                                                                                             \
+    ctx->locals.entries[index] = local_source(TYPE_KIND_##kind, insn_index);                                           \
   }
 // Remap the index to the new local variable index after unwidening.
-#define SWIZZLE_LOCAL(index)                                                   \
-  {                                                                            \
-    if (index >= ctx->code->max_locals)                                        \
-      goto local_overflow;                                                     \
-    index = ctx->locals_swizzle[index];                                        \
+#define SWIZZLE_LOCAL(index)                                                                                           \
+  {                                                                                                                    \
+    if (index >= ctx->code->max_locals)                                                                                \
+      goto local_overflow;                                                                                             \
+    index = ctx->locals_swizzle[index];                                                                                \
   }
 
-#define CHECK_LOCAL(index, kind)                                               \
-  {                                                                            \
-    if (ctx->locals.entries[index].type != TYPE_KIND_##kind)              \
-      goto local_type_mismatch;                                                \
+#define CHECK_LOCAL(index, kind)                                                                                       \
+  {                                                                                                                    \
+    if (ctx->locals.entries[index].type != TYPE_KIND_##kind)                                                           \
+      goto local_type_mismatch;                                                                                        \
   }
 
-int push_branch_target(struct method_analysis_ctx *ctx, u32 curr,
-                       u32 target) {
+int push_branch_target(struct method_analysis_ctx *ctx, u32 curr, u32 target) {
   DCHECK((int)target < ctx->code->insn_count);
   struct edge e = (struct edge){.start = curr, .end = target};
   arrput(ctx->edges, e);
@@ -642,7 +610,6 @@ void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind *reduc
     }
   }
 }
-
 
 int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analysis_ctx *ctx) {
   // Add top of stack type before the instruction executes
@@ -950,9 +917,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     [[fallthrough]];
   case insn_getstatic: {
     field_descriptor *field =
-        check_cp_entry(insn->cp, CP_KIND_FIELD_REF,
-                            "getstatic/getfield argument")
-            ->field.parsed_descriptor;
+        check_cp_entry(insn->cp, CP_KIND_FIELD_REF, "getstatic/getfield argument")->field.parsed_descriptor;
     PUSH_ENTRY(insn_source(field_to_kind(field), insn_index));
     break;
   }
@@ -961,9 +926,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   }
   case insn_invokedynamic: {
     method_descriptor *descriptor =
-        check_cp_entry(insn->cp, CP_KIND_INVOKE_DYNAMIC,
-                            "invokedynamic argument")
-            ->indy_info.method_descriptor;
+        check_cp_entry(insn->cp, CP_KIND_INVOKE_DYNAMIC, "invokedynamic argument")->indy_info.method_descriptor;
     for (int j = descriptor->args_count - 1; j >= 0; --j) {
       field_descriptor *field = descriptor->args + j;
       POP_KIND(field_to_kind(field));
@@ -991,10 +954,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   case insn_invokeinterface:
   case insn_invokestatic: {
     method_descriptor *descriptor =
-        check_cp_entry(insn->cp,
-                            CP_KIND_METHOD_REF |
-                                CP_KIND_INTERFACE_METHOD_REF,
-                            "invoke* argument")
+        check_cp_entry(insn->cp, CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF, "invoke* argument")
             ->methodref.descriptor;
     for (int j = descriptor->args_count - 1; j >= 0; --j) {
       field_descriptor *field = descriptor->args + j;
@@ -1008,14 +968,12 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     break;
   }
   case insn_ldc: {
-    cp_entry *ent =
-        check_cp_entry(insn->cp,
-                            CP_KIND_INTEGER | CP_KIND_STRING |
-                                CP_KIND_FLOAT | CP_KIND_CLASS | CP_KIND_DYNAMIC_CONSTANT,
-                            "ldc argument");
+    cp_entry *ent = check_cp_entry(
+        insn->cp, CP_KIND_INTEGER | CP_KIND_STRING | CP_KIND_FLOAT | CP_KIND_CLASS | CP_KIND_DYNAMIC_CONSTANT,
+        "ldc argument");
     type_kind kind = ent->kind == CP_KIND_INTEGER ? TYPE_KIND_INT
-              : ent->kind == CP_KIND_FLOAT ? TYPE_KIND_FLOAT
-                                                : TYPE_KIND_REFERENCE;
+                     : ent->kind == CP_KIND_FLOAT ? TYPE_KIND_FLOAT
+                                                  : TYPE_KIND_REFERENCE;
     PUSH_ENTRY(insn_source(kind, insn_index))
     if (ent->kind == CP_KIND_INTEGER) { // rewrite to iconst or lconst
       insn->kind = insn_iconst;
@@ -1027,10 +985,8 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     break;
   }
   case insn_ldc2_w: {
-    cp_entry *ent = check_cp_entry(
-        insn->cp, CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w argument");
-    type_kind kind = ent->kind == CP_KIND_DOUBLE ? TYPE_KIND_DOUBLE
-                                               : TYPE_KIND_LONG;
+    cp_entry *ent = check_cp_entry(insn->cp, CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w argument");
+    type_kind kind = ent->kind == CP_KIND_DOUBLE ? TYPE_KIND_DOUBLE : TYPE_KIND_LONG;
     PUSH_ENTRY(insn_source(kind, insn_index))
     if (ent->kind == CP_KIND_LONG) {
       insn->kind = insn_lconst;
@@ -1187,7 +1143,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     ctx->stack_terminated = true;
     break;
   }
-  default:  // instruction shouldn't come out of the parser
+  default: // instruction shouldn't come out of the parser
     UNREACHABLE();
   }
 
@@ -1221,8 +1177,7 @@ error:;
   bprintf(hslc(*ctx->error),
           "%s\nInstruction: %.*s\nStack preceding insn: %s\nLocals state: "
           "%s\nContext:\n%.*s\n",
-          ctx->insn_error, fmt_slice(insn_str), stack_str, locals_str,
-          fmt_slice(context));
+          ctx->insn_error, fmt_slice(insn_str), stack_str, locals_str, fmt_slice(context));
   free_heap_str(insn_str);
   free(stack_str);
   free(locals_str);
@@ -1263,8 +1218,7 @@ void use_stack_map_frame(struct method_analysis_ctx *ctx, const stack_map_frame_
   }
   // Then use iterator locals, but don't forget to swizzle
   for (int i = 0; i < iter->locals_size; ++i) {
-    ctx->locals.entries[ctx->locals_swizzle[i]].type =
-      validation_type_kind_to_representation(iter->locals[i].kind);
+    ctx->locals.entries[ctx->locals_swizzle[i]].type = validation_type_kind_to_representation(iter->locals[i].kind);
   }
 }
 
@@ -1287,13 +1241,11 @@ int analyze_method_code(cp_method *method, heap_string *error) {
   }
 
   int result = 0;
-  ctx.stack.entries =
-      calloc(code->max_stack + 1, sizeof(analy_stack_entry));
+  ctx.stack.entries = calloc(code->max_stack + 1, sizeof(analy_stack_entry));
   ctx.stack.entries_cap = code->max_stack + 1;
 
   // After jumps, we can infer the stack and locals at these points
-  u16 *insn_index_to_stack_depth =
-      calloc(code->insn_count, sizeof(u16));
+  u16 *insn_index_to_stack_depth = calloc(code->insn_count, sizeof(u16));
 
   if (code->local_variable_table) {
     for (int i = 0; i < code->local_variable_table->entries_count; ++i) {
@@ -1316,8 +1268,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
   analy->insn_count = code->insn_count;
   analy->dominator_tree_computed = false;
   for (int i = 0; i < 5; ++i) {
-    analy->insn_index_to_kinds[i] =
-        calloc(code->insn_count, sizeof(compressed_bitset));
+    analy->insn_index_to_kinds[i] = calloc(code->insn_count, sizeof(compressed_bitset));
   }
   analy->blocks = nullptr;
   analy->insn_index_to_stack_depth = insn_index_to_stack_depth;
@@ -1329,7 +1280,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
       use_stack_map_frame(&ctx, &iter);
       if (stack_map_frame_iterator_has_next(&iter)) {
         const char *c_str_error;
-        if (stack_map_frame_iterator_next(&iter, &c_str_error)) {  // stackmaptable issue
+        if (stack_map_frame_iterator_next(&iter, &c_str_error)) { // stackmaptable issue
           *error = make_heap_str(strlen(c_str_error));
           strncpy(error->chars, c_str_error, error->len);
           result = -1;
@@ -1363,8 +1314,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     case insn_iaload:
     case insn_daload:
     case insn_laload:
-    case insn_saload:
-    {
+    case insn_saload: {
       a = stack->entries[sd - 2].source;
       b = stack->entries[sd - 1].source;
       break;
@@ -1376,15 +1326,14 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     case insn_dastore:
     case insn_iastore:
     case insn_lastore:
-    case insn_sastore:
-    {
-      a = stack->entries[sd - 3].source;  // trying to store into a null array
+    case insn_sastore: {
+      a = stack->entries[sd - 3].source; // trying to store into a null array
       b = stack->entries[sd - 2].source;
       break;
     }
     case insn_invokevirtual:
     case insn_invokeinterface:
-    case insn_invokespecial: {  // Trying to invoke on an object
+    case insn_invokespecial: { // Trying to invoke on an object
       int argc = insn->cp->methodref.descriptor->args_count;
       a = stack->entries[sd - argc].source;
       break;
@@ -1393,8 +1342,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     case insn_athrow:
     case insn_monitorenter:
     case insn_monitorexit:
-    case insn_getfield:
-    {
+    case insn_getfield: {
       a = stack->entries[sd - 1].source;
       break;
     }
@@ -1407,15 +1355,12 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     insn_index_to_stack_depth[i] = stack->entries_count;
 
     for (int j = 0; j < 5; ++j) {
-      type_kind order[5] = {TYPE_KIND_REFERENCE, TYPE_KIND_INT,
-                                 TYPE_KIND_FLOAT, TYPE_KIND_DOUBLE,
-                                 TYPE_KIND_LONG};
+      type_kind order[5] = {TYPE_KIND_REFERENCE, TYPE_KIND_INT, TYPE_KIND_FLOAT, TYPE_KIND_DOUBLE, TYPE_KIND_LONG};
       compressed_bitset *bitset = analy->insn_index_to_kinds[j] + i;
       init_compressed_bitset(bitset, code->max_stack + code->max_locals);
 
       write_kinds_to_bitset(&ctx.stack, 0, bitset, order[j]);
-      write_kinds_to_bitset(&ctx.locals, code->max_stack, bitset,
-                            order[j]);
+      write_kinds_to_bitset(&ctx.locals, code->max_stack, bitset, order[j]);
     }
 
     if (analyze_instruction(insn, i, &ctx)) {
@@ -1424,7 +1369,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     }
   }
 
-  invalid_vt:
+invalid_vt:
   stack_map_frame_iterator_uninit(&iter);
   free(ctx.stack.entries);
   free(ctx.locals.entries);
@@ -1458,13 +1403,9 @@ void free_code_analysis(code_analysis *analy) {
   free(analy);
 }
 
-static void push_bb_branch(basic_block *current, basic_block *next) {
-  arrput(current->next, next->my_index);
-}
+static void push_bb_branch(basic_block *current, basic_block *next) { arrput(current->next, next->my_index); }
 
-static int cmp_ints(const void *a, const void *b) {
-  return *(int *)a - *(int *)b;
-}
+static int cmp_ints(const void *a, const void *b) { return *(int *)a - *(int *)b; }
 
 // Used to find which blocks are accessible from the entry without throwing
 // exceptions.
@@ -1481,8 +1422,7 @@ void dfs_nothrow_accessible(basic_block *bs, int i) {
 // an exception is DELETED because we're not handling exceptions at all in
 // JIT compiled code. (Once an exception is thrown in a frame, it is
 // interpreted for the rest of its life.)
-int scan_basic_blocks(const attribute_code *code,
-                           code_analysis *analy) {
+int scan_basic_blocks(const attribute_code *code, code_analysis *analy) {
   DCHECK(analy);
   if (analy->blocks)
     return 0; // already done
@@ -1496,8 +1436,7 @@ int scan_basic_blocks(const attribute_code *code,
       ts[tc++] = insn->index;
       if (insn->kind != insn_goto)
         ts[tc++] = i + 1; // fallthrough
-    } else if (insn->kind == insn_tableswitch ||
-               insn->kind == insn_lookupswitch) {
+    } else if (insn->kind == insn_tableswitch || insn->kind == insn_lookupswitch) {
       const struct bc_tableswitch_data *tsd = insn->tableswitch;
       // Layout is the same between tableswitch and lookupswitch, so ok
       ts[tc++] = tsd->default_target;
@@ -1514,12 +1453,10 @@ int scan_basic_blocks(const attribute_code *code,
   for (int i = 0; i < block_count; ++i) {
     bs[i].start_index = ts[i];
     bs[i].start = code->code + ts[i];
-    bs[i].insn_count =
-        i + 1 < block_count ? ts[i + 1] - ts[i] : code->insn_count - ts[i];
+    bs[i].insn_count = i + 1 < block_count ? ts[i + 1] - ts[i] : code->insn_count - ts[i];
     bs[i].my_index = i;
   }
-#define FIND_TARGET_BLOCK(index)                                               \
-  &bs[(int *)bsearch(&index, ts, block_count, sizeof(int), cmp_ints) - ts]
+#define FIND_TARGET_BLOCK(index) &bs[(int *)bsearch(&index, ts, block_count, sizeof(int), cmp_ints) - ts]
   // Then, record edges between bbs.
   for (int block_i = 0; block_i < block_count; ++block_i) {
     basic_block *b = bs + block_i;
@@ -1528,8 +1465,7 @@ int scan_basic_blocks(const attribute_code *code,
       push_bb_branch(b, FIND_TARGET_BLOCK(last->index));
       if (last->kind == insn_goto)
         continue;
-    } else if (last->kind == insn_tableswitch ||
-               last->kind == insn_lookupswitch) {
+    } else if (last->kind == insn_tableswitch || last->kind == insn_lookupswitch) {
       const struct bc_tableswitch_data *tsd = last->tableswitch;
       push_bb_branch(b, FIND_TARGET_BLOCK(tsd->default_target));
       for (int i = 0; i < tsd->targets_count; ++i)
@@ -1573,16 +1509,15 @@ int scan_basic_blocks(const attribute_code *code,
 #undef FIND_TARGET_BLOCK
 }
 
-static void get_dfs_tree(basic_block *block, int *block_to_pre,
-                         int *preorder, int *parent, int *preorder_clock,
+static void get_dfs_tree(basic_block *block, int *block_to_pre, int *preorder, int *parent, int *preorder_clock,
                          int *postorder_clock) {
   preorder[*preorder_clock] = block->my_index;
   block_to_pre[block->my_index] = block->dfs_pre = (*preorder_clock)++;
   for (int j = 0; j < arrlen(block->next); ++j) {
     if (block_to_pre[block->next[j]] == -1) {
       parent[block->next[j]] = block->my_index;
-      get_dfs_tree(block - block->my_index + block->next[j], block_to_pre,
-                   preorder, parent, preorder_clock, postorder_clock);
+      get_dfs_tree(block - block->my_index + block->next[j], block_to_pre, preorder, parent, preorder_clock,
+                   postorder_clock);
     }
   }
   block->dfs_post = (*postorder_clock)++;
@@ -1676,8 +1611,7 @@ void compute_dominator_tree(code_analysis *analy) {
     arrsetlen(analy->blocks[i].idominates.list, 0);
   for (int preorder_i = 1; preorder_i < block_count; ++preorder_i) {
     int i = pre_to_block[preorder_i];
-    int idom = analy->blocks[i].idom =
-        i == reldom[i] ? semidom[i] : (s32)analy->blocks[reldom[i]].idom;
+    int idom = analy->blocks[i].idom = i == reldom[i] ? semidom[i] : (s32)analy->blocks[reldom[i]].idom;
     dominated_list_t *sdlist = &analy->blocks[idom].idominates;
     arrput(sdlist->list, i);
   }
@@ -1695,16 +1629,13 @@ void compute_dominator_tree(code_analysis *analy) {
   free(F);
 }
 
-bool query_dominance(const basic_block *dominator,
-                          const basic_block *dominated) {
+bool query_dominance(const basic_block *dominator, const basic_block *dominated) {
   DCHECK(dominator->idom_pre != 0, "dominator tree not computed");
-  return dominator->idom_pre <= dominated->idom_pre &&
-         dominator->idom_post >= dominated->idom_post;
+  return dominator->idom_pre <= dominated->idom_pre && dominator->idom_post >= dominated->idom_post;
 }
 
 // Check whether the CFG is reducible
-static int forward_edges_form_a_cycle(code_analysis *analy, int i,
-                                      int *visited) {
+static int forward_edges_form_a_cycle(code_analysis *analy, int i, int *visited) {
   basic_block *b = analy->blocks + i;
   visited[i] = 1;
   for (int j = 0; j < arrlen(b->next); ++j) {
@@ -1756,7 +1687,7 @@ void dump_cfg_to_graphviz(FILE *out, const code_analysis *analysis) {
   fprintf(out, "}\n");
 }
 
-void replace_slashes(char * str, int len) {
+void replace_slashes(char *str, int len) {
   for (int i = 0; i < len; ++i) {
     if (str[i] == '/') {
       str[i] = '.';
@@ -1781,8 +1712,7 @@ void stringify_type(string_builder *B, const field_descriptor *F) {
 void stringify_method(string_builder *B, const cp_method_info *M) {
   INIT_STACK_STRING(no_slashes, 1024);
   exchange_slashes_and_dots(&no_slashes, M->class_info->name);
-  string_builder_append(B, "%.*s.%.*s(", fmt_slice(no_slashes),
-                             fmt_slice(M->nat->name));
+  string_builder_append(B, "%.*s.%.*s(", fmt_slice(no_slashes), fmt_slice(M->nat->name));
   for (int i = 0; i < M->descriptor->args_count; ++i) {
     if (i > 0)
       string_builder_append(B, ", ");
@@ -1791,11 +1721,8 @@ void stringify_method(string_builder *B, const cp_method_info *M) {
   string_builder_append(B, ")");
 }
 
-static int extended_npe_phase2(const cp_method *method,
-                               stack_variable_source *source,
-                               int insn_i,
-                               string_builder *builder,
-                               bool is_first) {
+static int extended_npe_phase2(const cp_method *method, stack_variable_source *source, int insn_i,
+                               string_builder *builder, bool is_first) {
   code_analysis *analy = method->code_analysis;
   attribute_local_variable_table *lvt = method->code->local_variable_table;
   int original_pc = method->code->code[insn_i].original_pc;
@@ -1851,8 +1778,7 @@ static int extended_npe_phase2(const cp_method *method,
     case insn_getfield_F:
     case insn_getfield_D:
     case insn_getfield_Z:
-    case insn_getfield_L:
-    {
+    case insn_getfield_L: {
       // <a>.name or just "name" if a can't be resolved
       int err = extended_npe_phase2(method, &analy->sources[index].a, index, builder, false);
       if (!err) {
@@ -1860,52 +1786,51 @@ static int extended_npe_phase2(const cp_method *method,
       }
       string_builder_append(builder, "%.*s", fmt_slice(insn->cp->field.nat->name));
       break;
-      case insn_getstatic:
-      case insn_getstatic_B:
-      case insn_getstatic_C:
-      case insn_getstatic_S:
-      case insn_getstatic_I:
-      case insn_getstatic_J:
-      case insn_getstatic_F:
-      case insn_getstatic_D:
-      case insn_getstatic_Z:
-      case insn_getstatic_L:
-      {
-        // Class.name
-        string_builder_append(builder, "%.*s.%.*s", fmt_slice(insn->cp->field.class_info->name),
-                                   fmt_slice(insn->cp->field.nat->name));
-        break;
+    case insn_getstatic:
+    case insn_getstatic_B:
+    case insn_getstatic_C:
+    case insn_getstatic_S:
+    case insn_getstatic_I:
+    case insn_getstatic_J:
+    case insn_getstatic_F:
+    case insn_getstatic_D:
+    case insn_getstatic_Z:
+    case insn_getstatic_L: {
+      // Class.name
+      string_builder_append(builder, "%.*s.%.*s", fmt_slice(insn->cp->field.class_info->name),
+                            fmt_slice(insn->cp->field.nat->name));
+      break;
+    }
+    case insn_invokevirtual:
+    case insn_invokeinterface:
+    case insn_invokespecial:
+    case insn_invokespecial_resolved:
+    case insn_invokestatic:
+    case insn_invokestatic_resolved:
+    case insn_invokeitable_monomorphic:
+    case insn_invokeitable_polymorphic:
+    case insn_invokevtable_monomorphic:
+    case insn_invokevtable_polymorphic: {
+      if (is_first) {
+        string_builder_append(builder, "the return value of ");
       }
-      case insn_invokevirtual:
-      case insn_invokeinterface:
-      case insn_invokespecial:
-      case insn_invokespecial_resolved:
-      case insn_invokestatic:
-      case insn_invokestatic_resolved:
-      case insn_invokeitable_monomorphic:
-      case insn_invokeitable_polymorphic:
-      case insn_invokevtable_monomorphic:
-      case insn_invokevtable_polymorphic: {
-        if (is_first) {
-          string_builder_append(builder, "the return value of ");
-        }
-        stringify_method(builder, &insn->cp->methodref);
-        break;
-      }
-      case insn_iconst: {
-        string_builder_append(builder, "%d", (int)insn->integer_imm);
-        break;
-      }
-      default: {
-        return -1;
-      }
+      stringify_method(builder, &insn->cp->methodref);
+      break;
+    }
+    case insn_iconst: {
+      string_builder_append(builder, "%d", (int)insn->integer_imm);
+      break;
+    }
+    default: {
+      return -1;
+    }
     }
     }
     break;
-    case VARIABLE_SRC_KIND_UNK: {
-      string_builder_append(builder, "...");
-      return -1;
-    }
+  case VARIABLE_SRC_KIND_UNK: {
+    string_builder_append(builder, "...");
+    return -1;
+  }
   }
   }
   return 0;
@@ -1929,7 +1854,10 @@ int get_extended_npe_message(cp_method *method, u16 pc, heap_string *result) {
   string_builder_init(&phase2_builder);
 
 #undef CASE
-#define CASE(insn, r) case insn: string_builder_append(&builder, "%s", r); break;
+#define CASE(insn, r)                                                                                                  \
+  case insn:                                                                                                           \
+    string_builder_append(&builder, "%s", r);                                                                          \
+    break;
 
   switch (faulting_insn->kind) {
     CASE(insn_aaload, "Cannot load from object array")
@@ -1997,11 +1925,10 @@ int get_extended_npe_message(cp_method *method, u16 pc, heap_string *result) {
 
   int phase2_fail = extended_npe_phase2(method, &analy->sources[pc].a, pc, &phase2_builder, true);
   if (!phase2_fail) {
-    string_builder_append(&builder, " because \"%.*s\" is null",
-                               phase2_builder.write_pos, phase2_builder.data);
+    string_builder_append(&builder, " because \"%.*s\" is null", phase2_builder.write_pos, phase2_builder.data);
   }
 
-  *result = make_heap_str_from((slice) {builder.data, builder.write_pos});
+  *result = make_heap_str_from((slice){builder.data, builder.write_pos});
 
 error:
   string_builder_free(&builder);

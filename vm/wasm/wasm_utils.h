@@ -443,103 +443,54 @@ bytevector wasm_module_serialize(wasm_module *module);
 void wasm_module_free(wasm_module *module);
 
 // Make a result type out of the given components
-wasm_type wasm_make_tuple(wasm_module *module,
-                                    wasm_value_type *components,
-                                    int length);
+wasm_type wasm_make_tuple(wasm_module *module, wasm_value_type *components, int length);
 // Returns null if the type is not a result type
 wasm_tuple_type *wasm_get_tuple_type(wasm_type type);
 // Aborts if the type is a result type
 wasm_value_type wasm_get_basic_type(wasm_type type);
 
-wasm_function *
-wasm_add_function(wasm_module *module, wasm_type params,
-                       wasm_type results, wasm_type locals,
-                       wasm_expression *body, const char *name);
+wasm_function *wasm_add_function(wasm_module *module, wasm_type params, wasm_type results, wasm_type locals,
+                                 wasm_expression *body, const char *name);
 
-void wasm_export_function(wasm_module *module,
-                               wasm_function *fn);
+void wasm_export_function(wasm_module *module, wasm_function *fn);
 
-wasm_type wasm_string_to_tuple(wasm_module *module,
-                                         const char *str);
+wasm_type wasm_string_to_tuple(wasm_module *module, const char *str);
 
-wasm_function *
-wasm_import_runtime_function_impl(wasm_module *module,
-                                       const char *c_name,
-                                       const char *params, // e.g. iii
-                                       const char *result, // e.g. v
-                                       void *dummy);
+wasm_function *wasm_import_runtime_function_impl(wasm_module *module, const char *c_name,
+                                                 const char *params, // e.g. iii
+                                                 const char *result, // e.g. v
+                                                 void *dummy);
 
 // The function must be marked EMSCRIPTEN_KEEPALIVE for this to work!
-#define wasm_import_runtime_function(module, c_name, params, result)      \
-  wasm_import_runtime_function_impl(module, #c_name, params, result,      \
-                                         &c_name)
+#define wasm_import_runtime_function(module, c_name, params, result)                                                   \
+  wasm_import_runtime_function_impl(module, #c_name, params, result, &c_name)
 
 wasm_expression *wasm_i32_const(wasm_module *module, int value);
-wasm_expression *wasm_f32_const(wasm_module *module,
-                                          float value);
-wasm_expression *wasm_f64_const(wasm_module *module,
-                                          double value);
-wasm_expression *wasm_i64_const(wasm_module *module,
-                                          s64 value);
-wasm_expression *wasm_local_get(wasm_module *module,
-                                          u32 index, wasm_type kind);
-wasm_expression *wasm_local_set(wasm_module *module,
-                                          u32 index,
-                                          wasm_expression *value);
+wasm_expression *wasm_f32_const(wasm_module *module, float value);
+wasm_expression *wasm_f64_const(wasm_module *module, double value);
+wasm_expression *wasm_i64_const(wasm_module *module, s64 value);
+wasm_expression *wasm_local_get(wasm_module *module, u32 index, wasm_type kind);
+wasm_expression *wasm_local_set(wasm_module *module, u32 index, wasm_expression *value);
 wasm_expression *wasm_unreachable(wasm_module *module);
-wasm_expression *wasm_unop(wasm_module *module,
-                                     wasm_unary_op_kind op,
-                                     wasm_expression *expr);
-wasm_expression *wasm_binop(wasm_module *module,
-                                      wasm_binary_op_kind op,
-                                      wasm_expression *left,
-                                      wasm_expression *right);
-wasm_expression *wasm_select(wasm_module *module,
-                                       wasm_expression *condition,
-                                       wasm_expression *true_expr,
-                                       wasm_expression *false_expr);
-wasm_expression *wasm_block(wasm_module *module,
-                                      wasm_expression **exprs,
-                                      int expr_count, wasm_type type,
-                                      bool is_loop);
-wasm_expression *
-wasm_update_block(wasm_module *module,
-                       wasm_expression *existing_block,
-                       wasm_expression **exprs, int expr_count,
-                       wasm_type type, bool is_loop);
-wasm_expression *wasm_br(wasm_module *module,
-                                   wasm_expression *condition,
-                                   wasm_expression *break_to);
-wasm_expression *wasm_call(wasm_module *module,
-                                     wasm_function *fn,
-                                     wasm_expression **args,
-                                     int arg_count);
-wasm_expression *wasm_call_indirect(wasm_module *module,
-                                              int table_index,
-                                              wasm_expression *index,
-                                              wasm_expression **args,
-                                              int arg_count,
-                                              u32 functype);
-wasm_expression *wasm_load(wasm_module *module,
-                                     wasm_load_op_kind op,
-                                     wasm_expression *addr, int align,
-                                     int offset);
-wasm_expression *wasm_store(wasm_module *module,
-                                      wasm_store_op_kind op,
-                                      wasm_expression *addr,
-                                      wasm_expression *value, int align,
-                                      int offset);
-wasm_expression *wasm_if_else(wasm_module *module,
-                                        wasm_expression *cond,
-                                        wasm_expression *true_expr,
-                                        wasm_expression *false_expr,
-                                        wasm_type type);
-wasm_expression *wasm_return(wasm_module *module,
-                                       wasm_expression *expr);
+wasm_expression *wasm_unop(wasm_module *module, wasm_unary_op_kind op, wasm_expression *expr);
+wasm_expression *wasm_binop(wasm_module *module, wasm_binary_op_kind op, wasm_expression *left, wasm_expression *right);
+wasm_expression *wasm_select(wasm_module *module, wasm_expression *condition, wasm_expression *true_expr,
+                             wasm_expression *false_expr);
+wasm_expression *wasm_block(wasm_module *module, wasm_expression **exprs, int expr_count, wasm_type type, bool is_loop);
+wasm_expression *wasm_update_block(wasm_module *module, wasm_expression *existing_block, wasm_expression **exprs,
+                                   int expr_count, wasm_type type, bool is_loop);
+wasm_expression *wasm_br(wasm_module *module, wasm_expression *condition, wasm_expression *break_to);
+wasm_expression *wasm_call(wasm_module *module, wasm_function *fn, wasm_expression **args, int arg_count);
+wasm_expression *wasm_call_indirect(wasm_module *module, int table_index, wasm_expression *index,
+                                    wasm_expression **args, int arg_count, u32 functype);
+wasm_expression *wasm_load(wasm_module *module, wasm_load_op_kind op, wasm_expression *addr, int align, int offset);
+wasm_expression *wasm_store(wasm_module *module, wasm_store_op_kind op, wasm_expression *addr, wasm_expression *value,
+                            int align, int offset);
+wasm_expression *wasm_if_else(wasm_module *module, wasm_expression *cond, wasm_expression *true_expr,
+                              wasm_expression *false_expr, wasm_type type);
+wasm_expression *wasm_return(wasm_module *module, wasm_expression *expr);
 
-  u32 register_function_type(wasm_module *module,
-                                       wasm_type params,
-                                       wasm_type results);
+u32 register_function_type(wasm_module *module, wasm_type params, wasm_type results);
 
 wasm_type jvm_type_to_wasm(type_kind kind);
 
@@ -565,10 +516,8 @@ typedef struct {
   void *run;
 } wasm_instantiation_result;
 
-void free_wasm_instantiation_result(
-    wasm_instantiation_result *result);
-wasm_instantiation_result *
-wasm_instantiate_module(wasm_module *module, const char *debug_name);
+void free_wasm_instantiation_result(wasm_instantiation_result *result);
+wasm_instantiation_result *wasm_instantiate_module(wasm_module *module, const char *debug_name);
 
 #ifdef __cplusplus
 }

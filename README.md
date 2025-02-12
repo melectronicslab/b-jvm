@@ -48,7 +48,7 @@ See GitHub issues
 ### Useful
 
 ```
-clang-format -i test/*.cc src/**/*.c src/**/*.h
+clang-format -i test/**/*.cc test/**/*.h vm/**/*.c vm/**/*.h natives/**/*.h natives/**/*.c
 ```
 
 ## Documentation

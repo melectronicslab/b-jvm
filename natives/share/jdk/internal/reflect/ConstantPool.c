@@ -1,7 +1,6 @@
 #include "natives-dsl.h"
 
-cp_entry *lookup_entry(obj_header *obj, int index,
-                            cp_kind expected) {
+cp_entry *lookup_entry(obj_header *obj, int index, cp_kind expected) {
   struct native_ConstantPool *mirror = (void *)obj;
   classdesc *desc = mirror->reflected_class;
   constant_pool *pool = desc->pool;
@@ -15,8 +14,7 @@ cp_entry *lookup_entry(obj_header *obj, int index,
   return entry;
 }
 
-DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getUTF8At0,
-               "(Ljava/lang/Object;I)Ljava/lang/String;") {
+DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getUTF8At0, "(Ljava/lang/Object;I)Ljava/lang/String;") {
   cp_entry *entry = lookup_entry(obj->obj, args[1].i, CP_KIND_UTF8);
   if (!entry) {
     return (stack_value){.obj = nullptr};
@@ -24,10 +22,8 @@ DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getUTF8At0,
   return (stack_value){.obj = MakeJStringFromModifiedUTF8(thread, entry->utf8, true)};
 }
 
-DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getIntAt0,
-               "(Ljava/lang/Object;I)I") {
-  cp_entry *entry =
-      lookup_entry(obj->obj, args[1].i, CP_KIND_INTEGER);
+DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getIntAt0, "(Ljava/lang/Object;I)I") {
+  cp_entry *entry = lookup_entry(obj->obj, args[1].i, CP_KIND_INTEGER);
   if (!entry) {
     return (stack_value){.obj = nullptr};
   }

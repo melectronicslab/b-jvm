@@ -1,10 +1,10 @@
+#include "doctest/doctest.h"
 #include <climits>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <unordered_map>
-#include "doctest/doctest.h"
 
 #include <arrays.h>
 #include <bjvm.h>

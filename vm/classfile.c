@@ -265,8 +265,8 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
     [[fallthrough]];
   case CONSTANT_Class: {
     cp_kind entry_kind = kind == CONSTANT_Class    ? CP_KIND_CLASS
-                              : kind == CONSTANT_Module ? CP_KIND_MODULE
-                                                        : CP_KIND_PACKAGE;
+                         : kind == CONSTANT_Module ? CP_KIND_MODULE
+                                                   : CP_KIND_PACKAGE;
 
     u16 index = reader_next_u16(reader, "class index");
     return (cp_entry){
@@ -281,23 +281,22 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
     u16 name_and_type_index = reader_next_u16(reader, "name and type index");
 
     cp_kind entry_kind = kind == CONSTANT_Fieldref    ? CP_KIND_FIELD_REF
-                              : kind == CONSTANT_Methodref ? CP_KIND_METHOD_REF
-                                                           : CP_KIND_INTERFACE_METHOD_REF;
-    cp_class_info *class_info = skip_linking
-                                         ? nullptr
-                                         : &checked_cp_entry(ctx->cp, class_index, CP_KIND_CLASS,
-                                                             "fieldref/methodref/interfacemethodref class info")
-                                                ->class_info;
+                         : kind == CONSTANT_Methodref ? CP_KIND_METHOD_REF
+                                                      : CP_KIND_INTERFACE_METHOD_REF;
+    cp_class_info *class_info = skip_linking ? nullptr
+                                             : &checked_cp_entry(ctx->cp, class_index, CP_KIND_CLASS,
+                                                                 "fieldref/methodref/interfacemethodref class info")
+                                                    ->class_info;
 
-    cp_name_and_type *name_and_type =
-        skip_linking ? nullptr
-                     : &checked_cp_entry(ctx->cp, name_and_type_index, CP_KIND_NAME_AND_TYPE,
-                                         "fieldref/methodref/interfacemethodref name and type")
-                            ->name_and_type;
+    cp_name_and_type *name_and_type = skip_linking
+                                          ? nullptr
+                                          : &checked_cp_entry(ctx->cp, name_and_type_index, CP_KIND_NAME_AND_TYPE,
+                                                              "fieldref/methodref/interfacemethodref name and type")
+                                                 ->name_and_type;
 
     if (kind == CONSTANT_Fieldref) {
       return (cp_entry){.kind = entry_kind,
-                             .field = {.class_info = class_info, .nat = name_and_type, .field = nullptr}};
+                        .field = {.class_info = class_info, .nat = name_and_type, .field = nullptr}};
     }
     return (cp_entry){.kind = entry_kind, .methodref = {.class_info = class_info, .nat = name_and_type}};
   }
@@ -329,12 +328,11 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
 
     slice name = skip_linking ? null_str() : checked_get_utf8(ctx->cp, name_index, "name and type name");
 
-    return (cp_entry){
-        .kind = CP_KIND_NAME_AND_TYPE,
-        .name_and_type = {.name = name,
-                          .descriptor = skip_linking
-                                            ? null_str()
-                                            : checked_get_utf8(ctx->cp, descriptor_index, "name and type descriptor")}};
+    return (cp_entry){.kind = CP_KIND_NAME_AND_TYPE,
+                      .name_and_type = {.name = name,
+                                        .descriptor = skip_linking ? null_str()
+                                                                   : checked_get_utf8(ctx->cp, descriptor_index,
+                                                                                      "name and type descriptor")}};
   }
   case CONSTANT_Utf8: {
     u16 length = reader_next_u16(reader, "utf8 length");
@@ -348,11 +346,9 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
   case CONSTANT_MethodHandle: {
     u8 handle_kind = reader_next_u8(reader, "method handle kind");
     u16 reference_index = reader_next_u16(reader, "reference index");
-    cp_entry *entry =
-        skip_linking ? nullptr : checked_cp_entry(ctx->cp, reference_index, 0, "method handle reference");
+    cp_entry *entry = skip_linking ? nullptr : checked_cp_entry(ctx->cp, reference_index, 0, "method handle reference");
     // TODO validate both
-    return (cp_entry){.kind = CP_KIND_METHOD_HANDLE,
-                           .method_handle = {.handle_kind = handle_kind, .reference = entry}};
+    return (cp_entry){.kind = CP_KIND_METHOD_HANDLE, .method_handle = {.handle_kind = handle_kind, .reference = entry}};
   }
   case CONSTANT_MethodType: {
     u16 desc_index = reader_next_u16(reader, "descriptor index");
@@ -371,13 +367,12 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
                      : &checked_cp_entry(ctx->cp, name_and_type_index, CP_KIND_NAME_AND_TYPE, "indy name and type")
                             ->name_and_type;
 
-    return (cp_entry){.kind =
-                               (kind == CONSTANT_Dynamic) ? CP_KIND_DYNAMIC_CONSTANT : CP_KIND_INVOKE_DYNAMIC,
-                           .indy_info = {// will be converted into a pointer to the method in
-                                         // link_bootstrap_methods
-                                         .method = (void *)(uintptr_t)bootstrap_method_attr_index,
-                                         .name_and_type = name_and_type,
-                                         .method_descriptor = nullptr}};
+    return (cp_entry){.kind = (kind == CONSTANT_Dynamic) ? CP_KIND_DYNAMIC_CONSTANT : CP_KIND_INVOKE_DYNAMIC,
+                      .indy_info = {// will be converted into a pointer to the method in
+                                    // link_bootstrap_methods
+                                    .method = (void *)(uintptr_t)bootstrap_method_attr_index,
+                                    .name_and_type = name_and_type,
+                                    .method_descriptor = nullptr}};
   }
   default:
     format_error_static("Invalid constant pool entry kind");
@@ -519,10 +514,10 @@ bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, classfile_par
   }
   struct bc_tableswitch_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
   *data = (struct bc_tableswitch_data){.default_target = default_target,
-                                            .low = low,
-                                            .high = high,
-                                            .targets = targets,
-                                            .targets_count = (int)targets_count};
+                                       .low = low,
+                                       .high = high,
+                                       .targets = targets,
+                                       .targets_count = (int)targets_count};
 
   return (bytecode_insn){.kind = insn_tableswitch, .original_pc = original_pc, .tableswitch = data};
 }
@@ -551,10 +546,10 @@ bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, classfile_pa
 
   struct bc_lookupswitch_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
   *data = (struct bc_lookupswitch_data){.default_target = default_target,
-                                             .keys = keys,
-                                             .keys_count = pairs_count,
-                                             .targets = targets,
-                                             .targets_count = pairs_count};
+                                        .keys = keys,
+                                        .keys_count = pairs_count,
+                                        .targets = targets,
+                                        .targets_count = pairs_count};
   return (bytecode_insn){.kind = insn_lookupswitch, .original_pc = original_pc, .lookupswitch = data};
 }
 
@@ -821,21 +816,19 @@ bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx 
   case sipush:
     return (bytecode_insn){.kind = insn_iconst, .integer_imm = reader_next_s16(reader, "sipush immediate")};
   case ldc:
-    return (bytecode_insn){
-        .kind = insn_ldc,
-        .cp = checked_cp_entry(ctx->cp, reader_next_u8(reader, "ldc index"),
-                               CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
-                               "ldc index")};
+    return (bytecode_insn){.kind = insn_ldc,
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u8(reader, "ldc index"),
+                                                  CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
+                                                  "ldc index")};
   case ldc_w:
-    return (bytecode_insn){
-        .kind = insn_ldc,
-        .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc_w index"),
-                               CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
-                               "ldc_w index")};
+    return (bytecode_insn){.kind = insn_ldc,
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc_w index"),
+                                                  CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
+                                                  "ldc_w index")};
   case ldc2_w:
     return (bytecode_insn){.kind = insn_ldc2_w,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc2_w index"),
-                                                       CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w index")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc2_w index"),
+                                                  CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w index")};
   case iload:
     return (bytecode_insn){.kind = insn_iload, .index = reader_next_u8(reader, "iload index")};
   case lload:
@@ -1075,55 +1068,47 @@ bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx 
     return (bytecode_insn){.kind = insn_dcmpg};
 
   case ifeq:
-    return (bytecode_insn){.kind = insn_ifeq,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_eq offset"), ctx)};
+    return (bytecode_insn){.kind = insn_ifeq, .index = checked_pc(pc, reader_next_s16(reader, "if_eq offset"), ctx)};
   case ifne:
-    return (bytecode_insn){.kind = insn_ifne,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_ne offset"), ctx)};
+    return (bytecode_insn){.kind = insn_ifne, .index = checked_pc(pc, reader_next_s16(reader, "if_ne offset"), ctx)};
   case iflt:
-    return (bytecode_insn){.kind = insn_iflt,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_lt offset"), ctx)};
+    return (bytecode_insn){.kind = insn_iflt, .index = checked_pc(pc, reader_next_s16(reader, "if_lt offset"), ctx)};
   case ifge:
-    return (bytecode_insn){.kind = insn_ifge,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_ge offset"), ctx)};
+    return (bytecode_insn){.kind = insn_ifge, .index = checked_pc(pc, reader_next_s16(reader, "if_ge offset"), ctx)};
   case ifgt:
-    return (bytecode_insn){.kind = insn_ifgt,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_gt offset"), ctx)};
+    return (bytecode_insn){.kind = insn_ifgt, .index = checked_pc(pc, reader_next_s16(reader, "if_gt offset"), ctx)};
   case ifle:
-    return (bytecode_insn){.kind = insn_ifle,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_le offset"), ctx)};
+    return (bytecode_insn){.kind = insn_ifle, .index = checked_pc(pc, reader_next_s16(reader, "if_le offset"), ctx)};
 
   case if_icmpeq:
     return (bytecode_insn){.kind = insn_if_icmpeq,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_icmpeq offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_icmpeq offset"), ctx)};
   case if_icmpne:
     return (bytecode_insn){.kind = insn_if_icmpne,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_icmpne offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_icmpne offset"), ctx)};
   case if_icmplt:
     return (bytecode_insn){.kind = insn_if_icmplt,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_icmplt offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_icmplt offset"), ctx)};
   case if_icmpge:
     return (bytecode_insn){.kind = insn_if_icmpge,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_icmpge offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_icmpge offset"), ctx)};
   case if_icmpgt:
     return (bytecode_insn){.kind = insn_if_icmpgt,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_icmpgt offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_icmpgt offset"), ctx)};
   case if_icmple:
     return (bytecode_insn){.kind = insn_if_icmple,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_icmple offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_icmple offset"), ctx)};
   case if_acmpeq:
     return (bytecode_insn){.kind = insn_if_acmpeq,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_acmpeq offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_acmpeq offset"), ctx)};
   case if_acmpne:
     return (bytecode_insn){.kind = insn_if_acmpne,
-                                .index = checked_pc(pc, reader_next_s16(reader, "if_acmpne offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "if_acmpne offset"), ctx)};
 
   case goto_:
-    return (bytecode_insn){.kind = insn_goto,
-                                .index = checked_pc(pc, reader_next_s16(reader, "goto offset"), ctx)};
+    return (bytecode_insn){.kind = insn_goto, .index = checked_pc(pc, reader_next_s16(reader, "goto offset"), ctx)};
   case jsr:
-    return (bytecode_insn){.kind = insn_jsr,
-                                .index = checked_pc(pc, reader_next_s16(reader, "jsr offset"), ctx)};
+    return (bytecode_insn){.kind = insn_jsr, .index = checked_pc(pc, reader_next_s16(reader, "jsr offset"), ctx)};
   case ret:
     return (bytecode_insn){.kind = insn_ret, .index = reader_next_u8(reader, "ret index")};
   case tableswitch: {
@@ -1147,42 +1132,41 @@ bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx 
 
   case getstatic:
     return (bytecode_insn){.kind = insn_getstatic,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "getstatic index"),
-                                                       CP_KIND_FIELD_REF, "getstatic field ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "getstatic index"),
+                                                  CP_KIND_FIELD_REF, "getstatic field ref")};
   case putstatic:
     return (bytecode_insn){.kind = insn_putstatic,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "putstatic index"),
-                                                       CP_KIND_FIELD_REF, "putstatic field ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "putstatic index"),
+                                                  CP_KIND_FIELD_REF, "putstatic field ref")};
 
   case getfield:
     return (bytecode_insn){.kind = insn_getfield,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "getfield index"),
-                                                       CP_KIND_FIELD_REF, "getfield field ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "getfield index"), CP_KIND_FIELD_REF,
+                                                  "getfield field ref")};
   case putfield:
     return (bytecode_insn){.kind = insn_putfield,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "putfield index"),
-                                                       CP_KIND_FIELD_REF, "putfield field ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "putfield index"), CP_KIND_FIELD_REF,
+                                                  "putfield field ref")};
 
   case invokevirtual:
     return (bytecode_insn){.kind = insn_invokevirtual,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokevirtual index"),
-                                                       CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
-                                                       "invokevirtual method ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokevirtual index"),
+                                                  CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
+                                                  "invokevirtual method ref")};
   case invokespecial:
     return (bytecode_insn){.kind = insn_invokespecial,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokespecial index"),
-                                                       CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
-                                                       "invokespecial method ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokespecial index"),
+                                                  CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
+                                                  "invokespecial method ref")};
   case invokestatic:
     return (bytecode_insn){.kind = insn_invokestatic,
-                                .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokestatic index"),
-                                                       CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
-                                                       "invokestatic method ref")};
+                           .cp = checked_cp_entry(ctx->cp, reader_next_u16(reader, "invokestatic index"),
+                                                  CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF,
+                                                  "invokestatic method ref")};
 
   case invokeinterface: {
     u16 index = reader_next_u16(reader, "invokeinterface index");
-    cp_entry *entry =
-        checked_cp_entry(ctx->cp, index, CP_KIND_INTERFACE_METHOD_REF, "invokeinterface method ref");
+    cp_entry *entry = checked_cp_entry(ctx->cp, index, CP_KIND_INTERFACE_METHOD_REF, "invokeinterface method ref");
     reader_next_u8(reader, "invokeinterface count");
     reader_next_u8(reader, "invokeinterface zero");
     return (bytecode_insn){.kind = insn_invokeinterface, .cp = entry};
@@ -1286,8 +1270,7 @@ bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx 
   case multianewarray: {
     u16 index = reader_next_u16(reader, "multianewarray index");
     u8 dimensions = reader_next_u8(reader, "multianewarray dimensions");
-    cp_class_info *entry =
-        &checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "multianewarray class")->class_info;
+    cp_class_info *entry = &checked_cp_entry(ctx->cp, index, CP_KIND_CLASS, "multianewarray class")->class_info;
     struct multianewarray_data *data = arena_alloc(ctx->arena, 1, sizeof(*data));
     data->entry = entry;
     data->dimensions = dimensions;
@@ -1295,17 +1278,14 @@ bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx 
   }
 
   case ifnull:
-    return (bytecode_insn){.kind = insn_ifnull,
-                                .index = checked_pc(pc, reader_next_s16(reader, "ifnull offset"), ctx)};
+    return (bytecode_insn){.kind = insn_ifnull, .index = checked_pc(pc, reader_next_s16(reader, "ifnull offset"), ctx)};
   case ifnonnull:
     return (bytecode_insn){.kind = insn_ifnonnull,
-                                .index = checked_pc(pc, reader_next_s16(reader, "ifnonnull offset"), ctx)};
+                           .index = checked_pc(pc, reader_next_s16(reader, "ifnonnull offset"), ctx)};
   case goto_w:
-    return (bytecode_insn){.kind = insn_goto,
-                                .index = checked_pc(pc, reader_next_s32(reader, "goto_w offset"), ctx)};
+    return (bytecode_insn){.kind = insn_goto, .index = checked_pc(pc, reader_next_s32(reader, "goto_w offset"), ctx)};
   case jsr_w:
-    return (bytecode_insn){.kind = insn_jsr,
-                                .index = checked_pc(pc, reader_next_s32(reader, "jsr_w offset"), ctx)};
+    return (bytecode_insn){.kind = insn_jsr, .index = checked_pc(pc, reader_next_s32(reader, "jsr_w offset"), ctx)};
 
   default: {
     char buf[64];
@@ -1373,9 +1353,8 @@ void parse_bootstrap_methods_attribute(cf_byteslice attr_reader, attribute *attr
     method->args_count = arg_count;
     method->args = arena_alloc(ctx->arena, arg_count, sizeof(cp_entry *));
     for (int j = 0; j < arg_count; ++j) {
-      const int allowed = CP_KIND_STRING | CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_LONG |
-                          CP_KIND_DOUBLE | CP_KIND_METHOD_HANDLE | CP_KIND_METHOD_TYPE |
-                          CP_KIND_CLASS | CP_KIND_DYNAMIC_CONSTANT;
+      const int allowed = CP_KIND_STRING | CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_LONG | CP_KIND_DOUBLE |
+                          CP_KIND_METHOD_HANDLE | CP_KIND_METHOD_TYPE | CP_KIND_CLASS | CP_KIND_DYNAMIC_CONSTANT;
       method->args[j] = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "bootstrap method arg"), allowed,
                                          "bootstrap method arg");
     }
@@ -1433,10 +1412,9 @@ attribute_code parse_code_attribute(cf_byteslice attr_reader, classfile_parse_ct
       ent->end_insn =
           end_pc == code_length ? (s32)code_length : (s32)convert_pc_to_insn(end_pc, pc_to_insn, code_length);
       ent->handler_insn = convert_pc_to_insn(handler_pc, pc_to_insn, code_length);
-      ent->catch_type =
-          catch_type == 0
-              ? nullptr
-              : &checked_cp_entry(ctx->cp, catch_type, CP_KIND_CLASS, "exception catch type")->class_info;
+      ent->catch_type = catch_type == 0
+                            ? nullptr
+                            : &checked_cp_entry(ctx->cp, catch_type, CP_KIND_CLASS, "exception catch type")->class_info;
     }
   }
 
@@ -1459,15 +1437,15 @@ attribute_code parse_code_attribute(cf_byteslice attr_reader, classfile_parse_ct
   }
 
   return (attribute_code){.max_stack = max_stack,
-                               .max_locals = max_locals,
-                               .insn_count = insn_count,
-                               .max_formal_pc = ctx->current_code_max_pc,
-                               .code = code,
-                               .attributes = attributes,
-                               .exception_table = table,
-                               .line_number_table = lnt,
-                               .local_variable_table = lvt,
-                               .attributes_count = attributes_count};
+                          .max_locals = max_locals,
+                          .insn_count = insn_count,
+                          .max_formal_pc = ctx->current_code_max_pc,
+                          .code = code,
+                          .attributes = attributes,
+                          .exception_table = table,
+                          .line_number_table = lnt,
+                          .local_variable_table = lvt,
+                          .attributes_count = attributes_count};
 }
 
 // 4.2.2. Unqualified Names
@@ -1512,10 +1490,9 @@ void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *
     memcpy(attr->smt.data, attr_reader.bytes, attr_reader.len);
   } else if (utf8_equals(attr->name, "ConstantValue")) {
     attr->kind = ATTRIBUTE_KIND_CONSTANT_VALUE;
-    attr->constant_value = checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "constant value index"),
-                                            CP_KIND_STRING | CP_KIND_INTEGER | CP_KIND_FLOAT |
-                                                CP_KIND_LONG | CP_KIND_DOUBLE,
-                                            "constant value");
+    attr->constant_value = checked_cp_entry(
+        ctx->cp, reader_next_u16(&attr_reader, "constant value index"),
+        CP_KIND_STRING | CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_LONG | CP_KIND_DOUBLE, "constant value");
   } else if (utf8_equals(attr->name, "BootstrapMethods")) {
     parse_bootstrap_methods_attribute(attr_reader, attr, ctx);
   } else if (utf8_equals(attr->name, "EnclosingMethod")) {
@@ -1584,9 +1561,9 @@ void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *
         checked_get_utf8(ctx->cp, reader_next_u16(&attr_reader, "Signature index"), "Signature index");
   } else if (utf8_equals(attr->name, "NestHost")) {
     attr->kind = ATTRIBUTE_KIND_NEST_HOST;
-    attr->nest_host = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "NestHost index"), CP_KIND_CLASS,
-                                        "NestHost index")
-                           ->class_info;
+    attr->nest_host =
+        &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "NestHost index"), CP_KIND_CLASS, "NestHost index")
+             ->class_info;
   } else if (utf8_equals(attr->name, "LocalVariableTable")) {
     attr->kind = ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE;
     u16 count = attr->lvt.entries_count = reader_next_u16(&attr_reader, "local variable table count");
@@ -1640,10 +1617,10 @@ cp_method parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx) {
 
 cp_field read_field(cf_byteslice *reader, classfile_parse_ctx *ctx) {
   cp_field field = {.access_flags = reader_next_u16(reader, "field access flags"),
-                         .name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "field name"), "field name"),
-                         .descriptor =
-                             checked_get_utf8(ctx->cp, reader_next_u16(reader, "field descriptor"), "field descriptor"),
-                         .attributes_count = reader_next_u16(reader, "field attributes count")};
+                    .name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "field name"), "field name"),
+                    .descriptor =
+                        checked_get_utf8(ctx->cp, reader_next_u16(reader, "field descriptor"), "field descriptor"),
+                    .attributes_count = reader_next_u16(reader, "field attributes count")};
   field.attributes = arena_alloc(ctx->arena, field.attributes_count, sizeof(attribute));
 
   for (int i = 0; i < field.attributes_count; i++) {
@@ -1827,8 +1804,7 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
 
   for (int i = 0; i < cf->interfaces_count; i++) {
     cf->interfaces[i] =
-        &checked_cp_entry(cf->pool, reader_next_u16(&reader, "interface"), CP_KIND_CLASS, "superinterface")
-             ->class_info;
+        &checked_cp_entry(cf->pool, reader_next_u16(&reader, "interface"), CP_KIND_CLASS, "superinterface")->class_info;
   }
 
   // Parse fields

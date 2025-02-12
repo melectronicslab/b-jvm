@@ -1,8 +1,7 @@
 #include <natives-dsl.h>
 
-DECLARE_NATIVE(
-    "java/lang/reflect", Proxy, defineClass0,
-    "(Ljava/lang/ClassLoader;Ljava/lang/String;[BII)Ljava/lang/Class;") {
+DECLARE_NATIVE("java/lang/reflect", Proxy, defineClass0,
+               "(Ljava/lang/ClassLoader;Ljava/lang/String;[BII)Ljava/lang/Class;") {
   DCHECK(argc == 5);
 
   obj_header *name = args[1].handle->obj;
@@ -23,8 +22,7 @@ DECLARE_NATIVE(
     }
   }
 
-  classdesc *result =
-      define_bootstrap_class(thread, hslc(name_str), bytes, length);
+  classdesc *result = define_bootstrap_class(thread, hslc(name_str), bytes, length);
 
   free_heap_str(name_str);
 
@@ -32,9 +30,8 @@ DECLARE_NATIVE(
   future_t f = initialize_class(&pox); // TODO convert
   CHECK(f.status == FUTURE_READY);
 
-  return (stack_value){.obj =
-                                (void *)get_class_mirror(thread, result)};
+  return (stack_value){.obj = (void *)get_class_mirror(thread, result)};
 
-  on_oom:
+on_oom:
   return value_null();
 }

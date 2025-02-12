@@ -14,8 +14,7 @@ static bool do_latin1(const u16 *chars, size_t len) {
   return true;
 }
 
-static int convert_modified_utf8_to_chars(const char *bytes, int len, u16 **result,
-                                   int *result_len, bool sloppy) {
+static int convert_modified_utf8_to_chars(const char *bytes, int len, u16 **result, int *result_len, bool sloppy) {
   *result = malloc(len * sizeof(short)); // conservatively large
   int i = 0, j = 0;
 
@@ -41,8 +40,7 @@ static int convert_modified_utf8_to_chars(const char *bytes, int len, u16 **resu
       // bytes"
       if (i >= len - 2)
         goto inval;
-      (*result)[j++] = (short)((byte & 0x0F) << 12) |
-                       ((bytes[i + 1] & 0x3F) << 6) | (bytes[i + 2] & 0x3F);
+      (*result)[j++] = (short)((byte & 0x0F) << 12) | ((bytes[i + 1] & 0x3F) << 6) | (bytes[i + 2] & 0x3F);
       i += 2;
     } else if (sloppy && byte == 0) {
       break;
@@ -55,8 +53,8 @@ static int convert_modified_utf8_to_chars(const char *bytes, int len, u16 **resu
   *result_len = j;
   return 0;
 
-  inval:
-    free(*result);
+inval:
+  free(*result);
   return -1; // invalid UTF-8 sequence
 }
 
@@ -98,7 +96,7 @@ error:
   return result;
 }
 
-object make_jstring_cstr(vm_thread *thread, char const* cstr) {
+object make_jstring_cstr(vm_thread *thread, char const *cstr) {
   handle *str = make_handle(thread, new_object(thread, thread->vm->cached_classdescs->string));
 
 #define S ((struct native_String *)str->obj)
@@ -112,11 +110,11 @@ object make_jstring_cstr(vm_thread *thread, char const* cstr) {
   S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
   if (!S->value)
     goto oom;
-  ByteArrayStoreBlock(S->value, 0, len, (u8*)cstr);
+  ByteArrayStoreBlock(S->value, 0, len, (u8 *)cstr);
   S->coder = STRING_CODER_LATIN1; // LATIN1
   result = (void *)S;
 
-  oom:
+oom:
   drop_handle(thread, str);
   return result;
 }
@@ -127,7 +125,7 @@ static object lookup_interned_jstring(vm_thread *thread, object s) {
   u8 *data = ArrayData(raw);
   s32 len = *ArrayLength(raw);
 
-  return hash_table_lookup(&thread->vm->interned_strings, (char const*)data, len);
+  return hash_table_lookup(&thread->vm->interned_strings, (char const *)data, len);
 }
 
 static void insert_interned_jstring(vm_thread *thread, object s) {
@@ -136,7 +134,7 @@ static void insert_interned_jstring(vm_thread *thread, object s) {
   u8 *data = ArrayData(raw);
   s32 len = *ArrayLength(raw);
 
-  (void)hash_table_insert(&thread->vm->interned_strings, (char const*) data, len, s);
+  (void)hash_table_insert(&thread->vm->interned_strings, (char const *)data, len, s);
 }
 
 object MakeJStringFromModifiedUTF8(vm_thread *thread, slice data, bool intern) {
@@ -154,7 +152,7 @@ object MakeJStringFromModifiedUTF8(vm_thread *thread, slice data, bool intern) {
 
   return obj;
 }
-obj_header *MakeJStringFromCString(vm_thread *thread, char const* data, bool intern) {
+obj_header *MakeJStringFromCString(vm_thread *thread, char const *data, bool intern) {
   object obj = make_jstring_cstr(thread, data);
   if (!obj)
     return nullptr;
@@ -183,11 +181,11 @@ obj_header *MakeJStringFromData(vm_thread *thread, slice data, string_coder_kind
   S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
   if (!S->value)
     goto oom;
-  ByteArrayStoreBlock(S->value, 0, len, (u8 const*)data.chars);
+  ByteArrayStoreBlock(S->value, 0, len, (u8 const *)data.chars);
   S->coder = encoding; // LATIN1
   result = (void *)S;
 
-  oom:
+oom:
   drop_handle(thread, str);
   return result;
 }
@@ -202,7 +200,7 @@ obj_header *InternJString(vm_thread *thread, object s) {
   u8 *data = ArrayData(raw);
   s32 len = *ArrayLength(raw);
 
-  (void)hash_table_insert(&thread->vm->interned_strings, (char const*)data, len, s);
+  (void)hash_table_insert(&thread->vm->interned_strings, (char const *)data, len, s);
   return s;
 }
 
@@ -212,9 +210,10 @@ s32 get_object_hash_code(object o) {
   u32 *hc = &get_mark_word(&o->header_word)->data[1];
   if (*hc == 0) {
     // Hash not yet computed -- make it always nonzero
-    while (!((*hc = ObjNextHashCode())));
+    while (!((*hc = ObjNextHashCode())))
+      ;
   }
-  return (s32) *hc;
+  return (s32)*hc;
 }
 
 u64 ObjNextHashCode() {

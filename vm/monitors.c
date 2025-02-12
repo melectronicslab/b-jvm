@@ -10,7 +10,7 @@ DEFINE_ASYNC(monitor_acquire) {
   monitor_data *allocated_data = nullptr; // lazily allocated
 
   header_word volatile *shared_header = &self->handle->obj->header_word;
-  assert((uintptr_t)shared_header % 8 == 0);  // should be aligned due to how bump_allocate works
+  assert((uintptr_t)shared_header % 8 == 0); // should be aligned due to how bump_allocate works
 
   header_word fetched_header;
 
@@ -22,7 +22,8 @@ DEFINE_ASYNC(monitor_acquire) {
       break; // the monitor exists
     }
     // we need to allocate one ourselves
-    if (!allocated_data) allocated_data = allocate_monitor(args->thread);
+    if (!allocated_data)
+      allocated_data = allocate_monitor(args->thread);
     if (unlikely(!allocated_data)) { // oom
       drop_handle(args->thread, self->handle);
       out_of_memory(args->thread);
@@ -33,18 +34,19 @@ DEFINE_ASYNC(monitor_acquire) {
     allocated_data->tid = -1; // not owned (as a microöptimisation, we could claim it here beforehand)
     allocated_data->hold_count = 0;
 
-    header_word proposed_header = { .expanded_data = allocated_data };
+    header_word proposed_header = {.expanded_data = allocated_data};
 
     // try to put it in- loop again if CAS fails
-    if (__atomic_compare_exchange(shared_header, &fetched_header, &proposed_header,
-                                  false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE)) {
+    if (__atomic_compare_exchange(shared_header, &fetched_header, &proposed_header, false, __ATOMIC_ACQUIRE,
+                                  __ATOMIC_ACQUIRE)) {
       break; // success
     }
   }
 
   // now, a monitor is guaranteed to exist
   for (;;) {
-    monitor_data *lock = __atomic_load_n((monitor_data **) &self->handle->obj->header_word, __ATOMIC_ACQUIRE); // must refetch
+    monitor_data *lock =
+        __atomic_load_n((monitor_data **)&self->handle->obj->header_word, __ATOMIC_ACQUIRE); // must refetch
     assert(lock);
     s32 freed = -1;
 
@@ -55,15 +57,14 @@ DEFINE_ASYNC(monitor_acquire) {
     }
 
     // try to acquire mutex- loop again if CAS fails
-    if (__atomic_compare_exchange_n(&lock->tid, &freed, args->thread->tid,
-                                  false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE)) {
+    if (__atomic_compare_exchange_n(&lock->tid, &freed, args->thread->tid, false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE)) {
       lock->hold_count = 1;
       break; // success
     }
 
     // since the strong CAS failed, we need to wait
     self->wakeup_info.kind = RR_WAKEUP_YIELDING;
-    ASYNC_YIELD((void *) &self->wakeup_info);
+    ASYNC_YIELD((void *)&self->wakeup_info);
   }
 
   // done acquiring the monitor
@@ -79,9 +80,12 @@ int monitor_release(vm_thread *thread, obj_header *obj) {
   monitor_data *lock = inspect_monitor(&fetched_header);
 
   // todo: error code enum? or just always cause an InternalError/IllegalMonitorStateException
-  if (unlikely(!lock)) return -1;
-  if (unlikely(lock->tid != thread->tid)) return -1;
-  if (unlikely(lock->hold_count == 0)) return -1;
+  if (unlikely(!lock))
+    return -1;
+  if (unlikely(lock->tid != thread->tid))
+    return -1;
+  if (unlikely(lock->hold_count == 0))
+    return -1;
 
   u32 new_hold_count = --lock->hold_count;
 

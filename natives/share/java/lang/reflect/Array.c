@@ -1,8 +1,7 @@
 #include "bjvm.h"
 #include <natives-dsl.h>
 
-DECLARE_NATIVE("java/lang/reflect", Array, newArray,
-               "(Ljava/lang/Class;I)Ljava/lang/Object;") {
+DECLARE_NATIVE("java/lang/reflect", Array, newArray, "(Ljava/lang/Class;I)Ljava/lang/Object;") {
   DCHECK(argc == 2);
   if (!args[0].handle->obj)
     return value_null();

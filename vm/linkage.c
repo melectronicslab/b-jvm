@@ -1,8 +1,8 @@
 #include <linkage.h>
 
-#include <vtable.h>
 #include <analysis.h>
 #include <classfile.h>
+#include <vtable.h>
 
 #include <bjvm.h>
 
@@ -50,7 +50,7 @@ static size_t allocate_field(size_t *current, type_kind kind) {
 }
 
 // Construct superclass hierarchy, used for fast instanceof checks
-void setup_super_hierarchy(classdesc * cd) {
+void setup_super_hierarchy(classdesc *cd) {
   if (cd->super_class) {
     classdesc *super = cd->super_class->classdesc;
     assert(super && "Superclass is resolved");
@@ -68,7 +68,6 @@ void setup_super_hierarchy(classdesc * cd) {
   // Place ourselves into the hierarchy
   cd->hierarchy[cd->hierarchy_len - 1] = cd;
 }
-
 
 static int link_array_class(vm_thread *thread, classdesc *cd) {
   if (cd->state >= CD_STATE_LINKED)
@@ -147,8 +146,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
   }
 
   // Padding for VM fields (e.g., internal fields used for Reflection)
-  int padding =
-      (int)(uintptr_t)hash_table_lookup(&thread->vm->class_padding, cd->name.chars, cd->name.len);
+  int padding = (int)(uintptr_t)hash_table_lookup(&thread->vm->class_padding, cd->name.chars, cd->name.len);
 
   // Assign memory locations to all static/non-static fields
   classdesc *super = cd->super_class ? cd->super_class->classdesc : NULL;
@@ -158,7 +156,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
     cp_field *field = cd->fields + field_i;
     type_kind kind = field_to_kind(&field->parsed_descriptor);
     field->byte_offset = field->access_flags & ACCESS_STATIC ? allocate_field(&static_offset, kind)
-                                                                  : allocate_field(&nonstatic_offset, kind);
+                                                             : allocate_field(&nonstatic_offset, kind);
 
 #if AGGRESSIVE_DEBUG
     printf("Allocating field %.*s for class %.*s at %d\n", fmt_slice(field->name), fmt_slice(classdesc->name),
@@ -181,8 +179,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
   for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
     cp_field *field = cd->fields + field_i;
     if (field_to_kind(&field->parsed_descriptor) == TYPE_KIND_REFERENCE) {
-      compressed_bitset *bs =
-          field->access_flags & ACCESS_STATIC ? &cd->static_references : &cd->instance_references;
+      compressed_bitset *bs = field->access_flags & ACCESS_STATIC ? &cd->static_references : &cd->instance_references;
       test_set_compressed_bitset(bs, field->byte_offset / sizeof(void *));
     }
   }

@@ -12,14 +12,13 @@ extern "C" {
 #include "bjvm.h"
 
 typedef struct {
-    obj_header *classloader_obj;
+  obj_header *classloader_obj;
 } classloader;
 
 extern classloader bootstrap_classloader;
-
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //CLASSLOADER_H
+#endif // CLASSLOADER_H

@@ -19,8 +19,7 @@ typedef struct field_descriptor field_descriptor;
 enum cp_kind : u32;
 typedef enum cp_kind cp_kind;
 
-cp_entry *check_cp_entry(cp_entry *entry, cp_kind expected_kinds,
-                                   const char *reason);
+cp_entry *check_cp_entry(cp_entry *entry, cp_kind expected_kinds, const char *reason);
 
 /**
  * Instruction code. Similar instructions like aload_0 are canonicalised to
@@ -349,7 +348,7 @@ typedef struct {
 
 typedef struct {
   slice chars;
-  void *interned;  // pointer to the interned string, if instantiated
+  void *interned; // pointer to the interned string, if instantiated
 } cp_string_info;
 
 typedef struct {
@@ -430,8 +429,7 @@ enum cp_kind : u32 {
 };
 
 static inline bool cp_kind_is_primitive(cp_kind kind) {
-  return kind == CP_KIND_INTEGER || kind == CP_KIND_FLOAT ||
-         kind == CP_KIND_LONG || kind == CP_KIND_DOUBLE;
+  return kind == CP_KIND_INTEGER || kind == CP_KIND_FLOAT || kind == CP_KIND_LONG || kind == CP_KIND_DOUBLE;
 }
 
 typedef struct cp_entry {
@@ -551,7 +549,7 @@ typedef struct {
 
 // Look up an entry in the local variable table, according to a swizzled local index but the original instruction
 // program counter.
-const slice *lvt_lookup(int index, int original_pc, const attribute_local_variable_table *table) ;
+const slice *lvt_lookup(int index, int original_pc, const attribute_local_variable_table *table);
 
 typedef struct {
   slice name;
@@ -594,7 +592,7 @@ typedef struct bytecode_insn {
   // directly.
   insn_code_kind kind;
   u8 args;
-  reduced_tos_kind tos_before;  // the (reduced) top-of-stack type before this instruction executes
+  reduced_tos_kind tos_before; // the (reduced) top-of-stack type before this instruction executes
   reduced_tos_kind tos_after;  // the (reduced) top-of-stack type after this instruction executes
   u16 original_pc;
 
@@ -764,7 +762,7 @@ typedef struct cp_method {
   bool failed_jit;
 } cp_method;
 
-int method_argc(const cp_method* method) ;
+int method_argc(const cp_method *method);
 
 typedef struct cp_field {
   access_flags access_flags;
@@ -828,10 +826,10 @@ typedef struct classdesc {
   classdesc *one_fewer_dim; // NULL for non-array types
   classdesc *base_component;
 
-  int dimensions;                     // array types only
+  int dimensions;                // array types only
   type_kind primitive_component; // primitives and array types only
 
-  bytecode_insn **indy_insns; // used to get GC roots to CallSites
+  bytecode_insn **indy_insns;    // used to get GC roots to CallSites
   bytecode_insn **sigpoly_insns; // used to get GC roots to MethodTypes
 
   void (*dtor)(classdesc *); // apoptosis
@@ -842,7 +840,7 @@ typedef struct classdesc {
   vtable vtable;
   itables itables;
 
-  classdesc **hierarchy;  // 0 = java/lang/Object, etc. Used for fast instanceof checks
+  classdesc **hierarchy; // 0 = java/lang/Object, etc. Used for fast instanceof checks
   int hierarchy_len;
 
   arena arena; // most things are allocated in here
@@ -853,10 +851,8 @@ typedef struct classdesc {
 
 heap_string insn_to_string(const bytecode_insn *insn, int insn_index);
 
-char *parse_field_descriptor(const char **chars, size_t len,
-                             field_descriptor *result, arena *arena);
-char *parse_method_descriptor(slice entry,
-                              method_descriptor *result, arena *arena);
+char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *result, arena *arena);
+char *parse_method_descriptor(slice entry, method_descriptor *result, arena *arena);
 
 typedef enum { PARSE_SUCCESS = 0, PARSE_ERR = 1 } parse_result_t;
 
@@ -871,8 +867,7 @@ typedef enum { PARSE_SUCCESS = 0, PARSE_ERR = 1 } parse_result_t;
  * @param result Where to write the result.
  * @param error Where to write the error string. If nullptr, error is ignored.
  */
-parse_result_t parse_classfile(const u8 *bytes, size_t len,
-                                    classdesc *result, heap_string *error);
+parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, heap_string *error);
 
 #ifdef __cplusplus
 }

@@ -36,7 +36,8 @@ void create_virtual_file(slice file_name, boolean_attributes attributes, char co
   memcpy(file->data, data, size);
 
   void *result = hash_table_insert(&active_fs.synthetic_entries, file_name.chars, file_name.len, file);
-  if (result) free(result);
+  if (result)
+    free(result);
 }
 
 fs_result get_attributes(slice file_name, boolean_attributes *result) {
@@ -49,6 +50,4 @@ fs_result get_attributes(slice file_name, boolean_attributes *result) {
   return FS_DOES_NOT_EXIST;
 }
 
-unixlike_fs const* unix_get_active_fs(void) {
-  return &active_fs;
-}
+unixlike_fs const *unix_get_active_fs(void) { return &active_fs; }

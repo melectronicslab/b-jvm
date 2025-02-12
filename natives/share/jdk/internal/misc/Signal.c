@@ -9,6 +9,4 @@ DECLARE_NATIVE("jdk/internal/misc", Signal, findSignal0, "(Ljava/lang/String;)I"
   return (stack_value){.i = 0};
 }
 
-DECLARE_NATIVE("jdk/internal/misc", Signal, handle0, "(IJ)J") {
-  return (stack_value){.i = 0};
-}
+DECLARE_NATIVE("jdk/internal/misc", Signal, handle0, "(IJ)J") { return (stack_value){.i = 0}; }

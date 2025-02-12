@@ -4,15 +4,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "unixlike-fs.h"
 #include "io-natives.h"
+#include "unixlike-fs.h"
 
-DECLARE_NATIVE("java/io", UnixFileSystem, initIDs, "()V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/io", UnixFileSystem, initIDs, "()V") { return value_null(); }
 
-DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
-               "(Ljava/io/File;)I", locals(), invoked_methods()) {
+DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0, "(Ljava/io/File;)I", locals(),
+                     invoked_methods()) {
   unixlike_fs const *fs = unix_get_active_fs();
   if (!fs) {
     ThrowLangException(UnsupportedOperationException);
@@ -33,9 +31,9 @@ DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
     goto exception;
   }
 
-  ASYNC_RETURN((stack_value) {.i = result});
+  ASYNC_RETURN((stack_value){.i = result});
 
-  exception:
+exception:
   ASYNC_RETURN(value_null());
 
   ASYNC_END(value_null());
@@ -72,8 +70,7 @@ static heap_string canonicalize_path(slice path) {
   return result;
 }
 
-DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0,
-               "(Ljava/lang/String;)Ljava/lang/String;") {
+DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0, "(Ljava/lang/String;)Ljava/lang/String;") {
   if (!args[0].handle->obj) {
     raise_null_pointer_exception(thread);
     return value_null();
@@ -81,7 +78,7 @@ DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0,
 
   // Concatenate the current working directory with the given path
   object raw = RawStringData(thread, args[0].handle->obj);
-  slice data = (slice) {.chars = ArrayData(raw), .len = *ArrayLength(raw)};
+  slice data = (slice){.chars = ArrayData(raw), .len = *ArrayLength(raw)};
 
   heap_string canonical = canonicalize_path(data); // todo: deal with oom here
 
@@ -95,8 +92,7 @@ DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0,
   return (stack_value){.obj = result};
 }
 
-DECLARE_NATIVE("java/io", UnixFileSystem, getLastModifiedTime,
-               "(Ljava/io/File;)J") {
+DECLARE_NATIVE("java/io", UnixFileSystem, getLastModifiedTime, "(Ljava/io/File;)J") {
   obj_header *file_obj = args[0].handle->obj;
   obj_header *path = LoadFieldObject(file_obj, "java/lang/String", "path");
 
@@ -107,6 +103,6 @@ DECLARE_NATIVE("java/io", UnixFileSystem, getLastModifiedTime,
   free_heap_str(path_str);
   return result;
 
-  on_oom:
+on_oom:
   return value_null();
 }

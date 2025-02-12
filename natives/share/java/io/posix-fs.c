@@ -9,8 +9,8 @@
 #endif
 
 #ifdef POSIX_SUPPORTED
-#include <stdio.h>
 #include <errno.h>
+#include <stdio.h>
 #include <sys/stat.h>
 
 typedef struct {
@@ -21,7 +21,7 @@ bool posix_fs_supported(void) { return true; }
 void posix_fs_init(unixlike_fs *fs) {
   fs->inherited_data = malloc(sizeof(attributes));
   /// todo: cleanup the inheritance stuff
-  ((attributes*)fs->inherited_data)->original_get_attributes = fs->fs.get_attributes;
+  ((attributes *)fs->inherited_data)->original_get_attributes = fs->fs.get_attributes;
   fs->fs.get_attributes = posix_fs_get_attributes;
 }
 

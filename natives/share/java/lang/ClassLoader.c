@@ -40,9 +40,8 @@ static int incr = 0;
 
 enum { CREATION_ANONYMOUS = 8 };
 
-stack_value define_class(vm_thread *thread, handle *loader, handle *parent_class, handle *name,
-                              u8 *data_bytes, int offset, int length, handle *pd,
-                              bool initialize, int flags, handle *source) {
+stack_value define_class(vm_thread *thread, handle *loader, handle *parent_class, handle *name, u8 *data_bytes,
+                         int offset, int length, handle *pd, bool initialize, int flags, handle *source) {
   DCHECK(offset == 0);
 
   heap_string name_str = AsHeapString(name->obj, on_oom);
@@ -76,13 +75,15 @@ on_oom:
   return value_null();
 }
 
-DECLARE_NATIVE("java/lang", ClassLoader, defineClass2, "(Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/nio/ByteBuffer;IILjava/security/ProtectionDomain;Ljava/lang/String;)Ljava/lang/Class;") {
-  handle *loader = args[0].handle;   // ClassLoader
-  handle *name = args[1].handle;     // String
-  handle *b = args[2].handle;        // ByteBuffer
-  int offset = args[3].i;                 // int
-  int length = args[4].i;                 // int
-  handle *pd = args[5].handle;       // ProtectionDomain
+DECLARE_NATIVE("java/lang", ClassLoader, defineClass2,
+               "(Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/nio/ByteBuffer;IILjava/security/ProtectionDomain;Ljava/"
+               "lang/String;)Ljava/lang/Class;") {
+  handle *loader = args[0].handle; // ClassLoader
+  handle *name = args[1].handle;   // String
+  handle *b = args[2].handle;      // ByteBuffer
+  int offset = args[3].i;          // int
+  int length = args[4].i;          // int
+  handle *pd = args[5].handle;     // ProtectionDomain
   // handle *source = args[6].handle;   // String
 
   u8 *data_bytes = (u8 *)LoadFieldLong(b->obj, "address");

@@ -32,7 +32,7 @@ static struct loaded_bytes read_file(FILE *f) {
 
   DCHECK(length <= UINT32_MAX);
 
-  return (struct loaded_bytes){.bytes = data, .length = (u32) length};
+  return (struct loaded_bytes){.bytes = data, .length = (u32)length};
 }
 
 #ifdef EMSCRIPTEN
@@ -82,7 +82,7 @@ static char *map_jar(const char *filename, mapped_jar *jar) {
   close(fd);
   return nullptr;
 #elif EMSCRIPTEN
-  int is_node = EM_ASM_INT({ return typeof window === 'undefined'; });
+  int is_node = EM_ASM_INT({ return typeof window == = 'undefined'; });
   if (is_node) {
     struct loaded_bytes load = node_read_file(filename);
     if (!load.bytes)
@@ -144,8 +144,7 @@ struct central_directory_record {
 #define CDR_SIZE_BYTES 46
 #define CDR_HEADER 0x02014b50
 
-char *parse_central_directory(mapped_jar *jar, u64 cd_offset,
-                              u32 expected) {
+char *parse_central_directory(mapped_jar *jar, u64 cd_offset, u32 expected) {
   hash_table_reserve(&jar->entries, expected);
   struct central_directory_record cdr = {0};
   char error[256];
@@ -157,8 +156,7 @@ char *parse_central_directory(mapped_jar *jar, u64 cd_offset,
     memcpy(&cdr, jar->data + cd_offset, CDR_SIZE_BYTES);
     if (cdr.header != CDR_HEADER)
       return strdup("missing cdr header bytes");
-    slice filename = {.chars = jar->data + cd_offset + CDR_SIZE_BYTES,
-                          .len = cdr.filename_len};
+    slice filename = {.chars = jar->data + cd_offset + CDR_SIZE_BYTES, .len = cdr.filename_len};
     u32 header_offset, data_offset;
     memcpy(&header_offset, cdr.local_header_offset, sizeof(data_offset));
     // https://en.wikipedia.org/wiki/ZIP_(file_format)#Local_file_header
@@ -167,14 +165,12 @@ char *parse_central_directory(mapped_jar *jar, u64 cd_offset,
       return strdup(error);
     }
     if (cdr.compression != 0 && cdr.compression != 8) {
-      snprintf(error, sizeof(error),
-               "cdr %d has unsupported compression type %d (supported: 0, 8)",
-               i, cdr.compression);
+      snprintf(error, sizeof(error), "cdr %d has unsupported compression type %d (supported: 0, 8)", i,
+               cdr.compression);
       return strdup(error);
     }
     bool is_compressed = cdr.compression != 0;
-    cd_offset +=
-        CDR_SIZE_BYTES + cdr.filename_len + cdr.extra_len + cdr.comment_len;
+    cd_offset += CDR_SIZE_BYTES + cdr.filename_len + cdr.extra_len + cdr.comment_len;
 
     jar_entry *ent = malloc(sizeof(jar_entry));
     ent->header = jar->data + header_offset;
@@ -182,12 +178,10 @@ char *parse_central_directory(mapped_jar *jar, u64 cd_offset,
     ent->claimed_uncompressed_size = cdr.uncompressed_size;
     ent->is_compressed = is_compressed;
 
-    void *old = hash_table_insert(&jar->entries, filename.chars,
-                                       filename.len, ent);
+    void *old = hash_table_insert(&jar->entries, filename.chars, filename.len, ent);
     if (old) {
       free(old);
-      snprintf(error, sizeof(error), "duplicate filename in JAR: %.*s",
-               fmt_slice(filename));
+      snprintf(error, sizeof(error), "duplicate filename in JAR: %.*s", fmt_slice(filename));
       return strdup(error);
     }
   }
@@ -222,8 +216,7 @@ static char *load_filesystem_jar(const char *filename, mapped_jar *jar) {
   // Search 22 bytes from the end for the ZIP end of central directory record
   // signature
   const char sig[4] = "PK\005\006";
-  if (jar->size_bytes < 22 ||
-      memcmp(jar->data + jar->size_bytes - 22, sig, 4) != 0) {
+  if (jar->size_bytes < 22 || memcmp(jar->data + jar->size_bytes - 22, sig, 4) != 0) {
     specific_error = "Missing end of central directory record";
     goto inval;
   }
@@ -231,14 +224,12 @@ static char *load_filesystem_jar(const char *filename, mapped_jar *jar) {
   struct end_of_central_directory_record eocdr = {0};
   memcpy(&eocdr, (void *)(jar->data + jar->size_bytes - 22), 22);
 
-  if (eocdr.disk_number != 0 || eocdr.disk_with_cd != 0 ||
-      eocdr.num_entries != eocdr.total_entries) {
+  if (eocdr.disk_number != 0 || eocdr.disk_with_cd != 0 || eocdr.num_entries != eocdr.total_entries) {
     specific_error = "Multi-disk JARs not supported";
     goto inval;
   }
 
-  specific_error =
-      parse_central_directory(jar, eocdr.cd_offset, eocdr.num_entries);
+  specific_error = parse_central_directory(jar, eocdr.cd_offset, eocdr.num_entries);
   error_needs_free = true;
   if (!specific_error) {
     return nullptr; // ok
@@ -246,8 +237,7 @@ static char *load_filesystem_jar(const char *filename, mapped_jar *jar) {
 
 inval:
   free_jar(jar);
-  snprintf(error, sizeof(error), "Invalid JAR file %s%s%s", filename,
-           specific_error ? ": " : "", specific_error);
+  snprintf(error, sizeof(error), "Invalid JAR file %s%s%s", filename, specific_error ? ": " : "", specific_error);
   if (error_needs_free)
     free(specific_error);
   return strdup(error);
@@ -314,10 +304,8 @@ void free_classpath(classpath *cp) {
 enum jar_lookup_result { NOT_FOUND, FOUND, CORRUPT };
 
 // Returns true if found
-enum jar_lookup_result jar_lookup(mapped_jar *jar, slice filename,
-                                  u8 **bytes, size_t *len) {
-  jar_entry *jar_entry =
-      hash_table_lookup(&jar->entries, filename.chars, filename.len);
+enum jar_lookup_result jar_lookup(mapped_jar *jar, slice filename, u8 **bytes, size_t *len) {
+  jar_entry *jar_entry = hash_table_lookup(&jar->entries, filename.chars, filename.len);
   if (jar_entry) {
     // Check header at jar_entry->header
     if (memcmp(jar_entry->header, "PK\003\004", 4) != 0) {
@@ -329,9 +317,7 @@ enum jar_lookup_result jar_lookup(mapped_jar *jar, slice filename,
     memcpy(&filename_len, jar_entry->header + 26, 2);
     memcpy(&extra_len, jar_entry->header + 28, 2);
     u32 offset = 30 + filename_len + extra_len;
-    if ((u64)offset + jar_entry->compressed_size +
-            (jar_entry->header - jar->data) >
-        jar->size_bytes) {
+    if ((u64)offset + jar_entry->compressed_size + (jar_entry->header - jar->data) > jar->size_bytes) {
       return CORRUPT;
     }
 
@@ -372,8 +358,7 @@ static heap_string concat_path(heap_string name, slice filename) {
   bool slash = !name.len || name.chars[name.len - 1] != '/';
   heap_string result = make_heap_str(name.len + slash + filename.len);
   [[maybe_unused]] slice slice =
-      bprintf(hslc(result), "%.*s%s%.*s", fmt_slice(name), slash ? "/" : "",
-              fmt_slice(filename));
+      bprintf(hslc(result), "%.*s%s%.*s", fmt_slice(name), slash ? "/" : "", fmt_slice(filename));
   DCHECK(slice.len == result.len);
   return result;
 }
@@ -387,8 +372,7 @@ bool bad_filename(const slice filename) {
   return false;
 }
 
-int lookup_classpath(classpath *cp, const slice filename,
-                          u8 **bytes, size_t *len) {
+int lookup_classpath(classpath *cp, const slice filename, u8 **bytes, size_t *len) {
   *bytes = nullptr;
   *len = 0;
   if (bad_filename(filename)) {
@@ -397,8 +381,7 @@ int lookup_classpath(classpath *cp, const slice filename,
   for (int i = 0; i < arrlen(cp->entries); i++) {
     classpath_entry *entry = &cp->entries[i];
     if (entry->jar) {
-      enum jar_lookup_result result =
-          jar_lookup(entry->jar, filename, bytes, len);
+      enum jar_lookup_result result = jar_lookup(entry->jar, filename, bytes, len);
       if (result == NOT_FOUND)
         continue;
       return -(result == CORRUPT);
