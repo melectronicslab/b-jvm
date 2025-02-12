@@ -2,12 +2,14 @@
 
 #include "tests-common.h"
 
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
+#include "doctest/doctest.h"
 
 using namespace Bjvm::Tests;
 
-TEST_CASE("Benchmarks", "[bench]") {
+// until we figure out how to benchmark
+#define BENCHMARK(x) if (0)
+
+TEST_CASE("Benchmarks") {
   BENCHMARK("Big decimal") {
     auto result = run_test_case("test_files/bench_big_decimal/", true);
   };

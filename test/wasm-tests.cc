@@ -1,9 +1,10 @@
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
 
+#include "doctest/doctest.h"
 #include <wasm/wasm_utils.h>
 
-TEST_CASE("write leb128 unsigned", "[wasm]") {
+TEST_SUITE_BEGIN("[wasm]");
+
+TEST_CASE("write leb128 unsigned") {
   bytevector ctx = {nullptr};
   const u8 expected[4] = {0x00, 0xE5, 0x8E, 0x26};
   wasm_writeuint(&ctx, 0);
@@ -13,7 +14,7 @@ TEST_CASE("write leb128 unsigned", "[wasm]") {
   arrfree(ctx.bytes);
 }
 
-TEST_CASE("write leb128 signed", "[wasm]") {
+TEST_CASE("write leb128 signed") {
   bytevector ctx = {nullptr};
   const u8 expected[4] = {0x00, 0xC0, 0xBB, 0x78};
   wasm_writeint(&ctx, 0);
@@ -23,7 +24,7 @@ TEST_CASE("write leb128 signed", "[wasm]") {
   arrfree(ctx.bytes);
 }
 
-TEST_CASE("Simple module", "[wasm]") {
+TEST_CASE("Simple module") {
   wasm_module *module = wasm_module_create();
 
   wasm_value_type params_[] = {WASM_TYPE_KIND_INT32,
@@ -54,21 +55,4 @@ TEST_CASE("Simple module", "[wasm]") {
   arrfree(serialized.bytes);
 }
 
-/*
-TEST_CASE("create_adapter_to_compiled_method", "[wasm]") {
-  auto example = [](thread *thread, stack_value *result, double a, long b) -> int {
-    result->d = a + b;
-    return 1;
-  };
-  type_kind args[2] = {TYPE_KIND_DOUBLE, TYPE_KIND_LONG};
-  auto adapter = create_adapter_to_compiled_method(args, 2);
-  stack_value result;
-  if (adapter) {
-    stack_value args[2] = {(stack_value){.d = 1.0}, (stack_value){.l = 2}};
-    int n = adapter(nullptr, &result, args, (void*) +example);
-    REQUIRE(result.d == 3.0);
-    REQUIRE(n == 1);
-  }
-<<<<<<< HEAD
-}
-*/
+TEST_SUITE_END;

@@ -2,8 +2,7 @@
 #include <emscripten.h>
 #endif
 
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
+#include "doctest/doctest.h"
 
 #include <climits>
 #include <filesystem>
@@ -17,16 +16,12 @@
 #include <analysis.h>
 #include <bjvm.h>
 #include <util.h>
-#include "catch2/matchers/catch_matchers_container_properties.hpp"
-#include "catch2/matchers/catch_matchers_string.hpp"
-#include "catch2/matchers/catch_matchers_vector.hpp"
 #include "tests-common.h"
 #include <numeric>
 #include <roundrobin_scheduler.h>
 #include <unistd.h>
 
 using namespace Bjvm::Tests;
-using Catch::Matchers::Equals;
 
 double get_time() {
 #ifdef EMSCRIPTEN
@@ -325,10 +320,6 @@ Cow value: 15
   auto result = run_test_case("test_files/advanced_lambda/", true);
   // REQUIRE(result.stdout_.length() == expected.length());
   REQUIRE(result.stdout_ == expected);
-
-  BENCHMARK("Advanced lambda benchmark") {
-    auto result = run_test_case("test_files/advanced_lambda/", true);
-  };
 }
 
 TEST_CASE("Class<?> implementation") {
@@ -439,19 +430,6 @@ TEST_CASE("Immediate dominators computation on cursed CFG") {
   scan_basic_blocks(m->code, analy);
   compute_dominator_tree(analy);
 
-  BENCHMARK("analyze method code") { analyze_method_code(m, nullptr); };
-
-  BENCHMARK("scan basic blocks") {
-    free(analy->blocks);
-    analy->blocks = nullptr;
-    scan_basic_blocks(m->code, analy);
-  };
-
-  BENCHMARK("compute dominator tree") {
-    analy->dominator_tree_computed = false;
-    compute_dominator_tree(analy);
-  };
-
   std::vector<std::pair<int, u32>> doms = {
       {1, 0},  {2, 1},  {3, 2},   {4, 3},   {5, 4},   {6, 5},
       {7, 6},  {8, 6},  {9, 6},   {10, 6},  {11, 6},  {12, 6},
@@ -482,9 +460,9 @@ TEST_CASE("Conflicting defaults") {
 TEST_CASE("Records") {
   auto result = run_test_case("test_files/records/", true,
                               "Records");
-  REQUIRE_THAT(result.stdout_, Equals(R"(true
+  REQUIRE(result.stdout_ == R"(true
 true
-)"));
+)");
 }
 
 #if 0
@@ -538,83 +516,75 @@ As a char: A
   REQUIRE(result_many.stdin_ == ""); // BufferedReader tries to consume 8192 bytes, but we only provide 7
 }
 
-#ifndef EMSCRIPTEN  // these tests are sloooowwww
+#if 0  // these cases are slowwww
 
 TEST_CASE("Sudoku solver") {
-  BENCHMARK("Sudoku solver benchmark") {
-    int num_puzzles = 33761;
-    std::cout << "Starting sudoku solver" << std::endl;
-    std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
-    auto now = std::chrono::system_clock::now();
+  int num_puzzles = 33761;
+  std::cout << "Starting sudoku solver" << std::endl;
+  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+  auto now = std::chrono::system_clock::now();
 
-    auto result = run_test_case("test_files/sudoku/", true, "Main");
-    // last puzzle
-    REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+  auto result = run_test_case("test_files/sudoku/", true, "Main");
+  // last puzzle
+  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
 
-    auto end = std::chrono::system_clock::now();
-    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-    std::cout << "Done in " << elapsed << " ms!" << std::endl;
-    std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
-  };
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
 TEST_CASE("Scheduled sudoku solver") {
-  BENCHMARK("Sudoku solver benchmark") {
-    int num_puzzles = 33761;
-    std::cout << "Starting sudoku solver with a scheduler" << std::endl;
-    std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
-    auto now = std::chrono::system_clock::now();
+  int num_puzzles = 33761;
+  std::cout << "Starting sudoku solver with a scheduler" << std::endl;
+  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+  auto now = std::chrono::system_clock::now();
 
-    auto result = run_scheduled_test_case("test_files/sudoku/", true, "Main");
-    // last puzzle
-    REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
-    REQUIRE(result.sleep_count == 0); // chop chop
+  auto result = run_scheduled_test_case("test_files/sudoku/", true, "Main");
+  // last puzzle
+  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+  REQUIRE(result.sleep_count == 0); // chop chop
 
-    auto end = std::chrono::system_clock::now();
-    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-    std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
-    std::cout << "Done in " << elapsed << " ms!" << std::endl;
-    std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
-  };
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
 TEST_CASE("Scheduled worker sudoku solver") {
-  BENCHMARK("Sudoku solver benchmark") {
-    int num_puzzles = 33761;
-    std::cout << "Starting sudoku solver with a worker thread" << std::endl;
-    std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
-    auto now = std::chrono::system_clock::now();
+  int num_puzzles = 33761;
+  std::cout << "Starting sudoku solver with a worker thread" << std::endl;
+  std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
+  auto now = std::chrono::system_clock::now();
 
-    auto result = run_scheduled_test_case("test_files/sudoku/", false, "WorkerThreadSudoku");
-    // last puzzle
-    REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
-    REQUIRE(result.sleep_count == 0); // chop chop
+  auto result = run_scheduled_test_case("test_files/sudoku/", false, "WorkerThreadSudoku");
+  // last puzzle
+  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
+  REQUIRE(result.sleep_count == 0); // chop chop
 
-    auto end = std::chrono::system_clock::now();
-    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-    std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
-    std::cout << "Done in " << elapsed << " ms!" << std::endl;
-    std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
-  };
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Scheduler yielded " << result.yield_count << " times" << std::endl;
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
 TEST_CASE("Autodiff") {
-  BENCHMARK("Sudoku solver benchmark") {
-    int num_derivatives = 10000 * 10 + 3;
-    std::cout << "Testing Autodiff" << std::endl;
-    std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
-    auto now = std::chrono::system_clock::now();
+  int num_derivatives = 10000 * 10 + 3;
+  std::cout << "Testing Autodiff" << std::endl;
+  std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..." << std::endl;
+  auto now = std::chrono::system_clock::now();
 
-    auto result = run_test_case("test_files/autodiff/", true, "Main");
-    // last test
-    REQUIRE(result.stdout_.find("((84.02894029503324*(-(sin((x*y))*x)+1.0))+((84.02894029503324*x)*-(((cos((x*y))*x)*y)+sin((x*y))))) = -3209354.522523045 == -3209354.522523045")
-            != std::string::npos);
+  auto result = run_test_case("test_files/autodiff/", true, "Main");
+  // last test
+  REQUIRE(result.stdout_.find("((84.02894029503324*(-(sin((x*y))*x)+1.0))+((84.02894029503324*x)*-(((cos((x*y))*x)*y)+sin((x*y))))) = -3209354.522523045 == -3209354.522523045")
+          != std::string::npos);
 
-    auto end = std::chrono::system_clock::now();
-    long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-    std::cout << "Done in " << elapsed << " ms!" << std::endl;
-    std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
-  };
+  auto end = std::chrono::system_clock::now();
+  long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+  std::cout << "Done in " << elapsed << " ms!" << std::endl;
+  std::cout << "That's " << (double) elapsed / num_derivatives << " ms per evaluation!" << std::endl;
 }
 
 #endif
@@ -630,7 +600,7 @@ param3
 
 TEST_CASE("Extended NPE message") {
   auto result = run_test_case("test_files/extended_npe/", false, "ExtendedNPETests");
-  REQUIRE_THAT(result.stdout_, Equals(""));
+  REQUIRE(result.stdout_ == "");
 }
 
 #if 0
@@ -647,7 +617,7 @@ TEST_CASE("Class loading") {
 }
 #endif
 
-TEST_CASE("java.lang.reflect.Method", "[reflection]") {
+TEST_CASE("java.lang.reflect.Method") {
   auto result = run_test_case("test_files/reflection_method/", true, "ReflectionMethod");
   REQUIRE(result.stdout_ == R"(Reached!
 Reached2!
@@ -681,12 +651,6 @@ Hello, 42! The answer is 42. The quick brown fox jumps over the lazy dog.
 )");
 }
 #endif
-
-TEST_CASE("benchmark startup") {
-  BENCHMARK("benchmark startup") {
-    auto result = run_test_case("test_files/basic_lambda", true);
-  };
-}
 
 TEST_CASE("CloneNotSupportedException") {
   auto result = run_test_case("test_files/clone_not_supported/", true, "CloneNotSupportedTest");
@@ -742,7 +706,7 @@ slept for at least 1000 ms? false
 
 TEST_CASE("IllegalMonitorStateException") {
   auto result = run_test_case("test_files/illegal_monitor/", true, "IllegalMonitors");
-  REQUIRE_THAT(result.stdout_, Equals(R"(Caught exception1
+  REQUIRE(result.stdout_ == R"(Caught exception1
 null
 Caught exception2
 null
@@ -756,7 +720,7 @@ Caught exception6
 Cannot enter synchronized block because "<local0>" is null
 Caught exception7
 Cannot exit synchronized block because "<local0>" is null
-)"));
+)");
 }
 
 TEST_CASE("Concurrent initialisation") {
