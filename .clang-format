@@ -242,6 +242,8 @@ WhitespaceSensitiveMacros:
   - NS_SWIFT_NAME
   - PP_STRINGIZE
   - STRINGIZE
+  - EM_ASM_INT
+  - EM_ASM_PTR
   - DECLARE_ASYNC
   - DECLARE_ASYNC_VOID
 ...

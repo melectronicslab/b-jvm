@@ -354,28 +354,28 @@ int32_t __interpreter_intrinsic_max_insn() { return MAX_INSN_KIND; }
 
 /** Helper functions */
 
-s32 java_idiv_(s32 const a, s32 const b) {
+static s32 java_idiv_(s32 const a, s32 const b) {
   DCHECK(b != 0);
   if (a == INT_MIN && b == -1)
     return INT_MIN;
   return a / b;
 }
 
-s64 java_irem_(s32 const a, s32 const b) {
+static s64 java_irem(s32 const a, s32 const b) {
   DCHECK(b != 0);
   if (a == INT_MIN && b == -1)
     return 0;
   return a % b;
 }
 
-s64 java_ldiv_(s64 const a, s64 const b) {
+static s64 java_ldiv(s64 const a, s64 const b) {
   DCHECK(b != 0);
   if (a == LONG_MIN && b == -1)
     return LONG_MIN;
   return a / b;
 }
 
-s64 java_lrem_(s64 const a, s64 const b) {
+static s64 java_lrem(s64 const a, s64 const b) {
   DCHECK(b != 0);
   if (a == LONG_MIN && b == -1)
     return 0;
@@ -1284,7 +1284,7 @@ static s64 ldiv_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT_INT(java_ldiv_(a, b));
+  NEXT_INT(java_ldiv(a, b));
 }
 
 static s64 lcmp_impl_int(ARGS_INT) {
@@ -1303,7 +1303,7 @@ static s64 irem_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT_INT(java_irem_(a, b));
+  NEXT_INT(java_irem(a, b));
 }
 
 static s64 lrem_impl_int(ARGS_INT) {
@@ -1315,7 +1315,7 @@ static s64 lrem_impl_int(ARGS_INT) {
     return 0;
   }
   sp--;
-  NEXT_INT(java_lrem_(a, b));
+  NEXT_INT(java_lrem(a, b));
 }
 
 /** Array instructions (arraylength, array loads, array stores) */
