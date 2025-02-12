@@ -9,12 +9,7 @@
 #include <optional>
 #include <unordered_map>
 
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
-
-#include <catch2/matchers/catch_matchers_container_properties.hpp>
-#include <catch2/matchers/catch_matchers_string.hpp>
-#include <catch2/matchers/catch_matchers_vector.hpp>
+#include "doctest/doctest.h"
 
 #include "tests-common.h"
 
@@ -99,7 +94,7 @@ TEST_CASE("Async natives") {
   REQUIRE(fut.status == FUTURE_READY);
 
   out.push_back(0);
-  REQUIRE_THAT(string{(char const*)out.data()}, Equals("2\n4\n"));
+  REQUIRE(string{(char const*)out.data()} == "2\n4\n");
 
   free_thread(thread);
   free_vm(vm);

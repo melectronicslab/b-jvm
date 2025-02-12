@@ -2,10 +2,11 @@ set(CMAKE_CXX_STANDARD 26)
 
 include(AddNodeShebang)
 include(PostprocessWasm)
+include(Doctest)
 
 find_package(OpenMP)
 
-add_executable(tests tests.cc arrays-test.cc tests-common.cc wasm-tests.cc
+add_executable(tests tests.cc tests-main.cc arrays-test.cc tests-common.cc wasm-tests.cc
         async-test.cc
         analysis-tests.cc
         classpath-tests.cc
@@ -24,7 +25,7 @@ else()
     target_link_libraries(tests PRIVATE "-Wl,--whole-archive" bjvm_static)
 endif()
 
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
+target_link_libraries(tests PUBLIC doctest::doctest)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(tests PUBLIC OpenMP::OpenMP_CXX)

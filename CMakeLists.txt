@@ -8,13 +8,11 @@ set(CMAKE_CXX_STANDARD 23)
 
 list(APPEND CMAKE_MODULE_PATH ${bjvm_SOURCE_DIR}/cmake)
 
-include(Catch2)
+include(Doctest)
 include(CTest)
 include(AsanSupport)
 include(LtoSupport)
 include(PostprocessWasm)
-
-FetchContent_MakeAvailable(Catch2)
 
 if(NOT EMSCRIPTEN)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)

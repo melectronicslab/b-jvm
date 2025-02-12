@@ -1,9 +1,9 @@
 #include <classpath.h>
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
+#include "doctest/doctest.h"
 
-TEST_CASE("Basic classpath operations", "[classpath]") {
+TEST_SUITE_BEGIN("[classpath]");
 
+TEST_CASE("Basic classpath operations") {
   classpath cp;
   char *error =
       init_classpath(&cp, STR("test_files/broken_jar1/this_is_a_jar.jar"));
@@ -29,7 +29,7 @@ TEST_CASE("Basic classpath operations", "[classpath]") {
   free_classpath(&cp);
 }
 
-TEST_CASE("Folder in classpath", "[classpath]") {
+TEST_CASE("Folder in classpath") {
   classpath cp;
   char *error = init_classpath(
       &cp,
@@ -59,11 +59,6 @@ TEST_CASE("Folder in classpath", "[classpath]") {
   free(bytes);
 
   free_classpath(&cp);
-
-  BENCHMARK("init classpath") {
-    (void)init_classpath(&cp,
-                              STR("./jdk23.jar:test_files/"
-                                  "circularity:test_files/classpath_test"));
-    free_classpath(&cp);
-  };
 }
+
+TEST_SUITE_END;

@@ -13,15 +13,12 @@
 #include <string>
 #include <optional>
 
-#include <catch2/matchers/catch_matchers_string.hpp>
-#include <catch2/matchers/catch_matchers_vector.hpp>
+#include "doctest/doctest.h"
 
 using std::string;
 using std::optional;
 using std::vector;
 using std::basic_string_view;
-
-using namespace Catch::Matchers;
 
 namespace Bjvm::Tests {
 static inline std::string_view to_string_view(heap_string str) {

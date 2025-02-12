@@ -9,9 +9,7 @@
 #include <optional>
 #include <unordered_map>
 
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include <catch2/catch_test_macros.hpp>
-
+#include "doctest/doctest.h"
 #include <async.h>
 
 struct async_wakeup_info {
