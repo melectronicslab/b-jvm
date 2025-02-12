@@ -1,17 +1,13 @@
 #include <natives-dsl.h>
 #include <roundrobin_scheduler.h>
 
-DECLARE_NATIVE("java/lang", Thread, registerNatives, "()V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/lang", Thread, registerNatives, "()V") { return value_null(); }
 
 DECLARE_NATIVE("java/lang", Thread, currentThread, "()Ljava/lang/Thread;") {
   return (stack_value){.obj = (void *)thread->thread_obj};
 }
 
-DECLARE_NATIVE("java/lang", Thread, setPriority0, "(I)V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/lang", Thread, setPriority0, "(I)V") { return value_null(); }
 
 DECLARE_NATIVE("java/lang", Thread, isAlive, "()Z") {
   return (stack_value){.i = 1}; // TODO
@@ -24,10 +20,10 @@ DECLARE_NATIVE("java/lang", Thread, holdsLock, "(Ljava/lang/Object;)Z") {
 DECLARE_NATIVE("java/lang", Thread, start0, "()V") {
   rr_scheduler *scheduler = thread->vm->scheduler;
   if (!scheduler)
-    return value_null();  // TODO throw error instead
+    return value_null(); // TODO throw error instead
 
   vm_thread *new_thread = create_thread(thread->vm, default_thread_options());
-  ((struct native_Thread*)obj->obj)->eetop = (intptr_t)new_thread;
+  ((struct native_Thread *)obj->obj)->eetop = (intptr_t)new_thread;
 
   cp_method *run = method_lookup(obj->obj->descriptor, STR("run"), STR("()V"), false, false);
   stack_value argz[1] = {{.obj = obj->obj}};
@@ -36,16 +32,14 @@ DECLARE_NATIVE("java/lang", Thread, start0, "()V") {
   return value_null();
 }
 
-DECLARE_NATIVE("java/lang", Thread, ensureMaterializedForStackWalk, "(Ljava/lang/Object;)V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/lang", Thread, ensureMaterializedForStackWalk, "(Ljava/lang/Object;)V") { return value_null(); }
 
 DECLARE_NATIVE("java/lang", Thread, getNextThreadIdOffset, "()J") {
-  return (stack_value){.l = (intptr_t) &thread->vm->next_thread_id};
+  return (stack_value){.l = (intptr_t)&thread->vm->next_thread_id};
 }
 
 DECLARE_NATIVE("java/lang", Thread, currentCarrierThread, "()Ljava/lang/Thread;") {
-  return (stack_value){.obj = (void*)thread->thread_obj};
+  return (stack_value){.obj = (void *)thread->thread_obj};
 }
 
 DECLARE_NATIVE("java/lang", Thread, interrupt0, "()V") {
@@ -76,7 +70,7 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_
 
   self->wakeup_info.kind = RR_WAKEUP_SLEEP;
   self->wakeup_info.wakeup_us = end;
-  ASYNC_YIELD((void*) &self->wakeup_info);
+  ASYNC_YIELD((void *)&self->wakeup_info);
   ASYNC_END_VOID();
 }
 
@@ -89,8 +83,8 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, yield0, "()V", locals(rr_wakeup_info w
   // the JVM is free to implement it as a no-op or treat it as a scheduling hint.
   // This is usually used to "encourage" more context switches to improve throughput, but
   // "It is rarely appropriate to use this method" (OpenJDK).
-//
-//  self->wakeup_info.kind = RR_WAKEUP_YIELDING;
-//  ASYNC_YIELD((void *) &self->wakeup_info);
+  //
+  //  self->wakeup_info.kind = RR_WAKEUP_YIELDING;
+  //  ASYNC_YIELD((void *) &self->wakeup_info);
   ASYNC_END_VOID();
 }

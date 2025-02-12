@@ -5,16 +5,15 @@
 #include "exceptions.h"
 #include "reflection.h"
 
-
-#include <emscripten/emscripten.h>
 #include "../bjvm.h"
+#include <emscripten/emscripten.h>
 
 #include <roundrobin_scheduler.h>
 
 EMSCRIPTEN_KEEPALIVE
-vm *ffi_create_vm(const char* classpath, write_bytes stdout_, write_bytes stderr_) {
+vm *ffi_create_vm(const char *classpath, write_bytes stdout_, write_bytes stderr_) {
   vm_options options = default_vm_options();
-  options.classpath = (slice){ .chars=(char*)classpath, .len=(int)strlen(classpath)};
+  options.classpath = (slice){.chars = (char *)classpath, .len = (int)strlen(classpath)};
   options.write_stdout = stdout_;
   options.write_stderr = stderr_;
   options.stdio_override_param = nullptr;
@@ -31,8 +30,9 @@ vm_thread *ffi_create_thread(vm *vm) {
 
 EMSCRIPTEN_KEEPALIVE
 classdesc *ffi_get_class(vm_thread *thr, const char *name) {
-  classdesc *clazz = bootstrap_lookup_class(thr, (slice){.chars=(char*)name, .len=(int)strlen(name)});
-  if (!clazz) return nullptr;
+  classdesc *clazz = bootstrap_lookup_class(thr, (slice){.chars = (char *)name, .len = (int)strlen(name)});
+  if (!clazz)
+    return nullptr;
   initialize_class_t ctx = {.args = {thr, clazz}};
   future_t fut = initialize_class(&ctx);
   DCHECK(fut.status == FUTURE_READY);
@@ -40,21 +40,15 @@ classdesc *ffi_get_class(vm_thread *thr, const char *name) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-obj_header *ffi_get_current_exception(vm_thread *thr) {
-  return thr->current_exception;
-}
+obj_header *ffi_get_current_exception(vm_thread *thr) { return thr->current_exception; }
 
 EMSCRIPTEN_KEEPALIVE
-void ffi_clear_current_exception(vm_thread *thr) {
-  thr->current_exception = nullptr;
-}
+void ffi_clear_current_exception(vm_thread *thr) { thr->current_exception = nullptr; }
 
 EMSCRIPTEN_KEEPALIVE
-classdesc *ffi_get_classdesc(obj_header *obj) {
-  return obj->descriptor;
-}
+classdesc *ffi_get_classdesc(obj_header *obj) { return obj->descriptor; }
 
-bool check_casts(vm_thread * thread, cp_method * method, stack_value * args) {
+bool check_casts(vm_thread *thread, cp_method *method, stack_value *args) {
   // Perform the moral equivalent of a checkcast instruction
   int argc = method_argc(method);
   for (int i = 0; i < argc; i++) {
@@ -97,19 +91,13 @@ rr_scheduler *ffi_create_rr_scheduler(vm *vm) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-u32 ffi_rr_scheduler_wait_for_us(rr_scheduler *scheduler) {
-  return rr_scheduler_may_sleep_us(scheduler);
-}
+u32 ffi_rr_scheduler_wait_for_us(rr_scheduler *scheduler) { return rr_scheduler_may_sleep_us(scheduler); }
 
 EMSCRIPTEN_KEEPALIVE
-scheduler_status_t ffi_rr_scheduler_step(rr_scheduler *scheduler) {
-  return rr_scheduler_step(scheduler);
-}
+scheduler_status_t ffi_rr_scheduler_step(rr_scheduler *scheduler) { return rr_scheduler_step(scheduler); }
 
 EMSCRIPTEN_KEEPALIVE
-bool ffi_rr_record_is_ready(execution_record *record) {
-  return record->status == SCHEDULER_RESULT_DONE;
-}
+bool ffi_rr_record_is_ready(execution_record *record) { return record->status == SCHEDULER_RESULT_DONE; }
 
 EMSCRIPTEN_KEEPALIVE
 execution_record *ffi_rr_schedule(vm_thread *thread, cp_method *method, stack_value *args) {
@@ -121,7 +109,7 @@ execution_record *ffi_rr_schedule(vm_thread *thread, cp_method *method, stack_va
 EMSCRIPTEN_KEEPALIVE
 stack_value *ffi_get_execution_record_result_pointer(execution_record *record) {
   if (record->js_handle != -1) {
-    void *result = (void*) deref_js_handle(record->vm, record->js_handle);
+    void *result = (void *)deref_js_handle(record->vm, record->js_handle);
     record->returned.obj = result;
   }
   return &record->returned;
@@ -133,13 +121,9 @@ scheduler_status_t ffi_execute_immediately(execution_record *record) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-void ffi_free_execution_record(execution_record *record) {
-  free_execution_record(record);
-}
+void ffi_free_execution_record(execution_record *record) { free_execution_record(record); }
 
-void ffi_free_rr_scheduler(rr_scheduler *scheduler) {
-  rr_scheduler_uninit(scheduler);
-}
+void ffi_free_rr_scheduler(rr_scheduler *scheduler) { rr_scheduler_uninit(scheduler); }
 
 EMSCRIPTEN_KEEPALIVE
 call_interpreter_t *ffi_async_run(vm_thread *thread, cp_method *method, stack_value *args) {
@@ -169,22 +153,20 @@ bool ffi_run_step(call_interpreter_t *ctx, stack_value *result) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-void ffi_free_async_run_ctx(call_interpreter_t *ctx) {
-  free(ctx);
-}
+void ffi_free_async_run_ctx(call_interpreter_t *ctx) { free(ctx); }
 
-
-#define INSERT_METHOD() char key[sizeof(void*)]; \
-memcpy(key, &method, sizeof(void*)); \
-if (hash_table_insert(&field_names, key, sizeof(void*), (void*)1)) { \
-  continue; \
-}
+#define INSERT_METHOD()                                                                                                \
+  char key[sizeof(void *)];                                                                                            \
+  memcpy(key, &method, sizeof(void *));                                                                                \
+  if (hash_table_insert(&field_names, key, sizeof(void *), (void *)1)) {                                               \
+    continue;                                                                                                          \
+  }
 
 // Returns a TS ClassInfo as JSON
 EMSCRIPTEN_KEEPALIVE
 char *ffi_get_class_json(classdesc *desc) {
-  cp_field** fields = nullptr;
-  cp_method** methods = nullptr;
+  cp_field **fields = nullptr;
+  cp_method **methods = nullptr;
 
   printf("Class name: %.*s\n", fmt_slice(desc->name));
 
@@ -245,7 +227,8 @@ char *ffi_get_class_json(classdesc *desc) {
     if (i > 0)
       string_builder_append(&out, ",");
     string_builder_append(&out, R"({"name":"%s","type":"%s","accessFlags":%d,"byteOffset":%d,"index":%d})",
-      f->name.chars, field_to_kind(&f->parsed_descriptor), f->access_flags, f->byte_offset, field_index++);
+                          f->name.chars, field_to_kind(&f->parsed_descriptor), f->access_flags, f->byte_offset,
+                          field_index++);
   }
 
   string_builder_append(&out, R"(],"methods":[)");
@@ -254,8 +237,9 @@ char *ffi_get_class_json(classdesc *desc) {
     cp_method *m = methods[i];
     if (i > 0)
       string_builder_append(&out, ",");
-    string_builder_append(&out, R"({"name":"%s","index":%d,"descriptor":"%s","methodPointer":%d,"accessFlags":%d,"parameterNames":[)",
-      m->name.chars, method_index++, m->unparsed_descriptor.chars, (intptr_t)m, m->access_flags);
+    string_builder_append(
+        &out, R"({"name":"%s","index":%d,"descriptor":"%s","methodPointer":%d,"accessFlags":%d,"parameterNames":[)",
+        m->name.chars, method_index++, m->unparsed_descriptor.chars, (intptr_t)m, m->access_flags);
 
     for (int attrib_i = 0; attrib_i < m->attributes_count; ++attrib_i) {
       if (m->attributes[attrib_i].kind == ATTRIBUTE_KIND_METHOD_PARAMETERS) {
@@ -277,7 +261,7 @@ char *ffi_get_class_json(classdesc *desc) {
       string_builder_append(&out, "\"arg%d\"", j);
     }
 
-    found:
+  found:
     string_builder_append(&out, "]}");
   }
 
@@ -287,6 +271,4 @@ char *ffi_get_class_json(classdesc *desc) {
   return result;
 }
 
-int main() {
-
-}
+int main() {}

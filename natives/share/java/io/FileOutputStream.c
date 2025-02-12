@@ -1,9 +1,7 @@
 #include <natives-dsl.h>
 #include <unistd.h>
 
-DECLARE_NATIVE("java/io", FileOutputStream, initIDs, "()V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/io", FileOutputStream, initIDs, "()V") { return value_null(); }
 
 DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
   obj_header *fd = LoadFieldObject(obj->obj, "java/io/FileDescriptor", "fd");
@@ -13,9 +11,9 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
   s32 offset = args[1].i;
   s32 length = args[2].i;
   [[maybe_unused]] bool append = args[3].i; // todo: append to first advance the position to the end of file
-  char *data = (char *) ArrayData(bytes);
+  char *data = (char *)ArrayData(bytes);
 
-  if (offset < 0 || length < 0 || (long) offset + length > *ArrayLength(bytes)) {
+  if (offset < 0 || length < 0 || (long)offset + length > *ArrayLength(bytes)) {
     ThrowLangException(ArrayIndexOutOfBoundsException);
     return value_null();
   }
@@ -28,7 +26,7 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
     thread->vm->write_stderr(buf, length, thread->vm->stdio_override_param);
   } else { // do an actual syscall
     while (length > 0) {
-      s32 written = (s32) write(unix_fd, buf, length);
+      s32 written = (s32)write(unix_fd, buf, length);
 
       if (written < 0) {
         raise_vm_exception(thread, STR("java/io/IOException"), STR("Error writing file"));
@@ -48,7 +46,8 @@ DECLARE_NATIVE("java/io", FileOutputStream, close0, "()V") {
   DCHECK(fd);
 
   s32 unix_fd = LoadFieldInt(fd, "fd");
-  if (unix_fd != -1) close(unix_fd);
+  if (unix_fd != -1)
+    close(unix_fd);
   StoreFieldInt(fd, "fd", -1);
 
   return value_null();

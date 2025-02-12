@@ -26,14 +26,12 @@ using std::string_view;
 using std::vector;
 
 namespace Bjvm::Tests {
-std::unique_ptr<vm, void (*)(vm *)>
-CreateTestVM(vm_options options) {
+std::unique_ptr<vm, void (*)(vm *)> CreateTestVM(vm_options options) {
   vm *vm = create_vm(options);
   return {vm, free_vm};
 }
 
-std::vector<std::string> ListDirectory(const std::string &path,
-                                       bool recursive) {
+std::vector<std::string> ListDirectory(const std::string &path, bool recursive) {
 #ifdef EMSCRIPTEN
   void *length_and_data = EM_ASM_PTR(
       {
@@ -153,16 +151,14 @@ std::optional<std::vector<u8>> ReadFile(const std::string &file) {
 #endif
 }
 
-TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
-                             std::string main_class, std::string input) {
+TestCaseResult run_test_case(std::string classpath, bool capture_stdio, std::string main_class, std::string input) {
   printf("Classpath: %s\n", classpath.c_str());
   vm_options options = default_vm_options();
 
-  TestCaseResult result { };
+  TestCaseResult result{};
   result.stdin_ = input;
 
-  options.classpath = (slice){.chars = (char *)classpath.c_str(),
-                              .len = static_cast<u16>(classpath.size())};
+  options.classpath = (slice){.chars = (char *)classpath.c_str(), .len = static_cast<u16>(classpath.size())};
 
   options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
     auto *result = (TestCaseResult *) param;
@@ -193,8 +189,7 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
   }
   vm_thread *thread = create_thread(vm, default_thread_options());
 
-  slice m{.chars = (char *)main_class.c_str(),
-          .len = static_cast<u16>(main_class.size())};
+  slice m{.chars = (char *)main_class.c_str(), .len = static_cast<u16>(main_class.size())};
 
   classdesc *desc = bootstrap_lookup_class(thread, m);
   if (!desc) {
@@ -205,19 +200,17 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 
   cp_method *method;
 
-  initialize_class_t pox = { .args = {thread, desc}};
+  initialize_class_t pox = {.args = {thread, desc}};
   future_t f = initialize_class(&pox);
   CHECK(f.status == FUTURE_READY);
 
-  method = method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),
-                              false, false);
+  method = method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
 
   call_interpreter_synchronous(thread, method, args); // void, no result
 
   if (thread->current_exception) {
     method =
-        method_lookup(thread->current_exception->descriptor, STR("toString"),
-                           STR("()Ljava/lang/String;"), true, false);
+        method_lookup(thread->current_exception->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, false);
     stack_value to_string_args[1] = {{.obj = thread->current_exception}};
     thread->current_exception = nullptr;
 
@@ -229,8 +222,7 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
     free_heap_str(read);
 
     // Then call printStackTrace ()V
-    method = method_lookup(to_string_args[0].obj->descriptor, STR("printStackTrace"),
-                                STR("()V"), true, false);
+    method = method_lookup(to_string_args[0].obj->descriptor, STR("printStackTrace"), STR("()V"), true, false);
     call_interpreter_synchronous(thread, method, to_string_args);
   }
 
@@ -241,22 +233,19 @@ TestCaseResult run_test_case(std::string classpath, bool capture_stdio,
 }
 
 #ifdef EMSCRIPTEN
-static void busy_wait(double us) {
-  EM_ASM("const endAt = Date.now() + $0 / 1000; while (Date.now() < endAt) {}", us);
-}
+static void busy_wait(double us) { EM_ASM("const endAt = Date.now() + $0 / 1000; while (Date.now() < endAt) {}", us); }
 #endif
 
-ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio,
-                             std::string main_class, std::string input) {
+ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio, std::string main_class,
+                                                std::string input) {
 
   printf("Classpath: %s\n", classpath.c_str());
   vm_options options = default_vm_options();
 
-  ScheduledTestCaseResult result { };
+  ScheduledTestCaseResult result{};
   result.stdin_ = input;
 
-  options.classpath = (slice){.chars = (char *)classpath.c_str(),
-                                  .len = static_cast<u16>(classpath.size())};
+  options.classpath = (slice){.chars = (char *)classpath.c_str(), .len = static_cast<u16>(classpath.size())};
 
   options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
     auto *result = (ScheduledTestCaseResult *) param;
@@ -287,8 +276,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
   }
   vm_thread *thread = create_thread(vm, default_thread_options());
 
-  slice m{.chars = (char *)main_class.c_str(),
-              .len = static_cast<u16>(main_class.size())};
+  slice m{.chars = (char *)main_class.c_str(), .len = static_cast<u16>(main_class.size())};
 
   classdesc *desc = bootstrap_lookup_class(thread, m);
   if (!desc) {
@@ -298,12 +286,11 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
   cp_method *method;
 
-  initialize_class_t pox = { .args = {thread, desc}};
+  initialize_class_t pox = {.args = {thread, desc}};
   future_t f = initialize_class(&pox);
   CHECK(f.status == FUTURE_READY);
 
-  method = method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"),
-                              false, false);
+  method = method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
 
   rr_scheduler scheduler;
   rr_scheduler_init(&scheduler, vm);
@@ -311,7 +298,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
   stack_value args[1] = {{.obj = nullptr}};
 
-  call_interpreter_t ctx = {{ thread, method, args }};
+  call_interpreter_t ctx = {{thread, method, args}};
   rr_scheduler_run(&scheduler, ctx);
 
   while (true) {
@@ -337,8 +324,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
   if (thread->current_exception) {
     method =
-        method_lookup(thread->current_exception->descriptor, STR("toString"),
-                           STR("()Ljava/lang/String;"), true, false);
+        method_lookup(thread->current_exception->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, false);
     stack_value to_string_args[1] = {{.obj = thread->current_exception}};
     thread->current_exception = nullptr;
 
@@ -350,8 +336,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
     free_heap_str(read);
 
     // Then call printStackTrace ()V
-    method = method_lookup(to_string_args[0].obj->descriptor, STR("printStackTrace"),
-                                STR("()V"), true, false);
+    method = method_lookup(to_string_args[0].obj->descriptor, STR("printStackTrace"), STR("()V"), true, false);
     call_interpreter_synchronous(thread, method, to_string_args);
   }
 

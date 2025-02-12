@@ -6,32 +6,31 @@ typedef stack_map_frame_iterator iterator;
 
 typedef struct {
   attribute_code *code;
-  attribute_stack_map_table table_copy;  // the pointers here indicate how much is left to read
-  bool has_next;  // whether there is another frame to read
-  bool is_first;  // are we about to compute the first stack map frame besides the 0th, implicit frame
+  attribute_stack_map_table table_copy; // the pointers here indicate how much is left to read
+  bool has_next;                        // whether there is another frame to read
+  bool is_first; // are we about to compute the first stack map frame besides the 0th, implicit frame
 } impl;
 
 enum { EXPLICIT_TOP = 0 /* default */, IMPLICIT_TOP };
 
 static validation_type *allocate_validation_buffer(size_t count) {
   validation_type *b = calloc(count + 1 /* to allow for some slop in wide kinds */, sizeof(validation_type));
-  static_assert(STACK_MAP_FRAME_VALIDATION_TYPE_TOP == 0);  // calloc zero initializes
+  static_assert(STACK_MAP_FRAME_VALIDATION_TYPE_TOP == 0); // calloc zero initializes
   static_assert(EXPLICIT_TOP == 0);
   return b;
 }
 
 static stack_map_frame_validation_type_kind type_to_validation_type[] = {
-  // We don't need the other integer types because field_to_kind doesn't produce them
-  [TYPE_KIND_REFERENCE] = STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
-  [TYPE_KIND_INT] = STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER,
-  [TYPE_KIND_LONG] = STACK_MAP_FRAME_VALIDATION_TYPE_LONG,
-  [TYPE_KIND_FLOAT] = STACK_MAP_FRAME_VALIDATION_TYPE_FLOAT,
-  [TYPE_KIND_DOUBLE] = STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE
-};
+    // We don't need the other integer types because field_to_kind doesn't produce them
+    [TYPE_KIND_REFERENCE] = STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
+    [TYPE_KIND_INT] = STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER,
+    [TYPE_KIND_LONG] = STACK_MAP_FRAME_VALIDATION_TYPE_LONG,
+    [TYPE_KIND_FLOAT] = STACK_MAP_FRAME_VALIDATION_TYPE_FLOAT,
+    [TYPE_KIND_DOUBLE] = STACK_MAP_FRAME_VALIDATION_TYPE_DOUBLE};
 
 // Value used for "top"s produced because they are the local following a double or long, rather than explicitly given
 // as part of the stack map frame.
-static validation_type implicit_top = { STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (void*) IMPLICIT_TOP };
+static validation_type implicit_top = {STACK_MAP_FRAME_VALIDATION_TYPE_TOP, (void *)IMPLICIT_TOP};
 
 // Create the initial stack frame for the method
 static int init_locals(iterator *iter, const cp_method *method) {
@@ -41,10 +40,9 @@ static int init_locals(iterator *iter, const cp_method *method) {
   s32 local_i = 0;
   if (!(method->access_flags & ACCESS_STATIC)) {
     // Write "this"
-    iter->locals[local_i++] = (validation_type) {
-      method->is_ctor ? STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS : STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
-      (slice*)&method->my_class->name
-    };
+    iter->locals[local_i++] = (validation_type){method->is_ctor ? STACK_MAP_FRAME_VALIDATION_TYPE_UNINIT_THIS
+                                                                : STACK_MAP_FRAME_VALIDATION_TYPE_OBJECT,
+                                                (slice *)&method->my_class->name};
   }
 
   // Write the remaining locals, one per argument
@@ -65,7 +63,7 @@ static int init_locals(iterator *iter, const cp_method *method) {
 }
 
 int stack_map_frame_iterator_init(iterator *iter, const cp_method *method) {
-  memset(iter, 0, sizeof(*iter));  // clear memory
+  memset(iter, 0, sizeof(*iter)); // clear memory
   impl *I = iter->_impl = calloc(1, sizeof(impl));
   if (!I)
     return -1;
@@ -90,14 +88,12 @@ int stack_map_frame_iterator_init(iterator *iter, const cp_method *method) {
   }
   return 0;
 
-  oom:
+oom:
   stack_map_frame_iterator_uninit(iter);
   return -1;
 }
 
-bool stack_map_frame_iterator_has_next(const iterator *iter) {
-  return ((impl*)iter->_impl)->has_next;
-}
+bool stack_map_frame_iterator_has_next(const iterator *iter) { return ((impl *)iter->_impl)->has_next; }
 
 // Try to read a 16-bit integer, returning nonzero on failure
 static int read_u8(impl *I, u8 *val, const char **error) {
@@ -115,7 +111,7 @@ static int read_u16(impl *I, u16 *val, const char **error) {
     *error = "Unexpected end of stackmaptable";
     return -1;
   }
-  *val = *I->table_copy.data++ << 8;  // big-endian
+  *val = *I->table_copy.data++ << 8; // big-endian
   *val |= *I->table_copy.data++;
   I->table_copy.length -= 2;
   return 0;
@@ -135,7 +131,7 @@ static int read_verification_type(const iterator *iter, validation_type *result,
     u16 index;
     if (read_u16(iter->_impl, &index, error))
       return -1;
-    result->name = nullptr;  // TODO
+    result->name = nullptr; // TODO
   } else {
     result->name = nullptr;
   }
@@ -145,7 +141,7 @@ static int read_verification_type(const iterator *iter, validation_type *result,
 
 static void increment_pc(iterator *iter, int offset_delta) {
   impl *I = iter->_impl;
-  if (I->is_first) {  // the first stack map frame is only offset_delta away from 0
+  if (I->is_first) { // the first stack map frame is only offset_delta away from 0
     iter->pc += offset_delta;
     I->is_first = false;
   } else {
@@ -154,15 +150,22 @@ static void increment_pc(iterator *iter, int offset_delta) {
 }
 
 static bool is_implicit_top(validation_type local) {
-  return local.kind == STACK_MAP_FRAME_VALIDATION_TYPE_TOP && local.name == (void*) IMPLICIT_TOP;
+  return local.kind == STACK_MAP_FRAME_VALIDATION_TYPE_TOP && local.name == (void *)IMPLICIT_TOP;
 }
 
-#define MAY_FAIL(cond) if (cond) { return -1; }
-#define MAY_FAIL_MSG(cond, msg) if (cond) { *error = msg; return -1; }
+#define MAY_FAIL(cond)                                                                                                 \
+  if (cond) {                                                                                                          \
+    return -1;                                                                                                         \
+  }
+#define MAY_FAIL_MSG(cond, msg)                                                                                        \
+  if (cond) {                                                                                                          \
+    *error = msg;                                                                                                      \
+    return -1;                                                                                                         \
+  }
 
 // Returns nonzero on error and fills in the heap_string
 int stack_map_frame_iterator_next(iterator *iter, const char **error) {
-  impl *I =iter->_impl;
+  impl *I = iter->_impl;
   int max_locals = I->code->max_locals;
   int max_stack = I->code->max_stack;
 
@@ -213,7 +216,7 @@ int stack_map_frame_iterator_next(iterator *iter, const char **error) {
     for (int j = 0; j < additional; ++j) {
       validation_type *local = iter->locals + iter->locals_size++;
       MAY_FAIL(read_verification_type(iter, local, &is_wide, error));
-      if (is_wide)  // double or long, push implicit "top"
+      if (is_wide) // double or long, push implicit "top"
         *(iter->locals + iter->locals_size++) = implicit_top;
       MAY_FAIL_MSG(iter->locals_size > max_locals, "append_frame locals overflow");
     }

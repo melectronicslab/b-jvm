@@ -12,14 +12,14 @@
 #include <ranges>
 #include <unordered_map>
 
+#include "tests-common.h"
 #include <adt.h>
 #include <analysis.h>
 #include <bjvm.h>
-#include <util.h>
-#include "tests-common.h"
 #include <numeric>
 #include <roundrobin_scheduler.h>
 #include <unistd.h>
+#include <util.h>
 
 using namespace Bjvm::Tests;
 
@@ -27,8 +27,7 @@ double get_time() {
 #ifdef EMSCRIPTEN
   return emscripten_get_now();
 #else
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
       .count();
 #endif
 }
@@ -88,21 +87,16 @@ TEST_CASE("Compressed bitset") {
 }
 
 TEST_CASE("parse_field_descriptor valid cases") {
-  const char *fields =
-      "Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
-  field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String,
-      java_lang_Object, B, V, C, Z;
+  const char *fields = "Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
+  field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String, java_lang_Object, B, V, C, Z;
   arena arena;
   arena_init(&arena);
 
-  REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &com_example_Example,
-                                  &arena));
+  REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &com_example_Example, &arena));
   REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &Iaaa, &arena));
   REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &Jaa, &arena));
-  REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &java_lang_String,
-                                  &arena));
-  REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &java_lang_Object,
-                                  &arena));
+  REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &java_lang_String, &arena));
+  REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &java_lang_Object, &arena));
   REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &B, &arena));
   REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &V, &arena));
   REQUIRE(!parse_field_descriptor(&fields, strlen(fields), &C, &arena));
@@ -142,10 +136,8 @@ TEST_CASE("String hash table") {
     std::string key = std::to_string(i * 5201);
     std::string value = std::to_string(i);
     reference[key] = value;
-    free(hash_table_insert(&tbl, key.c_str(), -1,
-                                (void *)strdup(value.c_str())));
-    free(hash_table_insert(&tbl, key.c_str(), -1,
-                                (void *)strdup(value.c_str())));
+    free(hash_table_insert(&tbl, key.c_str(), -1, (void *)strdup(value.c_str())));
+    free(hash_table_insert(&tbl, key.c_str(), -1, (void *)strdup(value.c_str())));
   }
   for (int i = 1; i <= 4999; i += 2) {
     std::string key = std::to_string(i * 5201);
@@ -180,8 +172,7 @@ TEST_CASE("Malformed classfiles") {
 
 TEST_CASE("Interning") {
   auto result = run_test_case("test_files/interning/");
-  REQUIRE(result.stdout_ ==
-          "false\nfalse\ntrue\ntrue\ntrue\nfalse\ntrue\nfalse\n");
+  REQUIRE(result.stdout_ == "false\nfalse\ntrue\ntrue\ntrue\nfalse\ntrue\nfalse\n");
 }
 
 TEST_CASE("NegativeArraySizeException") {
@@ -281,10 +272,10 @@ result obj val: null
 TEST_CASE("N-body problem") {
   auto result = run_test_case("test_files/n_body_problem/", false, "NBodyProblem");
 
-//  REQUIRE(result.stdout_.find("Running Simulation...") != std::string::npos);
-//  REQUIRE(result.stdout_.find("Roughly Equals: true") != std::string::npos);
-//  REQUIRE(result.stdout_.find("Energy change minimal: true") != std::string::npos);
-//  REQUIRE(result.stdout_.find("Sun final position: ") != std::string::npos);
+  //  REQUIRE(result.stdout_.find("Running Simulation...") != std::string::npos);
+  //  REQUIRE(result.stdout_.find("Roughly Equals: true") != std::string::npos);
+  //  REQUIRE(result.stdout_.find("Energy change minimal: true") != std::string::npos);
+  //  REQUIRE(result.stdout_.find("Sun final position: ") != std::string::npos);
 }
 
 TEST_CASE("Basic lambda") {
@@ -430,11 +421,9 @@ TEST_CASE("Immediate dominators computation on cursed CFG") {
   scan_basic_blocks(m->code, analy);
   compute_dominator_tree(analy);
 
-  std::vector<std::pair<int, u32>> doms = {
-      {1, 0},  {2, 1},  {3, 2},   {4, 3},   {5, 4},   {6, 5},
-      {7, 6},  {8, 6},  {9, 6},   {10, 6},  {11, 6},  {12, 6},
-      {13, 6}, {14, 5}, {15, 14}, {16, 14}, {17, 16}, {18, 5},
-      {19, 4}, {20, 4}, {21, 20}, {22, 1}};
+  std::vector<std::pair<int, u32>> doms = {{1, 0},   {2, 1},  {3, 2},  {4, 3},  {5, 4},   {6, 5},  {7, 6},   {8, 6},
+                                           {9, 6},   {10, 6}, {11, 6}, {12, 6}, {13, 6},  {14, 5}, {15, 14}, {16, 14},
+                                           {17, 16}, {18, 5}, {19, 4}, {20, 4}, {21, 20}, {22, 1}};
 
   for (auto [a, b] : doms) {
     REQUIRE(analy->blocks[a].idom == b);
@@ -452,14 +441,12 @@ TEST_CASE("Immediate dominators computation on cursed CFG") {
 TEST_CASE("Conflicting defaults") {
   // Attempting to invokeinterface on a class which inherits multiple maximally
   // -specific implementations of a given interface method.
-  auto result = run_test_case("test_files/conflicting_defaults/", true,
-                              "ConflictingDefaults");
+  auto result = run_test_case("test_files/conflicting_defaults/", true, "ConflictingDefaults");
   REQUIRE(result.stderr_.find("AbstractMethodError") != std::string::npos);
 }
 
 TEST_CASE("Records") {
-  auto result = run_test_case("test_files/records/", true,
-                              "Records");
+  auto result = run_test_case("test_files/records/", true, "Records");
   REQUIRE(result.stdout_ == R"(true
 true
 )");
@@ -487,7 +474,7 @@ TEST_CASE("ArrayStoreException") {
 
 TEST_CASE("Random API") {
   auto result = run_test_case("test_files/random/", true, "RandomTest");
-  REQUIRE(result.stdout_.find("Random Integer (50 to 150)") != std::string::npos);  // Just check that it completes :)
+  REQUIRE(result.stdout_.find("Random Integer (50 to 150)") != std::string::npos); // Just check that it completes :)
 }
 
 TEST_CASE("Simulated input/output") {
@@ -516,7 +503,7 @@ As a char: A
   REQUIRE(result_many.stdin_ == ""); // BufferedReader tries to consume 8192 bytes, but we only provide 7
 }
 
-#if 0  // these cases are slowwww
+#if 0 // these cases are slowwww
 
 TEST_CASE("Sudoku solver") {
   int num_puzzles = 33761;
@@ -638,9 +625,7 @@ Done
 )");
 }
 
-TEST_CASE("Playground") {
-  auto result = run_test_case("test_files/compiler", false);
-}
+TEST_CASE("Playground") { auto result = run_test_case("test_files/compiler", false); }
 
 #if 0
 TEST_CASE("printf") {
@@ -669,7 +654,7 @@ TEST_CASE("Filesystem") {
 
 TEST_CASE("Multithreading") {
   auto result = run_scheduled_test_case("test_files/basic_multithreading/", false, "Multithreading");
-  (void) result; // use this var fr
+  (void)result; // use this var fr
 }
 
 TEST_CASE("Monitor reentrancy") {
@@ -700,7 +685,7 @@ slept for at least 1000 ms? false
 )");
 
   REQUIRE(result.sleep_count == 1);
-  REQUIRE(result.ms_slept <= 1000000); // 1 second
+  REQUIRE(result.ms_slept <= 1000000);          // 1 second
   REQUIRE(1000000 - result.ms_slept <= 100000); // give or take 0.1 seconds
 }
 

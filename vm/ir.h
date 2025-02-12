@@ -9,12 +9,7 @@
 typedef u32 var_t;
 typedef u32 bb_t;
 
-typedef enum {
-  IR_TYPE_INT,
-  IR_TYPE_LONG,
-  IR_TYPE_FLOAT,
-  IR_TYPE_DOUBLE
-} ir_type_kind;
+typedef enum { IR_TYPE_INT, IR_TYPE_LONG, IR_TYPE_FLOAT, IR_TYPE_DOUBLE } ir_type_kind;
 
 typedef enum {
   // Unary operators

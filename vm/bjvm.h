@@ -81,8 +81,7 @@ typedef union {
 // null
 static inline stack_value value_null() { return (stack_value){.obj = nullptr}; }
 
-__attribute__((noinline))
-bool instanceof(const classdesc *o, const classdesc *target);
+__attribute__((noinline)) bool instanceof(const classdesc *o, const classdesc *target);
 
 typedef struct {
   vm_thread *thread;
@@ -119,7 +118,9 @@ typedef struct {
 } native_t;
 
 //      struct { flags, hash? }
-typedef struct { u32 data[2]; } mark_word_t;
+typedef struct {
+  u32 data[2];
+} mark_word_t;
 
 typedef struct {
   s32 tid;
@@ -160,7 +161,8 @@ int read_string_to_utf8(vm_thread *thread, heap_string *result, obj_header *obj)
 typedef struct vm vm;
 
 typedef void (*write_bytes)(char *buf, int len, void *param); // writes all the data in the buffer's length
-typedef int (*read_bytes)(char *buf, int len, void *param); // reads up to len bytes into the buffer, returns number of bytes actually read
+typedef int (*read_bytes)(char *buf, int len,
+                          void *param); // reads up to len bytes into the buffer, returns number of bytes actually read
 typedef int (*poll_available_bytes)(void *param); // returns the number of bytes available to read
 
 #define CARD_BYTES 4096
@@ -205,8 +207,7 @@ DECLARE_ASYNC(stack_value, call_interpreter,
   invoked_methods(invoked_method(interpret))
 );
 
-stack_value call_interpreter_synchronous(vm_thread *thread, cp_method *method,
-                                                     stack_value *args);
+stack_value call_interpreter_synchronous(vm_thread *thread, cp_method *method, stack_value *args);
 
 DECLARE_ASYNC(stack_value, run_native,
   locals(async_natives_args *native_struct),
@@ -347,7 +348,7 @@ typedef struct vm {
   string_hash_table modules;
 
   // Overrides for stdio (if nullptr, uses the default implementation)
-  read_bytes  read_stdin;
+  read_bytes read_stdin;
   poll_available_bytes poll_available_stdin;
   write_bytes write_stdout;
   write_bytes write_stderr;
@@ -381,7 +382,7 @@ typedef struct vm {
   /// Struct containing cached classdescs
   struct cached_classdescs *cached_classdescs;
 
-  s64 next_thread_id;  // MUST BE 64 BITS
+  s64 next_thread_id; // MUST BE 64 BITS
 
   // Vector of allocations done via Unsafe.allocateMemory0, to be freed in case
   // the finalizers aren't run
@@ -394,7 +395,7 @@ typedef struct vm {
   s32 next_tid;
 
   bool vm_initialized;
-  void *scheduler;  // rr_scheduler or null
+  void *scheduler; // rr_scheduler or null
 } vm;
 
 // Java Module
@@ -409,7 +410,7 @@ int define_module(vm *vm, slice module_name, obj_header *module);
 
 typedef struct {
   // Overrides for stdio (if nullptr, uses the default implementation)
-  read_bytes  read_stdin;
+  read_bytes read_stdin;
   poll_available_bytes poll_available_stdin;
   write_bytes write_stdout;
   write_bytes write_stderr;
@@ -576,16 +577,13 @@ void drop_handle(vm_thread *thread, handle *handle);
  * Create an uninitialized frame with space sufficient for the given method.
  * Raises a StackOverflowError if the frames are exhausted.
  */
-__attribute__((noinline))
-stack_frame *push_frame(vm_thread *thread, cp_method *method, stack_value *args, u8 argc);
+__attribute__((noinline)) stack_frame *push_frame(vm_thread *thread, cp_method *method, stack_value *args, u8 argc);
 
-__attribute__((noinline))
-stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value *args,
-                                        u8 argc);
-__attribute__((noinline))
-stack_frame *push_native_frame(vm_thread *thread, cp_method *method,
-                                         const method_descriptor *descriptor, stack_value *args,
-                                         u8 argc);
+__attribute__((noinline)) stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value *args,
+                                                        u8 argc);
+__attribute__((noinline)) stack_frame *push_native_frame(vm_thread *thread, cp_method *method,
+                                                         const method_descriptor *descriptor, stack_value *args,
+                                                         u8 argc);
 struct native_MethodType *resolve_method_type(vm_thread *thread, method_descriptor *method);
 
 /**
@@ -622,13 +620,12 @@ void free_vm(vm *vm);
 
 classdesc *bootstrap_lookup_class(vm_thread *thread, slice name);
 classdesc *bootstrap_lookup_class_impl(vm_thread *thread, slice name, bool raise_class_not_found);
-classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *classfile_bytes,
-                                            size_t classfile_len);
-cp_method *method_lookup(classdesc *classdesc, const slice name, const slice descriptor,
-                                   bool superclasses, bool superinterfaces);
+classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *classfile_bytes, size_t classfile_len);
+cp_method *method_lookup(classdesc *classdesc, const slice name, const slice descriptor, bool superclasses,
+                         bool superinterfaces);
 
-void register_native(vm *vm, const slice class_name, const slice method_name,
-                          const slice method_descriptor, native_callback callback);
+void register_native(vm *vm, const slice class_name, const slice method_name, const slice method_descriptor,
+                     native_callback callback);
 
 obj_header *new_object(vm_thread *thread, classdesc *classdesc);
 classdesc *unmirror_class(obj_header *mirror);
@@ -644,8 +641,7 @@ int resolve_field(vm_thread *thread, cp_field_info *info);
 stack_value get_field(obj_header *obj, cp_field *field);
 cp_field *field_lookup(classdesc *classdesc, slice const name, slice const descriptor);
 cp_field *field_lookup(classdesc *classdesc, const slice name, const slice descriptor);
-int multianewarray(vm_thread *thread, plain_frame *frame, struct multianewarray_data *multianewarray,
-                        u16 *sd);
+int multianewarray(vm_thread *thread, plain_frame *frame, struct multianewarray_data *multianewarray, u16 *sd);
 void dump_frame(FILE *stream, const stack_frame *frame);
 
 // e.g. int.class

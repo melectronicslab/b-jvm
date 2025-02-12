@@ -15,17 +15,16 @@ typedef struct gc_ctx {
 } gc_ctx;
 
 static int in_heap(gc_ctx *ctx, obj_header *field) {
-  return (uintptr_t)field - (uintptr_t)ctx->vm->heap <
-         ctx->vm->true_heap_capacity;
+  return (uintptr_t)field - (uintptr_t)ctx->vm->heap < ctx->vm->true_heap_capacity;
 }
 
 #define lengthof(x) (sizeof(x) / sizeof(x[0]))
-#define PUSH_ROOT(x)                                                           \
-  {                                                                            \
-    __typeof(x) v = (x);                                                       \
-    if (*v && in_heap(ctx, (void*)*v)) {                                            \
-      arrput(ctx->roots, (obj_header **)v);                                               \
-    }                                                                          \
+#define PUSH_ROOT(x)                                                                                                   \
+  {                                                                                                                    \
+    __typeof(x) v = (x);                                                                                               \
+    if (*v && in_heap(ctx, (void *)*v)) {                                                                              \
+      arrput(ctx->roots, (obj_header **)v);                                                                            \
+    }                                                                                                                  \
   }
 
 static void enumerate_reflection_roots(gc_ctx *ctx, classdesc *desc) {
@@ -97,8 +96,7 @@ static void push_thread_roots(gc_ctx *ctx, vm_thread *thr) {
       continue;
     plain_frame *frame = get_plain_frame(raw_frame);
     code_analysis *analy = raw_frame->method->code_analysis;
-    compressed_bitset refs =
-        analy->insn_index_to_references[frame->program_counter];
+    compressed_bitset refs = analy->insn_index_to_references[frame->program_counter];
     // List of stack and local values which are references
     // In particular, 0 through max_stack - 1 refer to the stack, and max_stack through max_stack + max_locals - 1
     // refer to the locals array
@@ -172,8 +170,7 @@ static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
   // Modules
   it = hash_table_get_iterator(&vm->modules);
   module *module;
-  while (hash_table_iterator_has_next(it, &key, &key_len,
-                                           (void **)&module)) {
+  while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&module)) {
     PUSH_ROOT(&module->reflection_object);
     hash_table_iterator_next(&it);
   }
@@ -217,9 +214,7 @@ static void mark_reachable(gc_ctx *ctx, obj_header *obj, int **bitsets, int dept
         mark_reachable(ctx, field_obj, bitsets, depth + 1);
       }
     }
-  } else if (desc->kind == CD_KIND_ORDINARY_ARRAY ||
-             (desc->kind == CD_KIND_PRIMITIVE_ARRAY &&
-              desc->dimensions > 1)) {
+  } else if (desc->kind == CD_KIND_ORDINARY_ARRAY || (desc->kind == CD_KIND_PRIMITIVE_ARRAY && desc->dimensions > 1)) {
     // Visit all components
     int arr_len = *ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
@@ -231,22 +226,17 @@ static void mark_reachable(gc_ctx *ctx, obj_header *obj, int **bitsets, int dept
   }
 }
 
-static int comparator(const void *a, const void *b) {
-  return *(obj_header **)a - *(obj_header **)b;
-}
+static int comparator(const void *a, const void *b) { return *(obj_header **)a - *(obj_header **)b; }
 
 static size_t size_of_object(obj_header *obj) {
   if (obj->descriptor->kind == CD_KIND_ORDINARY) {
     return obj->descriptor->instance_bytes;
   }
   if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY ||
-      (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY &&
-       obj->descriptor->dimensions > 1)) {
+      (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY && obj->descriptor->dimensions > 1)) {
     return kArrayDataOffset + *ArrayLength(obj) * sizeof(void *);
   }
-  return kArrayDataOffset +
-         *ArrayLength(obj) *
-             sizeof_type_kind(obj->descriptor->primitive_component);
+  return kArrayDataOffset + *ArrayLength(obj) * sizeof_type_kind(obj->descriptor->primitive_component);
 }
 
 static void relocate_object(const gc_ctx *ctx, obj_header **obj) {
@@ -254,8 +244,7 @@ static void relocate_object(const gc_ctx *ctx, obj_header **obj) {
     return;
 
   // Binary search for obj in ctx->roots
-  obj_header **found = (obj_header **)bsearch(
-      obj, ctx->objs, arrlen(ctx->objs), sizeof(obj_header *), comparator);
+  obj_header **found = (obj_header **)bsearch(obj, ctx->objs, arrlen(ctx->objs), sizeof(obj_header *), comparator);
   if (found) {
     *obj = ctx->new_location[found - ctx->objs];
   }
@@ -273,8 +262,7 @@ static void relocate_static_fields(gc_ctx *ctx) {
   while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
     list_compressed_bitset_bits(desc->static_references, &bitset_list);
     for (int i = 0; i < arrlen(bitset_list); ++i) {
-      relocate_object(ctx, ((obj_header **)desc->static_fields) +
-                               bitset_list[i]);
+      relocate_object(ctx, ((obj_header **)desc->static_fields) + bitset_list[i]);
     }
     // Push the mirrors of this base class and all of its array types
     classdesc *array = desc;
@@ -300,8 +288,7 @@ void relocate_instance_fields(gc_ctx *ctx) {
         relocate_object(ctx, field);
       }
     } else if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY ||
-               (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY &&
-                obj->descriptor->dimensions > 1)) {
+               (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY && obj->descriptor->dimensions > 1)) {
       int arr_len = *ArrayLength(obj);
       for (int j = 0; j < arr_len; ++j) {
         obj_header **field = (obj_header **)ArrayData(obj) + j;
@@ -331,12 +318,10 @@ void major_gc(vm *vm) {
 
   // Sort roots by address
   qsort(ctx.objs, arrlen(ctx.objs), sizeof(obj_header *), comparator);
-  obj_header **new_location = ctx.new_location =
-      malloc( arrlen(ctx.objs) * sizeof(obj_header *));
+  obj_header **new_location = ctx.new_location = malloc(arrlen(ctx.objs) * sizeof(obj_header *));
 
   // For now, create a new heap of the same size
-  [[maybe_unused]] u8 *new_heap = aligned_alloc(4096, vm->true_heap_capacity),
-          *end = new_heap + vm->true_heap_capacity;
+  [[maybe_unused]] u8 *new_heap = aligned_alloc(4096, vm->true_heap_capacity), *end = new_heap + vm->true_heap_capacity;
   u8 *write_ptr = new_heap;
 
   // Copy object by object
@@ -351,18 +336,18 @@ void major_gc(vm *vm) {
     *get_flags(obj) &= ~IS_REACHABLE; // clear the reachable flag
     memcpy(write_ptr, obj, sz);
 
-    obj_header *new_obj = (obj_header *) write_ptr;
+    obj_header *new_obj = (obj_header *)write_ptr;
     new_location[i] = new_obj;
     write_ptr += sz;
 
     if (has_expanded_data(&obj->header_word)) {
       // Copy the expanded data (align to 8 bytes for atomic ops to be happy)
-      write_ptr = (u8 *) align_up((uintptr_t) write_ptr, 8);
+      write_ptr = (u8 *)align_up((uintptr_t)write_ptr, 8);
       constexpr size_t monitor_data_size = sizeof(*obj->header_word.expanded_data);
       DCHECK(write_ptr + monitor_data_size <= end);
 
       memcpy(write_ptr, obj->header_word.expanded_data, monitor_data_size);
-      new_obj->header_word.expanded_data = (monitor_data *) write_ptr;
+      new_obj->header_word.expanded_data = (monitor_data *)write_ptr;
       write_ptr += monitor_data_size;
     }
   }

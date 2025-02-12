@@ -8,9 +8,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-DECLARE_NATIVE("java/io", FileInputStream, initIDs, "()V") {
-  return value_null();
-}
+DECLARE_NATIVE("java/io", FileInputStream, initIDs, "()V") { return value_null(); }
 
 DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
   if (!args[0].handle->obj)
@@ -26,14 +24,13 @@ DECLARE_NATIVE("java/io", FileInputStream, open0, "(Ljava/lang/String;)V") {
 
   if (unix_fd < 0) {
     // TODO use errno to give a better error message
-    raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
-                         hslc(filename));
+    raise_vm_exception(thread, STR("java/io/FileNotFoundException"), hslc(filename));
   }
 
   free_heap_str(filename);
   return value_null();
 
-  on_oom:
+on_oom:
   return value_null();
 }
 
@@ -44,8 +41,7 @@ DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
   DCHECK(fd);
   s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd < 0) {
-    raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
-                            STR("File not found"));
+    raise_vm_exception(thread, STR("java/io/FileNotFoundException"), STR("File not found"));
     return value_null();
   }
 
@@ -62,16 +58,15 @@ DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
   if (unix_fd == 0 && thread->vm->read_stdin) {
     bytes_read = thread->vm->read_stdin(&res, length, thread->vm->stdio_override_param);
   } else {
-    bytes_read = (s32) read(unix_fd, &res, length);
+    bytes_read = (s32)read(unix_fd, &res, length);
   }
 
   if (bytes_read < 0) {
-    raise_vm_exception(thread, STR("java/io/IOException"),
-                            STR("Error reading file"));
+    raise_vm_exception(thread, STR("java/io/IOException"), STR("Error reading file"));
     return value_null();
   }
 
-  return (stack_value) { .i = bytes_read == 0 ? -1 : (int) res };
+  return (stack_value){.i = bytes_read == 0 ? -1 : (int)res};
 }
 
 DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
@@ -81,8 +76,7 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   DCHECK(fd);
   s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd < 0) {
-    raise_vm_exception(thread, STR("java/io/FileNotFoundException"),
-                            STR("File not found"));
+    raise_vm_exception(thread, STR("java/io/FileNotFoundException"), STR("File not found"));
     return value_null();
   }
 
@@ -95,7 +89,7 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   s32 offset = args[1].i;
   s32 length = args[2].i;
 
-  if (offset < 0 || length < 0 || (s64) offset + length > *ArrayLength(array)) {
+  if (offset < 0 || length < 0 || (s64)offset + length > *ArrayLength(array)) {
     ThrowLangException(ArrayIndexOutOfBoundsException);
     return value_null();
   }
@@ -106,15 +100,14 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   if (unix_fd == 0 && thread->vm->read_stdin) {
     bytes_read = thread->vm->read_stdin(buf, length, thread->vm->stdio_override_param);
   } else {
-    bytes_read = (s32) read(unix_fd, buf, length);
+    bytes_read = (s32)read(unix_fd, buf, length);
   }
 
   if (bytes_read < 0) {
-    raise_vm_exception(thread, STR("java/io/IOException"),
-                           STR("Error reading file"));
+    raise_vm_exception(thread, STR("java/io/IOException"), STR("Error reading file"));
     return value_null();
   }
-  return (stack_value) { .i = bytes_read == 0 ? -1 : bytes_read };
+  return (stack_value){.i = bytes_read == 0 ? -1 : bytes_read};
 }
 
 DECLARE_NATIVE("java/io", FileInputStream, close0, "()V") {
@@ -123,7 +116,8 @@ DECLARE_NATIVE("java/io", FileInputStream, close0, "()V") {
   DCHECK(fd);
 
   s32 unix_fd = LoadFieldInt(fd, "fd");
-  if (unix_fd != -1) close(unix_fd);
+  if (unix_fd != -1)
+    close(unix_fd);
   StoreFieldInt(fd, "fd", -1);
 
   return value_null();
@@ -135,7 +129,7 @@ DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
   DCHECK(fd);
   s32 unix_fd = LoadFieldInt(fd, "fd");
   if (unix_fd == -1) {
-    return (stack_value) { .i = 0 };
+    return (stack_value){.i = 0};
   }
 
   int available;
@@ -150,5 +144,5 @@ DECLARE_NATIVE("java/io", FileInputStream, available0, "()I") {
     }
   }
 
-  return (stack_value) { .i = (s32) available };
+  return (stack_value){.i = (s32)available};
 }

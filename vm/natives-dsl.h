@@ -30,15 +30,14 @@ static inline stack_value __obj_load_field(obj_header *thing, slice field_name, 
 
 maybe_extern_end;
 
-#define ThrowLangException(exception_name)                                                                             \
-  raise_vm_exception(thread, STR("java/lang/" #exception_name), null_str())
+#define ThrowLangException(exception_name) raise_vm_exception(thread, STR("java/lang/" #exception_name), null_str())
 
 #define ThrowLangExceptionM(exception_name, fmt, ...)                                                                  \
   do {                                                                                                                 \
     char msg[1024];                                                                                                    \
     size_t size = snprintf(msg, 1024, fmt, __VA_ARGS__);                                                               \
     slice msg_slice = {msg, size};                                                                                     \
-    raise_vm_exception(thread, STR("java/lang/" exception_name), msg_slice);                                      \
+    raise_vm_exception(thread, STR("java/lang/" exception_name), msg_slice);                                           \
   } while (0)
 
 #define MakeHandle(obj) make_handle(thread, obj)
@@ -47,7 +46,7 @@ static inline obj_header *check_is_object(obj_header *thing) { return thing; }
 
 #define AsHeapString(expr, on_oom)                                                                                     \
   ({                                                                                                                   \
-    obj_header *__val = check_is_object(expr);                                                                    \
+    obj_header *__val = check_is_object(expr);                                                                         \
     heap_string __hstr;                                                                                                \
     if (read_string_to_utf8(thread, &__hstr, __val) != 0) {                                                            \
       DCHECK(thread->current_exception);                                                                               \
@@ -68,12 +67,12 @@ static inline void __StoreFieldObject(obj_header *thing, slice desc, slice name,
 #define LoadFieldObject(obj, type, name) __LoadFieldObject(obj, STR("L" type ";"), STR(name))
 
 #define GeneratePrimitiveStoreField(type_cap, type, stack_field, desc, modifier)                                       \
-  static inline void __StoreField##type_cap(obj_header *thing, slice name, type value) {                          \
-    __obj_store_field(thing, name, (stack_value){.stack_field = value modifier}, STR(#desc));                     \
+  static inline void __StoreField##type_cap(obj_header *thing, slice name, type value) {                               \
+    __obj_store_field(thing, name, (stack_value){.stack_field = value modifier}, STR(#desc));                          \
   }
 
 #define GeneratePrimitiveLoadField(type_cap, type, stack_field, desc)                                                  \
-  static inline type __LoadField##type_cap(obj_header *thing, slice name) {                                       \
+  static inline type __LoadField##type_cap(obj_header *thing, slice name) {                                            \
     return __obj_load_field(thing, name, STR(#desc)).stack_field;                                                      \
   }
 
@@ -121,18 +120,18 @@ extern size_t native_capacity;
 extern native_t *natives;
 
 #define DECLARE_NATIVE_CALLBACK(class_name_, method_name_, modifier)                                                   \
-  __attribute__((used)) stack_value class_name_##_##method_name_##_cb##modifier(                                  \
-      [[maybe_unused]] vm_thread *thread, [[maybe_unused]] handle *obj, [[maybe_unused]] value *args,      \
+  __attribute__((used)) stack_value class_name_##_##method_name_##_cb##modifier(                                       \
+      [[maybe_unused]] vm_thread *thread, [[maybe_unused]] handle *obj, [[maybe_unused]] value *args,                  \
       [[maybe_unused]] u8 argc)
 
 #define create_init_constructor(package_path, class_name_, method_name_, method_descriptor_, modifier, async_sz,       \
                                 variant)                                                                               \
-  __attribute__((used)) native_t NATIVE_INFO_##class_name_##_##method_name_##_##modifier = (native_t){        \
-      .class_path = STR(package_path "/" #class_name_),                                                                                 \
-      .method_name = STR(#method_name_),                                                                                    \
-      .method_descriptor = STR(method_descriptor_),                                                                         \
-      .callback = (native_callback){.async_ctx_bytes = async_sz,                                                  \
-                                         .variant = &class_name_##_##method_name_##_cb##modifier}};
+  __attribute__((used)) native_t NATIVE_INFO_##class_name_##_##method_name_##_##modifier =                             \
+      (native_t){.class_path = STR(package_path "/" #class_name_),                                                     \
+                 .method_name = STR(#method_name_),                                                                    \
+                 .method_descriptor = STR(method_descriptor_),                                                         \
+                 .callback = (native_callback){.async_ctx_bytes = async_sz,                                            \
+                                               .variant = &class_name_##_##method_name_##_cb##modifier}};
 
 #define DECLARE_NATIVE_(package_path, class_name_, method_name_, method_descriptor_, modifier)                         \
   DECLARE_NATIVE_CALLBACK(class_name_, method_name_, modifier);                                                        \
@@ -142,7 +141,7 @@ extern native_t *natives;
 #define DECLARE_NATIVE(package_path, class_name_, method_name_, method_descriptor_)                                    \
   force_expand_args(DECLARE_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, 0)
 
-#define DECLARE_NATIVE_OVERLOADED(package_path, class_name_, method_name_, method_descriptor_, overload_idx)                                    \
+#define DECLARE_NATIVE_OVERLOADED(package_path, class_name_, method_name_, method_descriptor_, overload_idx)           \
   force_expand_args(DECLARE_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, overload_idx)
 
 #ifdef __cplusplus
@@ -161,7 +160,7 @@ extern native_t *natives;
     locals,\
     arguments(vm_thread *thread; handle *obj; value *args; u8 argc), \
     async_methods\
-  );                   \
+  );       \
   /* the arguments struct for this needs to be compatible with the async_natives_args struct */                        \
   /* todo: maybe just reuse the async_natives_args struct, rather than making a separate (but equivalent) struct for   \
    * each native */                                                                                                    \
@@ -176,9 +175,9 @@ extern native_t *natives;
 #undef _RELOAD_CACHED_STATE
 
 #define _DECLARE_CACHED_STATE(_)                                                                                       \
-  [[maybe_unused]] vm_thread *thread = self->args.thread;                                                            \
-  [[maybe_unused]] value *args = self->args.args;                                                                 \
-  [[maybe_unused]] handle *obj = self->args.obj;                                                                  \
+  [[maybe_unused]] vm_thread *thread = self->args.thread;                                                              \
+  [[maybe_unused]] value *args = self->args.args;                                                                      \
+  [[maybe_unused]] handle *obj = self->args.obj;                                                                       \
   [[maybe_unused]] u8 argc = self->args.argc;
 
 #define _RELOAD_CACHED_STATE()                                                                                         \
@@ -201,8 +200,8 @@ extern native_t *natives;
   force_expand_args(DECLARE_ASYNC_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, locals,        \
                     invoked_async_methods, 0)
 
-#define DECLARE_ASYNC_NATIVE_OVERLOADED(package_path, class_name_, method_name_, method_descriptor_, locals,                      \
-                             invoked_async_methods, overload_idx)                                                                    \
+#define DECLARE_ASYNC_NATIVE_OVERLOADED(package_path, class_name_, method_name_, method_descriptor_, locals,           \
+                                        invoked_async_methods, overload_idx)                                           \
   force_expand_args(DECLARE_ASYNC_NATIVE_, package_path, class_name_, method_name_, method_descriptor_, locals,        \
                     invoked_async_methods, overload_idx)
 
@@ -217,23 +216,22 @@ extern native_t *natives;
                                                                                                                        \
   DEFINE_ASYNC_(, empty, binding_name) {                                                                               \
     /* inline cache here? */                                                                                           \
-    cp_method *method =                                                                                           \
-        method_lookup(self->args.receiver->descriptor, STR(method_name), STR(method_descriptor), true, true);     \
+    cp_method *method =                                                                                                \
+        method_lookup(self->args.receiver->descriptor, STR(method_name), STR(method_descriptor), true, true);          \
     DCHECK(method);                                                                                                    \
-    DCHECK((sizeof(self->args) - sizeof(vm_thread *)) / sizeof(stack_value) ==                                  \
-           method->descriptor->args_count + 1);                                                                        \
-    DCHECK((sizeof(self->args) - sizeof(vm_thread *)) % sizeof(stack_value) == 0);                              \
+    DCHECK((sizeof(self->args) - sizeof(vm_thread *)) / sizeof(stack_value) == method->descriptor->args_count + 1);    \
+    DCHECK((sizeof(self->args) - sizeof(vm_thread *)) % sizeof(stack_value) == 0);                                     \
     AWAIT_INNER_(empty, &self->invoked_async_methods.call_interpreter, call_interpreter, self->args.thread, method,    \
-                 (stack_value *)self->args.receiver);                                                             \
-    stack_value result = get_async_result(call_interpreter);                                                      \
+                 (stack_value *)self->args.receiver);                                                                  \
+    stack_value result = get_async_result(call_interpreter);                                                           \
     ASYNC_END(*((return_type *)&result));                                                                              \
   }
 
 #define CallMethod(receiver, name, desc, result, ...)                                                                  \
   do {                                                                                                                 \
-    cp_method *method = method_lookup(receiver->descriptor, STR(name), STR(desc), true, true);               \
+    cp_method *method = method_lookup(receiver->descriptor, STR(name), STR(desc), true, true);                         \
     DCHECK(method);                                                                                                    \
-    stack_value args[] = {receiver, __VA_ARGS__};                                                                 \
+    stack_value args[] = {receiver, __VA_ARGS__};                                                                      \
     DCHECK((sizeof(args) / sizeof(args[0])) == method->descriptor.args_count);                                         \
     AWAIT(call_interpreter, thread, method, &args);                                                                    \
     if (result != nullptr) {                                                                                           \

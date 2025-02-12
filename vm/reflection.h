@@ -1,8 +1,8 @@
 #ifndef REFLECTION_H
 #define REFLECTION_H
 
-#include <util.h>
 #include <bjvm.h>
+#include <util.h>
 
 slice unparse_field_descriptor(slice str, const field_descriptor *desc);
 void reflect_initialize_field(vm_thread *thread, classdesc *classdesc, cp_field *field);

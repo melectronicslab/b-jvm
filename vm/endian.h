@@ -5,16 +5,15 @@
 #ifndef ENDIAN_H
 #define ENDIAN_H
 
-#include <types.h>
 #include <config.h>
+#include <types.h>
 
 #ifdef __cplusplus
 extern "C++" {
 #include <cstdint>
 #include <type_traits>
 
-template <typename T>
-constexpr T bswap_generic(T x) {
+template <typename T> constexpr T bswap_generic(T x) {
   if constexpr (std::is_same_v<T, uint8_t>) {
     return x;
   } else if constexpr (std::is_same_v<T, uint16_t>) {
@@ -38,13 +37,13 @@ constexpr T bswap_generic(T x) {
       u8 u[sizeof(output_ty)];                                                                                         \
       output_ty t;                                                                                                     \
     } pun;                                                                                                             \
-    \
+                                                                                                                       \
     output_ty raw = ((pun const *)ptr)->t;                                                                             \
     return (should_swap) ? bswap_generic(raw) : raw;                                                                   \
   }
 
-#define create_reader_variants(width) \
-  create_read_method(read_u##width##_le, u##width, !PLATFORM_LITTLE_ENDIAN); \
+#define create_reader_variants(width)                                                                                  \
+  create_read_method(read_u##width##_le, u##width, !PLATFORM_LITTLE_ENDIAN);                                           \
   create_read_method(read_u##width##_be, u##width, PLATFORM_LITTLE_ENDIAN);
 
 create_reader_variants(8);

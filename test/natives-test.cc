@@ -26,8 +26,7 @@ DEFINE_ASYNC(_nt_test_yield) {
 
 #include <natives-dsl.h>
 
-DECLARE_ASYNC_NATIVE("", AsyncNative, myYield, "(I)I", locals(int i),
-                     invoked_methods(invoked_method(_nt_test_yield))) {
+DECLARE_ASYNC_NATIVE("", AsyncNative, myYield, "(I)I", locals(int i), invoked_methods(invoked_method(_nt_test_yield))) {
   for (self->i = 0; self->i < args[0].i; self->i++) {
     AWAIT(_nt_test_yield, self->i);
   }
@@ -40,19 +39,18 @@ DECLARE_ASYNC_NATIVE("", AsyncNative, myYield, "(I)I", locals(int i),
 #define _DECLARE_CACHED_STATE(_)
 #define _RELOAD_CACHED_STATE()
 
-extern "C"
-void stout_write(char *buf, int len, void *param) {
-  auto vec = (std::vector<u8> *) param;
+extern "C" void stout_write(char *buf, int len, void *param) {
+  auto vec = (std::vector<u8> *)param;
   vec->reserve(vec->size() + len);
-  for (int i=0; i<len; i++)
-    vec->push_back((u8) buf[i]);
+  for (int i = 0; i < len; i++)
+    vec->push_back((u8)buf[i]);
 }
 
 TEST_CASE("Async natives") {
   std::vector<u8> out;
 
   vm_options vm_options = default_vm_options();
-        vm_options.classpath = STR("test_files/async_natives/");
+  vm_options.classpath = STR("test_files/async_natives/");
   vm_options.write_stdout = &stout_write;
   vm_options.write_stderr = &stout_write;
   vm_options.read_stdin = nullptr;
@@ -63,7 +61,7 @@ TEST_CASE("Async natives") {
 
   native_t *native_ptr = &NATIVE_INFO_AsyncNative_myYield_0;
   register_native(vm, native_ptr->class_path, native_ptr->method_name, native_ptr->method_descriptor,
-                         native_ptr->callback);
+                  native_ptr->callback);
 
   auto thread = create_thread(vm, default_thread_options());
 
@@ -94,7 +92,7 @@ TEST_CASE("Async natives") {
   REQUIRE(fut.status == FUTURE_READY);
 
   out.push_back(0);
-  REQUIRE(string{(char const*)out.data()} == "2\n4\n");
+  REQUIRE(string{(char const *)out.data()} == "2\n4\n");
 
   free_thread(thread);
   free_vm(vm);

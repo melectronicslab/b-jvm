@@ -7,27 +7,26 @@
 #include <sys/errno.h>
 #include <sys/fcntl.h>
 #endif
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <sys/mman.h>
 
-static obj_header* create_unix_exception(vm_thread *thread, int errno_code) {
+static obj_header *create_unix_exception(vm_thread *thread, int errno_code) {
   classdesc *classdesc = bootstrap_lookup_class(thread, STR("sun/nio/fs/UnixException"));
   obj_header *obj = new_object(thread, classdesc);
 
   cp_method *method = method_lookup(classdesc, STR("<init>"), STR("(I)V"), true, false);
-  call_interpreter_synchronous(thread, method, (stack_value[]){{.obj = obj}, {.i = errno_code}}); // constructor is void method
+  call_interpreter_synchronous(thread, method,
+                               (stack_value[]){{.obj = obj}, {.i = errno_code}}); // constructor is void method
 
   return obj;
 }
 
-DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, init, "()I") {
-  return value_null();
-}
+DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, init, "()I") { return value_null(); }
 
 DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, getcwd, "()[B") {
   INIT_STACK_STRING(cwd, 1024);
-  char* p = getcwd(cwd.chars, 1024);
+  char *p = getcwd(cwd.chars, 1024);
   if (p == nullptr) {
     return value_null();
   }
@@ -40,7 +39,6 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, getcwd, "()[B") {
   return (stack_value){.obj = array};
 }
 
-
 DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFileAttributes;)I") {
   struct stat st;
 
@@ -48,7 +46,7 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
     return value_null();
 
   uintptr_t buf = args[0].l;
-  int result = stat((char*)buf, &st);
+  int result = stat((char *)buf, &st);
   if (result)
     return (stack_value){.i = errno};
 
@@ -66,7 +64,7 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
   MapAttrLong(st_size, st.st_size);
 
 #ifdef __APPLE__
-#define suffix(x) x ## espec
+#define suffix(x) x##espec
 #else
 #define suffix(x) x
 #endif
@@ -86,14 +84,15 @@ DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, stat0, "(JLsun/nio/fs/UnixFil
 #endif
 
 #undef MapAttrLong
-  #undef MapAttrInt
+#undef MapAttrInt
 
   return (stack_value){.i = 0};
 }
 
 DECLARE_NATIVE("sun/nio/fs", UnixNativeDispatcher, open0, "(JII)I") {
-  int result = open((char const*)args[0].l, args[1].i, args[2].i);
-  if (result >= 0) return (stack_value){.i = result};
+  int result = open((char const *)args[0].l, args[1].i, args[2].i);
+  if (result >= 0)
+    return (stack_value){.i = result};
 
   thread->current_exception = create_unix_exception(thread, errno);
   return value_null();
@@ -111,9 +110,7 @@ DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, size0, "(Ljava/io/FileDescr
   return (stack_value){.l = st.st_size};
 }
 
-DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, allocationGranularity0, "()J") {
-  return (stack_value){.l = 4096};
-}
+DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, allocationGranularity0, "()J") { return (stack_value){.l = 4096}; }
 
 // (fd: FileDescriptor, prot:Int, pos: Long, len: Long, isSync: Boolean) -> Long
 DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, map0, "(Ljava/io/FileDescriptor;IJJZ)J") {
@@ -123,17 +120,17 @@ DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, map0, "(Ljava/io/FileDescri
   off_t pos = args[2].l;
   off_t len = args[3].l;
   int flags = args[4].i ? MAP_SHARED : MAP_PRIVATE;
-  void* result = mmap(nullptr, len, prot | PROT_READ, flags, fd, pos);
+  void *result = mmap(nullptr, len, prot | PROT_READ, flags, fd, pos);
   if (result == MAP_FAILED) {
     thread->current_exception = create_unix_exception(thread, errno);
     return value_null();
   }
-  arrput(thread->vm->mmap_allocations, ((mmap_allocation) { result, len }));
+  arrput(thread->vm->mmap_allocations, ((mmap_allocation){result, len}));
   return (stack_value){.l = (s64)result};
 }
 
 DECLARE_NATIVE("sun/nio/ch", UnixFileDispatcherImpl, unmap0, "(JJ)V") {
-  void* addr = (void*)args[0].l;
+  void *addr = (void *)args[0].l;
   size_t len = args[1].l;
   for (size_t i = 0; i < arrlenu(thread->vm->mmap_allocations); ++i) {
     if (thread->vm->mmap_allocations[i].ptr == addr) {

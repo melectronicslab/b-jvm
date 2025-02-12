@@ -74,8 +74,8 @@ DECLARE_NATIVE("java/lang", Class, getEnclosingMethod0, "()[Ljava/lang/Object;")
   if (!enclosing_method.class_info) {
     return value_null();
   }
-  handle *array = make_handle(thread,
-    CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 3));
+  handle *array =
+      make_handle(thread, CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 3));
 #define data ((obj_header **)ArrayData(array->obj))
 
   int error = resolve_class(thread, enclosing_method.class_info);
@@ -86,7 +86,7 @@ DECLARE_NATIVE("java/lang", Class, getEnclosingMethod0, "()[Ljava/lang/Object;")
     data[2] = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->descriptor, true);
   }
 #undef data
-  stack_value result = (stack_value) { .obj = array->obj };
+  stack_value result = (stack_value){.obj = array->obj};
   drop_handle(thread, array);
   return result;
 }
@@ -183,7 +183,7 @@ DECLARE_NATIVE("java/lang", Class, forName0,
     return (stack_value){.obj = (void *)get_class_mirror(thread, c)};
   }
 
-  oom:
+oom:
   return value_null();
 }
 
@@ -252,8 +252,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredConstructors0, "(Z)[Ljava/lang/ref
 }
 
 bool include_method(const cp_method *method, bool public_only) {
-  return !method->is_ctor && !method->is_clinit &&
-         (!public_only || method->access_flags & ACCESS_PUBLIC);
+  return !method->is_ctor && !method->is_clinit && (!public_only || method->access_flags & ACCESS_PUBLIC);
 }
 
 // Get a list of all methods on a class, optionally filtering by public_only
@@ -336,8 +335,7 @@ DECLARE_NATIVE("java/lang", Class, isInstance, "(Ljava/lang/Object;)Z") {
 
 DECLARE_NATIVE("java/lang", Class, isArray, "()Z") {
   classdesc *desc = unmirror_class(obj->obj);
-  return (stack_value){.i = desc->kind == CD_KIND_ORDINARY_ARRAY ||
-                                 desc->kind == CD_KIND_PRIMITIVE_ARRAY};
+  return (stack_value){.i = desc->kind == CD_KIND_ORDINARY_ARRAY || desc->kind == CD_KIND_PRIMITIVE_ARRAY};
 }
 
 DECLARE_NATIVE("java/lang", Class, isHidden, "()Z") { // TODO
@@ -387,7 +385,7 @@ DECLARE_NATIVE("java/lang", Class, getInterfaces0, "()[Ljava/lang/Class;") {
   classdesc *desc = unmirror_class(obj->obj);
   handle *array =
       make_handle(thread, CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Class")),
-                                                   desc->interfaces_count));
+                                              desc->interfaces_count));
 
   for (int i = 0; i < desc->interfaces_count; ++i) {
     cp_class_info *info = desc->interfaces[i];

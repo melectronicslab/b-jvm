@@ -4,8 +4,8 @@
 
 #include "adt.h"
 #include "util.h"
-#include <types.h>
 #include <stdlib.h>
+#include <types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,8 +46,7 @@ typedef struct {
 // Returns nullptr if all elements in the path were loaded ok.
 [[nodiscard]] char *init_classpath(classpath *cp, slice path);
 void free_classpath(classpath *cp);
-int lookup_classpath(classpath *cp, slice filename,
-                          u8 **bytes, size_t *len);
+int lookup_classpath(classpath *cp, slice filename, u8 **bytes, size_t *len);
 
 #ifdef __cplusplus
 }

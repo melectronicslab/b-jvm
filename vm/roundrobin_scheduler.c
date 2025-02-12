@@ -21,7 +21,7 @@ typedef struct {
   execution_record **executions;
 } impl;
 
-void free_thread_info(thread_info * info) {
+void free_thread_info(thread_info *info) {
   arrfree(info->call_queue);
   free(info);
 }
@@ -44,7 +44,7 @@ void rr_scheduler_uninit(rr_scheduler *scheduler) {
   free(I);
 }
 
-static bool is_sleeping(thread_info * info, s64 time) {
+static bool is_sleeping(thread_info *info, s64 time) {
   return info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP && (s64)info->wakeup_info->wakeup_us > time;
 }
 
@@ -55,7 +55,7 @@ u64 get_unix_us(void) {
   return time;
 }
 
-static thread_info * get_next_thr(impl *impl) {
+static thread_info *get_next_thr(impl *impl) {
   assert(impl->round_robin && "No threads to run");
   thread_info *info = impl->round_robin[0], *first = info;
   s64 time = (s64)get_unix_us();
@@ -108,7 +108,7 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
   return min >= 0 ? min : 0;
 }
 
-void unshift(impl* I, thread_info * info) {
+void unshift(impl *I, thread_info *info) {
   if (arrlen(info->call_queue) > 0) {
     arrdel(info->call_queue, 0);
   }
@@ -162,19 +162,18 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     rec->status = SCHEDULER_RESULT_DONE;
     rec->returned = call->call._result;
 
-    if (field_to_kind(&call->call.args.method->descriptor->return_type) == TYPE_KIND_REFERENCE &&
-      rec->returned.obj) {
+    if (field_to_kind(&call->call.args.method->descriptor->return_type) == TYPE_KIND_REFERENCE && rec->returned.obj) {
       // Create a handle
       rec->js_handle = make_js_handle(scheduler->vm, rec->returned.obj);
     } else {
-      rec->js_handle = -1;  // no handle here
+      rec->js_handle = -1; // no handle here
     }
 
-    free(call->call.args.args);  // free the copied arguments
+    free(call->call.args.args); // free the copied arguments
 
     unshift(impl, info);
   } else {
-    info->wakeup_info = (void*) fut.wakeup;
+    info->wakeup_info = (void *)fut.wakeup;
   }
 
   return arrlen(impl->round_robin) ? SCHEDULER_RESULT_MORE : SCHEDULER_RESULT_DONE;
@@ -203,14 +202,14 @@ scheduler_status_t rr_scheduler_execute_immediately(execution_record *record) {
       thread_info *info = I->round_robin[i];
       while (arrlen(info->call_queue) > 0) {
         pending_call *call = &info->call_queue[0];
-        info->thread->synchronous_depth++;  // force it to be synchronous
+        info->thread->synchronous_depth++; // force it to be synchronous
         future_t fut = call_interpreter(&call->call);
         info->thread->synchronous_depth--;
 
         if (fut.status == FUTURE_NOT_READY) {
           // Raise IllegalStateException
           raise_vm_exception(record->thread, STR("java/lang/IllegalStateException"),
-            STR("Cannot synchronously execute this method"));
+                             STR("Cannot synchronously execute this method"));
           return SCHEDULER_RESULT_INVAL;
         }
 
@@ -244,7 +243,7 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
   rec->_impl = scheduler->_impl;
 
   arrput(info->call_queue, pending);
-  arrput(((impl*)scheduler->_impl)->executions, rec);
+  arrput(((impl *)scheduler->_impl)->executions, rec);
   return pending.record;
 }
 

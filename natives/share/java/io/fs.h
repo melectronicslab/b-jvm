@@ -3,12 +3,7 @@
 
 #include <types.h>
 
-typedef enum : s32 {
-  BA_EXISTS = 0x01,
-  BA_REGULAR = 0x02,
-  BA_DIRECTORY = 0x04,
-  BA_HIDDEN = 0x08
-} boolean_attributes;
+typedef enum : s32 { BA_EXISTS = 0x01, BA_REGULAR = 0x02, BA_DIRECTORY = 0x04, BA_HIDDEN = 0x08 } boolean_attributes;
 
 typedef enum {
   FS_OK = 0,
@@ -21,7 +16,7 @@ typedef enum {
 
 typedef struct {
   fs_result (*get_attributes)(slice file_name, boolean_attributes *result);
-  void (*create_virtual_file)(slice file_name, boolean_attributes attributes, char const* data, size_t size);
+  void (*create_virtual_file)(slice file_name, boolean_attributes attributes, char const *data, size_t size);
 } fs;
 
 static inline slice fs_result_to_string(fs_result result) {

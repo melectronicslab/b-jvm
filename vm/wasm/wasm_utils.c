@@ -58,14 +58,10 @@ static void *module_copy(wasm_module *module, const void *src, int size) {
   return dest;
 }
 
-static wasm_type from_basic_type(wasm_value_type kind) {
-  return (wasm_type){.val = (uintptr_t)kind};
-}
+static wasm_type from_basic_type(wasm_value_type kind) { return (wasm_type){.val = (uintptr_t)kind}; }
 
-static wasm_expression *module_expr(wasm_module *module,
-                                         wasm_expr_kind kind) {
-  wasm_expression *result =
-      module_calloc(module, sizeof(wasm_expression));
+static wasm_expression *module_expr(wasm_module *module, wasm_expr_kind kind) {
+  wasm_expression *result = module_calloc(module, sizeof(wasm_expression));
   result->kind = kind;
   return result;
 }
@@ -77,9 +73,7 @@ void write_byte(bytevector *ctx, int byte) {
 }
 
 // Write the bytes to the serialization context
-void write_slice(bytevector *ctx, const u8 *bytes, size_t len) {
-  memcpy(arraddnptr(ctx->bytes, len), bytes, len);
-}
+void write_slice(bytevector *ctx, const u8 *bytes, size_t len) { memcpy(arraddnptr(ctx->bytes, len), bytes, len); }
 
 void write_u32(bytevector *ctx, u32 value) {
   u8 out[4];
@@ -105,25 +99,15 @@ void write_string(bytevector *ctx, const char *str) {
   write_slice(ctx, (const u8 *)str, len); // lol what r u gonna do about it
 }
 
-wasm_type wasm_void() {
-  return (wasm_type){.val = WASM_TYPE_KIND_VOID};
-}
+wasm_type wasm_void() { return (wasm_type){.val = WASM_TYPE_KIND_VOID}; }
 
-wasm_type wasm_int32() {
-  return (wasm_type){.val = WASM_TYPE_KIND_INT32};
-}
+wasm_type wasm_int32() { return (wasm_type){.val = WASM_TYPE_KIND_INT32}; }
 
-wasm_type wasm_float32() {
-  return (wasm_type){.val = WASM_TYPE_KIND_FLOAT32};
-}
+wasm_type wasm_float32() { return (wasm_type){.val = WASM_TYPE_KIND_FLOAT32}; }
 
-wasm_type wasm_float64() {
-  return (wasm_type){.val = WASM_TYPE_KIND_FLOAT64};
-}
+wasm_type wasm_float64() { return (wasm_type){.val = WASM_TYPE_KIND_FLOAT64}; }
 
-wasm_type wasm_int64() {
-  return (wasm_type){.val = WASM_TYPE_KIND_INT64};
-}
+wasm_type wasm_int64() { return (wasm_type){.val = WASM_TYPE_KIND_INT64}; }
 
 void wasm_writeuint(bytevector *ctx, u64 value) {
   // Credit: https://en.wikipedia.org/wiki/LEB128
@@ -156,15 +140,12 @@ wasm_module *wasm_module_create() {
   return module;
 }
 
-u32 register_function_type(wasm_module *module,
-                                       wasm_type params,
-                                       wasm_type results) {
+u32 register_function_type(wasm_module *module, wasm_type params, wasm_type results) {
   wasm_ser_function_type search = {params, results};
   // Search function types for an existing one. Since we intern types we can
   // compare by value
   for (int i = 0; i < arrlen(module->fn_types); ++i) {
-    if (memcmp(module->fn_types + i, &search,
-               sizeof(wasm_ser_function_type)) == 0)
+    if (memcmp(module->fn_types + i, &search, sizeof(wasm_ser_function_type)) == 0)
       return i;
   }
 
@@ -205,8 +186,7 @@ void serialize_typesection(bytevector *result, wasm_module *module) {
   arrfree(sect.bytes);
 }
 
-void serialize_functionsection(bytevector *result,
-                               wasm_module *module) {
+void serialize_functionsection(bytevector *result, wasm_module *module) {
   write_byte(result, SECTION_ID_FUNCTION);
   bytevector sect = {nullptr};
   wasm_writeuint(&sect, arrlen(module->functions));
@@ -221,8 +201,7 @@ void serialize_functionsection(bytevector *result,
   arrfree(sect.bytes);
 }
 
-void serialize_importsection(bytevector *result,
-                             wasm_module *module) {
+void serialize_importsection(bytevector *result, wasm_module *module) {
   const int PREDEFINED_IMPORT_COUNT = 2; // memory
   write_byte(result, SECTION_ID_IMPORT);
 
@@ -232,14 +211,14 @@ void serialize_importsection(bytevector *result,
   write_string(&sect, "env2");
   write_string(&sect, "memory");
   write_byte(&sect, WASM_IMPORT_KIND_MEMORY); // memory
-  write_byte(&sect, 0x00);                         // flags
+  write_byte(&sect, 0x00);                    // flags
   wasm_writeuint(&sect, 1);                   // initial
   // Import table
   write_string(&sect, "env2");
   write_string(&sect, "table");
   write_byte(&sect, WASM_IMPORT_KIND_TABLE);
-  write_byte(&sect, 0x70); // funcref
-  write_byte(&sect, 0x00); // only minimum limit present
+  write_byte(&sect, 0x70);  // funcref
+  write_byte(&sect, 0x00);  // only minimum limit present
   wasm_writeuint(&sect, 1); // initial
 
   for (int i = 0; i < arrlen(module->imports); ++i) {
@@ -265,8 +244,7 @@ typedef struct expression_ser_ctx {
   struct expression_ser_ctx *prev_block_ctx;
 } expression_ser_ctx;
 
-u32 walk_to_find_label(expression_ser_ctx *ctx,
-                            wasm_expression *break_to) {
+u32 walk_to_find_label(expression_ser_ctx *ctx, wasm_expression *break_to) {
   u32 i = 0;
   while (ctx && ctx->associated_block != break_to) {
     // printf("Seeking block %p, found %p\n", break_to, ctx->associated_block);
@@ -277,8 +255,7 @@ u32 walk_to_find_label(expression_ser_ctx *ctx,
   return i;
 }
 
-void serialize_expression(expression_ser_ctx *ctx, bytevector *body,
-                          wasm_expression *expr) {
+void serialize_expression(expression_ser_ctx *ctx, bytevector *body, wasm_expression *expr) {
   switch (expr->kind) {
   case WASM_EXPR_KIND_DROP:
     write_byte(body, 0x1A);
@@ -442,8 +419,7 @@ void serialize_expression(expression_ser_ctx *ctx, bytevector *body,
   }
 }
 
-void write_compressed_locals(bytevector *body,
-                             const wasm_tuple_type *locals) {
+void write_compressed_locals(bytevector *body, const wasm_tuple_type *locals) {
   bytevector types = {nullptr};
   int count = 0;
   if (locals && locals->types_len) {
@@ -466,12 +442,9 @@ void write_compressed_locals(bytevector *body,
   arrfree(types.bytes);
 }
 
-void serialize_function_locals_and_code(bytevector *body,
-                                        wasm_module *module,
-                                        wasm_function *function) {
+void serialize_function_locals_and_code(bytevector *body, wasm_module *module, wasm_function *function) {
   // Locals first
-  const wasm_tuple_type *locals =
-      wasm_get_tuple_type(function->locals);
+  const wasm_tuple_type *locals = wasm_get_tuple_type(function->locals);
   write_compressed_locals(body, locals);
   // Now write the expression
   expression_ser_ctx ctx = {module};
@@ -482,8 +455,7 @@ void serialize_function_locals_and_code(bytevector *body,
   write_byte(body, 0x0B);
 }
 
-void serialize_codesection(bytevector *code_section,
-                           wasm_module *module) {
+void serialize_codesection(bytevector *code_section, wasm_module *module) {
   write_byte(code_section, 0x0A);
   bytevector body = {nullptr};
   wasm_writeuint(&body, arrlen(module->functions));
@@ -561,21 +533,16 @@ void wasm_module_free(wasm_module *module) {
   free(module);
 }
 
-wasm_type wasm_make_tuple(wasm_module *module,
-                                    wasm_value_type *components,
-                                    int length) {
+wasm_type wasm_make_tuple(wasm_module *module, wasm_value_type *components, int length) {
   // Search for an existing tuple type
   for (int i = 0; i < arrlen(module->interned_result_types); ++i) {
     wasm_tuple_type *tuple = module->interned_result_types[i];
     if (tuple->types_len != length)
       continue;
-    if (memcmp(tuple->types, components,
-               length * sizeof(wasm_value_type)) == 0)
+    if (memcmp(tuple->types, components, length * sizeof(wasm_value_type)) == 0)
       return (wasm_type){.val = (uintptr_t)tuple};
   }
-  wasm_tuple_type *tuple =
-      module_malloc(module, sizeof(wasm_tuple_type) +
-                                length * sizeof(wasm_value_type));
+  wasm_tuple_type *tuple = module_malloc(module, sizeof(wasm_tuple_type) + length * sizeof(wasm_value_type));
   tuple->types_len = length;
   memcpy(tuple->types, components, length * sizeof(wasm_value_type));
   arrput(module->interned_result_types, tuple);
@@ -593,10 +560,7 @@ wasm_value_type wasm_get_basic_type(wasm_type type) {
   return type.val;
 }
 
-void wasm_export_function(wasm_module *module,
-                               wasm_function *fn) {
-  fn->exported = true;
-}
+void wasm_export_function(wasm_module *module, wasm_function *fn) { fn->exported = true; }
 
 const char *wasm_copy_string(wasm_module *module, const char *str) {
   char *result = module_malloc(module, strlen(str) + 1);
@@ -604,10 +568,8 @@ const char *wasm_copy_string(wasm_module *module, const char *str) {
   return result;
 }
 
-wasm_function *
-wasm_add_function(wasm_module *module, wasm_type params,
-                       wasm_type results, wasm_type locals,
-                       wasm_expression *body, const char *name) {
+wasm_function *wasm_add_function(wasm_module *module, wasm_type params, wasm_type results, wasm_type locals,
+                                 wasm_expression *body, const char *name) {
   wasm_function *fn = module_calloc(module, sizeof(wasm_function));
   fn->params = params;
   fn->results = results;
@@ -635,8 +597,7 @@ static wasm_value_type char_to_basic_type(char a) {
   }
 }
 
-wasm_type wasm_string_to_tuple(wasm_module *module,
-                                         const char *str) {
+wasm_type wasm_string_to_tuple(wasm_module *module, const char *str) {
   int len = strlen(str);
   wasm_value_type types[256];
   DCHECK(len < 256);
@@ -647,10 +608,8 @@ wasm_type wasm_string_to_tuple(wasm_module *module,
   return wasm_make_tuple(module, types, i);
 }
 
-wasm_function *
-wasm_import_runtime_function_impl(wasm_module *module,
-                                       const char *c_name, const char *params,
-                                       const char *result, void *dummy) {
+wasm_function *wasm_import_runtime_function_impl(wasm_module *module, const char *c_name, const char *params,
+                                                 const char *result, void *dummy) {
   (void)dummy;
 
   wasm_function *fn = module_calloc(module, sizeof(wasm_function));
@@ -668,68 +627,53 @@ wasm_import_runtime_function_impl(wasm_module *module,
   };
   return fn;
 }
-wasm_expression *wasm_f32_const(wasm_module *module,
-                                          float value) {
+wasm_expression *wasm_f32_const(wasm_module *module, float value) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_CONST);
   result->literal.kind = 0x43;
   memcpy(result->literal.bytes, &value, 4);
   return result;
 }
 
-wasm_expression *wasm_f64_const(wasm_module *module,
-                                          double value) {
+wasm_expression *wasm_f64_const(wasm_module *module, double value) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_CONST);
   result->literal.kind = 0x44;
   memcpy(result->literal.bytes, &value, 8);
   return result;
 }
 
-wasm_expression *wasm_i32_const(wasm_module *module,
-                                          s32 value) {
+wasm_expression *wasm_i32_const(wasm_module *module, s32 value) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_CONST);
   result->literal.kind = 0x41;
   memcpy(result->literal.bytes, &value, 4);
   return result;
 }
 
-wasm_expression *wasm_i64_const(wasm_module *module,
-                                          s64 value) {
+wasm_expression *wasm_i64_const(wasm_module *module, s64 value) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_CONST);
   result->literal.kind = 0x42;
   memcpy(result->literal.bytes, &value, 8);
   return result;
 }
 
-wasm_expression *wasm_local_get(wasm_module *module,
-                                          u32 index, wasm_type kind) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_GET_LOCAL);
+wasm_expression *wasm_local_get(wasm_module *module, u32 index, wasm_type kind) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_GET_LOCAL);
   result->local_get = index;
   result->expr_type = kind;
   return result;
 }
 
-wasm_expression *wasm_local_set(wasm_module *module,
-                                          u32 index,
-                                          wasm_expression *value) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_SET_LOCAL);
-  result->local_set =
-      (wasm_local_set_expression){.local_index = index, .value = value};
+wasm_expression *wasm_local_set(wasm_module *module, u32 index, wasm_expression *value) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_SET_LOCAL);
+  result->local_set = (wasm_local_set_expression){.local_index = index, .value = value};
   result->expr_type = wasm_void();
   return result;
 }
 
-wasm_expression *wasm_unreachable(wasm_module *module) {
-  return module_expr(module, WASM_EXPR_KIND_UNREACHABLE);
-}
+wasm_expression *wasm_unreachable(wasm_module *module) { return module_expr(module, WASM_EXPR_KIND_UNREACHABLE); }
 
-wasm_expression *wasm_binop(wasm_module *module,
-                                      wasm_binary_op_kind op,
-                                      wasm_expression *left,
-                                      wasm_expression *right) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_BINARY_OP);
+wasm_expression *wasm_binop(wasm_module *module, wasm_binary_op_kind op, wasm_expression *left,
+                            wasm_expression *right) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_BINARY_OP);
   result->binary_op = (wasm_binary_expression){
       .op = op,
       .left = left,
@@ -738,12 +682,9 @@ wasm_expression *wasm_binop(wasm_module *module,
   return result;
 }
 
-wasm_expression *wasm_select(wasm_module *module,
-                                       wasm_expression *condition,
-                                       wasm_expression *true_expr,
-                                       wasm_expression *false_expr) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_SELECT);
+wasm_expression *wasm_select(wasm_module *module, wasm_expression *condition, wasm_expression *true_expr,
+                             wasm_expression *false_expr) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_SELECT);
   result->select = (wasm_select_expression){
       .condition = condition,
       .true_expr = true_expr,
@@ -752,36 +693,27 @@ wasm_expression *wasm_select(wasm_module *module,
   return result;
 }
 
-wasm_expression *
-wasm_update_block(wasm_module *module,
-                       wasm_expression *existing_block,
-                       wasm_expression **exprs, int expr_count,
-                       wasm_type type, bool is_loop) {
+wasm_expression *wasm_update_block(wasm_module *module, wasm_expression *existing_block, wasm_expression **exprs,
+                                   int expr_count, wasm_type type, bool is_loop) {
   // Create a block expression
-  existing_block->block = (wasm_block_expression){
-      .list =
-          (wasm_expression_list){
-              .exprs = module_copy(module, exprs,
-                                   sizeof(wasm_expression *) * expr_count),
-              .expr_count = expr_count,
-          },
-      .is_loop = is_loop};
+  existing_block->block =
+      (wasm_block_expression){.list =
+                                  (wasm_expression_list){
+                                      .exprs = module_copy(module, exprs, sizeof(wasm_expression *) * expr_count),
+                                      .expr_count = expr_count,
+                                  },
+                              .is_loop = is_loop};
   existing_block->expr_type = type;
   return existing_block;
 }
 
-wasm_expression *wasm_block(wasm_module *module,
-                                      wasm_expression **exprs,
-                                      int expr_count, wasm_type type,
-                                      bool is_loop) {
+wasm_expression *wasm_block(wasm_module *module, wasm_expression **exprs, int expr_count, wasm_type type,
+                            bool is_loop) {
   wasm_expression *block = module_expr(module, WASM_EXPR_KIND_BLOCK);
-  return wasm_update_block(module, block, exprs, expr_count, type,
-                                is_loop);
+  return wasm_update_block(module, block, exprs, expr_count, type, is_loop);
 }
 
-wasm_expression *wasm_br(wasm_module *module,
-                                   wasm_expression *condition,
-                                   wasm_expression *break_to) {
+wasm_expression *wasm_br(wasm_module *module, wasm_expression *condition, wasm_expression *break_to) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_BR);
   result->br = (wasm_br_expression){
       .condition = condition,
@@ -790,13 +722,9 @@ wasm_expression *wasm_br(wasm_module *module,
   return result;
 }
 
-wasm_expression *wasm_call(wasm_module *module,
-                                     wasm_function *fn,
-                                     wasm_expression **args,
-                                     int arg_count) {
+wasm_expression *wasm_call(wasm_module *module, wasm_function *fn, wasm_expression **args, int arg_count) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_CALL);
-  wasm_expression **cpy =
-      module_copy(module, args, sizeof(wasm_expression *) * arg_count);
+  wasm_expression **cpy = module_copy(module, args, sizeof(wasm_expression *) * arg_count);
   result->call = (wasm_call_expression){
       .to_call = fn,
       .args = cpy,
@@ -805,30 +733,16 @@ wasm_expression *wasm_call(wasm_module *module,
   return result;
 }
 
-wasm_expression *wasm_call_indirect(wasm_module *module,
-                                              int table_index,
-                                              wasm_expression *index,
-                                              wasm_expression **args,
-                                              int arg_count,
-                                              u32 functype) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_CALL_INDIRECT);
-  wasm_expression **cpy =
-      module_copy(module, args, sizeof(wasm_expression*) * arg_count);
+wasm_expression *wasm_call_indirect(wasm_module *module, int table_index, wasm_expression *index,
+                                    wasm_expression **args, int arg_count, u32 functype) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_CALL_INDIRECT);
+  wasm_expression **cpy = module_copy(module, args, sizeof(wasm_expression *) * arg_count);
   result->call_indirect = (wasm_call_indirect_expression){
-      .table_index = table_index,
-      .index = index,
-      .args = cpy,
-      .arg_count = arg_count,
-      .function_type = functype
-  };
+      .table_index = table_index, .index = index, .args = cpy, .arg_count = arg_count, .function_type = functype};
   return result;
 }
 
-wasm_expression *wasm_load(wasm_module *module,
-                                     wasm_load_op_kind op,
-                                     wasm_expression *addr, int align,
-                                     int offset) {
+wasm_expression *wasm_load(wasm_module *module, wasm_load_op_kind op, wasm_expression *addr, int align, int offset) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_LOAD);
   result->load = (wasm_load_expression){
       .op = op,
@@ -840,11 +754,8 @@ wasm_expression *wasm_load(wasm_module *module,
   return result;
 }
 
-wasm_expression *wasm_store(wasm_module *module,
-                                      wasm_store_op_kind op,
-                                      wasm_expression *addr,
-                                      wasm_expression *value, int align,
-                                      int offset) {
+wasm_expression *wasm_store(wasm_module *module, wasm_store_op_kind op, wasm_expression *addr, wasm_expression *value,
+                            int align, int offset) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_STORE);
   result->store = (wasm_store_expression){
       .op = op,
@@ -856,11 +767,8 @@ wasm_expression *wasm_store(wasm_module *module,
   return result;
 }
 
-wasm_expression *wasm_if_else(wasm_module *module,
-                                        wasm_expression *cond,
-                                        wasm_expression *true_expr,
-                                        wasm_expression *false_expr,
-                                        wasm_type type) {
+wasm_expression *wasm_if_else(wasm_module *module, wasm_expression *cond, wasm_expression *true_expr,
+                              wasm_expression *false_expr, wasm_type type) {
   wasm_expression *result = module_expr(module, WASM_EXPR_KIND_IF);
   result->if_ = (wasm_if_expression){
       .condition = cond,
@@ -871,41 +779,32 @@ wasm_expression *wasm_if_else(wasm_module *module,
   return result;
 }
 
-wasm_expression *wasm_return(wasm_module *module,
-                                       wasm_expression *expr) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_RETURN);
+wasm_expression *wasm_return(wasm_module *module, wasm_expression *expr) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_RETURN);
   result->return_expr = expr;
   return result;
 }
 
 EMSCRIPTEN_KEEPALIVE
-void wasm_push_export(wasm_instantiation_result *result,
-                           const char *name, void *exported_func) {
+void wasm_push_export(wasm_instantiation_result *result, const char *name, void *exported_func) {
   wasm_instantiation_export *exp = arraddnptr(result->exports, 1);
-  exp->name = make_heap_str_from(
-      (slice){.chars = (char *)name, .len = strlen(name)});
+  exp->name = make_heap_str_from((slice){.chars = (char *)name, .len = strlen(name)});
   exp->export_ = exported_func;
 }
 
-void free_wasm_instantiation_result(
-    wasm_instantiation_result *result) {
+void free_wasm_instantiation_result(wasm_instantiation_result *result) {
   // Delete function pointers from the table
   for (int i = 0; i < arrlen(result->exports); ++i) {
     free_heap_str(result->exports[i].name);
 #ifdef EMSCRIPTEN
-    EM_ASM_(
-        { removeFunction(wasmTable.get($0)); },
-        (intptr_t)result->exports[i].export_);
+    EM_ASM_({ removeFunction(wasmTable.get($0)); }, (intptr_t)result->exports[i].export_);
 #endif
   }
   free(result);
 }
 
-wasm_instantiation_result *
-wasm_instantiate_module(wasm_module *module, const char *debug_name) {
-  wasm_instantiation_result *result =
-      calloc(1, sizeof(wasm_instantiation_result));
+wasm_instantiation_result *wasm_instantiate_module(wasm_module *module, const char *debug_name) {
+  wasm_instantiation_result *result = calloc(1, sizeof(wasm_instantiation_result));
 #ifndef EMSCRIPTEN
   result->status = WASM_INSTANTIATION_FAIL;
   return result;
@@ -917,26 +816,22 @@ wasm_instantiate_module(wasm_module *module, const char *debug_name) {
         var slice = HEAPU8.subarray($0, $1);
         try {
           var module = new WebAssembly.Module(slice);
-          var instance = new WebAssembly.Instance(
-              module, {env : wasmExports, env2 : {memory : wasmMemory, table : wasmTable }});
+          var instance =
+              new WebAssembly.Instance(module, {env : wasmExports, env2 : {memory : wasmMemory, table : wasmTable}});
           let count = 0;
           for (var exp in instance.exports)
             count++;
-          require("fs").writeFileSync("debug/test" + UTF8ToString($2) + ".wasm",
-                                      slice);
+          require("fs").writeFileSync("debug/test" + UTF8ToString($2) + ".wasm", slice);
           return addFunction(instance.exports.run, 'iiii');
         } catch (e) {
           // Exit Node.js
           console.log(e);
-          require("fs").writeFileSync(
-              "debug/broken" + UTF8ToString($2) + ".wasm", slice);
+          require("fs").writeFileSync("debug/broken" + UTF8ToString($2) + ".wasm", slice);
           process.exit(1);
           return 0;
         }
       },
-      (intptr_t)serialized.bytes,
-      (intptr_t)(serialized.bytes + arrlen(serialized.bytes)),
-      (intptr_t)debug_name);
+      (intptr_t)serialized.bytes, (intptr_t)(serialized.bytes + arrlen(serialized.bytes)), (intptr_t)debug_name);
   if (ptr) {
     result->status = WASM_INSTANTIATION_SUCCESS;
     result->run = (void *)ptr;
@@ -948,11 +843,8 @@ wasm_instantiate_module(wasm_module *module, const char *debug_name) {
   return result;
 }
 
-wasm_expression *wasm_unop(wasm_module *module,
-                                     wasm_unary_op_kind op,
-                                     wasm_expression *expr) {
-  wasm_expression *result =
-      module_expr(module, WASM_EXPR_KIND_UNARY_OP);
+wasm_expression *wasm_unop(wasm_module *module, wasm_unary_op_kind op, wasm_expression *expr) {
+  wasm_expression *result = module_expr(module, WASM_EXPR_KIND_UNARY_OP);
   result->unary_op = (wasm_unary_expression){
       .op = op,
       .arg = expr,
@@ -975,7 +867,8 @@ wasm_type jvm_type_to_wasm(type_kind kind) {
     return wasm_float64();
   case TYPE_KIND_LONG:
     return wasm_int64();
-  case TYPE_KIND_VOID: [[fallthrough]];
+  case TYPE_KIND_VOID:
+    [[fallthrough]];
   default:
     UNREACHABLE();
   }

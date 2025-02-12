@@ -5,8 +5,8 @@
 #ifndef VTABLE_H
 #define VTABLE_H
 
-#include <types.h>
 #include <stddef.h>
+#include <types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,8 +72,7 @@ cp_method *vtable_lookup(classdesc const *classdesc, size_t index);
 // Look up a method in the itables. No ranges are checked, but nullptr is
 // returned if the object does not actually implement the method, or if there
 // are multiple methods that could be called.
-cp_method *itable_lookup(classdesc const *cd,
-                                   classdesc const *interface, size_t index);
+cp_method *itable_lookup(classdesc const *cd, classdesc const *interface, size_t index);
 
 #ifdef __cplusplus
 }

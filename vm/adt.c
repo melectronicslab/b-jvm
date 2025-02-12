@@ -8,9 +8,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
-compressed_bitset empty_bitset() {
-  return (compressed_bitset){.bits_inl = 1};
-}
+compressed_bitset empty_bitset() { return (compressed_bitset){.bits_inl = 1}; }
 
 bool is_bitset_compressed(compressed_bitset bits) {
   return (bits.bits_inl & 1) != 0; // pointer is aligned
@@ -39,8 +37,7 @@ static void push_set_bits(u64 bits, int offset, int **existing_buf) {
  *
  * Used to follow references during garbage collection.
  */
-void list_compressed_bitset_bits(compressed_bitset bits,
-                                      int **stbds_vector) {
+void list_compressed_bitset_bits(compressed_bitset bits, int **stbds_vector) {
   arrsetlen(*stbds_vector, 0);
   if (is_bitset_compressed(bits)) {
     push_set_bits(bits.bits_inl >> 1, 0, stbds_vector);
@@ -96,13 +93,11 @@ void arena_uninit(arena *a) {
   a->begin = nullptr;
 }
 
-void init_compressed_bitset(compressed_bitset *bs,
-                                 int bits_capacity) {
+void init_compressed_bitset(compressed_bitset *bs, int bits_capacity) {
   if (bits_capacity > 63) {
     u32 size_words = (bits_capacity + 63) / 64;
     u64 *buffer = calloc(size_words, sizeof(u64));
-    *bs = (compressed_bitset){.ptr.bits = buffer,
-                                   .ptr.size_words = size_words};
+    *bs = (compressed_bitset){.ptr.bits = buffer, .ptr.size_words = size_words};
   } else {
     *bs = (compressed_bitset){
         .bits_inl = 1 // lowest bit = 1
@@ -110,9 +105,7 @@ void init_compressed_bitset(compressed_bitset *bs,
   }
 }
 
-void get_compressed_bitset_word_and_offset(compressed_bitset *bits,
-                                           size_t bit_index, u64 **word,
-                                           u8 *offset) {
+void get_compressed_bitset_word_and_offset(compressed_bitset *bits, size_t bit_index, u64 **word, u8 *offset) {
   if (is_bitset_compressed(*bits)) {
     DCHECK(bit_index < 63);
     *word = &bits->bits_inl;
@@ -124,17 +117,14 @@ void get_compressed_bitset_word_and_offset(compressed_bitset *bits,
   }
 }
 
-bool test_compressed_bitset(const compressed_bitset bits,
-                                 size_t bit_index) {
+bool test_compressed_bitset(const compressed_bitset bits, size_t bit_index) {
   u64 *word;
   u8 offset;
-  get_compressed_bitset_word_and_offset((compressed_bitset *)&bits,
-                                        bit_index, &word, &offset);
+  get_compressed_bitset_word_and_offset((compressed_bitset *)&bits, bit_index, &word, &offset);
   return *word & (1ULL << offset);
 }
 
-bool test_reset_compressed_bitset(compressed_bitset *bits,
-                                       size_t bit_index) {
+bool test_reset_compressed_bitset(compressed_bitset *bits, size_t bit_index) {
   u64 *word;
   u8 offset;
   get_compressed_bitset_word_and_offset(bits, bit_index, &word, &offset);
@@ -143,8 +133,7 @@ bool test_reset_compressed_bitset(compressed_bitset *bits,
   return test;
 }
 
-bool test_set_compressed_bitset(compressed_bitset *bits,
-                                     size_t bit_index) {
+bool test_set_compressed_bitset(compressed_bitset *bits, size_t bit_index) {
   u64 *word;
   u8 offset;
   get_compressed_bitset_word_and_offset(bits, bit_index, &word, &offset);
@@ -158,8 +147,7 @@ void string_builder_init(string_builder *builder) {
   builder->write_pos = 0;
 }
 
-void string_builder_append(string_builder *builder, const char *fmt,
-                                ...) {
+void string_builder_append(string_builder *builder, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
   int len = vsnprintf(nullptr, 0, fmt, args);
@@ -175,13 +163,9 @@ void string_builder_append(string_builder *builder, const char *fmt,
   builder->write_pos = arrlen(builder->data) - 1;
 }
 
-void string_builder_free(string_builder *builder) {
-  arrfree(builder->data);
-}
+void string_builder_free(string_builder *builder) { arrfree(builder->data); }
 
-string_hash_table make_hash_table(void (*free_fn)(void *),
-                                            double load_factor,
-                                            size_t initial_capacity) {
+string_hash_table make_hash_table(void (*free_fn)(void *), double load_factor, size_t initial_capacity) {
   string_hash_table table;
   table.free = free_fn;
   table.entries = calloc(initial_capacity, sizeof(hash_table_entry));
@@ -191,8 +175,7 @@ string_hash_table make_hash_table(void (*free_fn)(void *),
   return table;
 }
 
-hash_table_iterator
-hash_table_get_iterator(string_hash_table *tbl) {
+hash_table_iterator hash_table_get_iterator(string_hash_table *tbl) {
   hash_table_iterator iter;
   iter.current_base = tbl->entries;
   hash_table_entry *end = tbl->entries + tbl->entries_cap;
@@ -204,9 +187,7 @@ hash_table_get_iterator(string_hash_table *tbl) {
   return iter;
 }
 
-bool hash_table_iterator_has_next(hash_table_iterator iter,
-                                       char **key, size_t *key_len,
-                                       void **value) {
+bool hash_table_iterator_has_next(hash_table_iterator iter, char **key, size_t *key_len, void **value) {
   if (iter.current != iter.end) {
     *key = iter.current->key;
     *key_len = iter.current->key_len;
@@ -244,13 +225,11 @@ static u32 fxhash_string(const char *key, size_t len) {
     hash = ((hash << 5 | hash >> 59) ^ word) * FXHASH_CONST;
   }
 
-  return (u32) hash;
+  return (u32)hash;
 }
 
-hash_table_entry *
-find_hash_table_entry(string_hash_table *tbl, const char *key,
-                           size_t len, bool *equal, bool *on_chain,
-                           hash_table_entry **prev_entry) {
+hash_table_entry *find_hash_table_entry(string_hash_table *tbl, const char *key, size_t len, bool *equal,
+                                        bool *on_chain, hash_table_entry **prev_entry) {
   if (unlikely(tbl->entries_cap == 0))
     return nullptr;
   u32 hash = fxhash_string(key, len);
@@ -278,13 +257,10 @@ find_hash_table_entry(string_hash_table *tbl, const char *key,
   return prev;
 }
 
-void *hash_table_delete(string_hash_table *tbl, const char *key,
-                             int len) {
+void *hash_table_delete(string_hash_table *tbl, const char *key, int len) {
   bool equal, on_chain;
   len = len == -1 ? (int)strlen(key) : len;
-  hash_table_entry *prev,
-      *ent =
-          find_hash_table_entry(tbl, key, len, &equal, &on_chain, &prev);
+  hash_table_entry *prev, *ent = find_hash_table_entry(tbl, key, len, &equal, &on_chain, &prev);
   if (!equal)
     return nullptr;
   tbl->entries_count--;
@@ -303,15 +279,13 @@ void *hash_table_delete(string_hash_table *tbl, const char *key,
 }
 
 void hash_table_rehash(string_hash_table *tbl, size_t new_capacity) {
-  string_hash_table new_table =
-      make_hash_table(tbl->free, tbl->load_factor, new_capacity);
+  string_hash_table new_table = make_hash_table(tbl->free, tbl->load_factor, new_capacity);
   hash_table_iterator iter = hash_table_get_iterator(tbl);
   char *key;
   size_t len;
   void *value;
   while (hash_table_iterator_has_next(iter, &key, &len, &value)) {
-    hash_table_insert_impl(&new_table, key, len, value,
-                                false /* don't copy key */);
+    hash_table_insert_impl(&new_table, key, len, value, false /* don't copy key */);
     hash_table_entry *ent = iter.current;
     bool entry_on_chain = iter.current != iter.current_base;
     hash_table_iterator_next(&iter);
@@ -323,20 +297,17 @@ void hash_table_rehash(string_hash_table *tbl, size_t new_capacity) {
   *tbl = new_table;
 }
 
-void *hash_table_insert_impl(string_hash_table *tbl, char *key,
-                                  int len_, void *value, bool copy_key) {
+void *hash_table_insert_impl(string_hash_table *tbl, char *key, int len_, void *value, bool copy_key) {
   DCHECK(len_ >= -1);
   size_t len = len_ == -1 ? (int)strlen(key) : len_;
 
   bool equal, on_chain;
-  if ((double)tbl->entries_count + 1 >=
-      tbl->load_factor * (double)tbl->entries_cap) {
+  if ((double)tbl->entries_count + 1 >= tbl->load_factor * (double)tbl->entries_cap) {
     hash_table_rehash(tbl, tbl->entries_cap * 2);
   }
 
   [[maybe_unused]] hash_table_entry *prev;
-  hash_table_entry *ent =
-      find_hash_table_entry(tbl, key, len, &equal, &on_chain, &prev);
+  hash_table_entry *ent = find_hash_table_entry(tbl, key, len, &equal, &on_chain, &prev);
   if (equal) {
     void *ret_val = ent->data;
     ent->data = value;
@@ -362,19 +333,14 @@ void *hash_table_insert_impl(string_hash_table *tbl, char *key,
   return nullptr;
 }
 
-void *hash_table_insert(string_hash_table *tbl, const char *key,
-                             int len, void *value) {
-  return hash_table_insert_impl(tbl, (char *)key /* key copied */, len,
-                                     value, true);
+void *hash_table_insert(string_hash_table *tbl, const char *key, int len, void *value) {
+  return hash_table_insert_impl(tbl, (char *)key /* key copied */, len, value, true);
 }
 
-void *hash_table_lookup(string_hash_table *tbl, const char *key,
-                             int len) {
+void *hash_table_lookup(string_hash_table *tbl, const char *key, int len) {
   bool equal, on_chain;
   len = len == -1 ? (int)strlen(key) : len;
-  hash_table_entry *_prev,
-      *entry =
-          find_hash_table_entry(tbl, key, len, &equal, &on_chain, &_prev);
+  hash_table_entry *_prev, *entry = find_hash_table_entry(tbl, key, len, &equal, &on_chain, &_prev);
   return equal ? entry->data : nullptr;
 }
 
