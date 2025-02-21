@@ -2,10 +2,5 @@
 #include <objects.h>
 
 DECLARE_NATIVE("java/lang", String, intern, "()Ljava/lang/String;") {
-  if (obj->obj == nullptr) {
-    ThrowLangException(NullPointerException);
-    return value_null();
-  }
-
   return (stack_value){.obj = InternJString(thread, obj->obj)};
 }

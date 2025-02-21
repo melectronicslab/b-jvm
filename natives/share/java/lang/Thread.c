@@ -14,7 +14,7 @@ DECLARE_NATIVE("java/lang", Thread, holdsLock, "(Ljava/lang/Object;)Z") {
   assert(argc == 1);
   handle *lock_obj = args[0].handle;
   if (!lock_obj) {
-    ThrowLangException(NullPointerException);
+    raise_null_pointer_exception(thread);
     return value_null();
   }
 

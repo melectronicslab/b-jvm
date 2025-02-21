@@ -23,7 +23,7 @@ DECLARE_NATIVE("java/lang", Object, clone, "()Ljava/lang/Object;") {
   case CD_KIND_ORDINARY: {
     // Check if the object is Cloneable
     if (!cloneable(thread->vm, obj->obj->descriptor)) {
-      ThrowLangException("CloneNotSupportedException");
+      raise_vm_exception_no_msg(thread, STR("java/lang/CloneNotSupportedException"));
       return value_null();
     }
 

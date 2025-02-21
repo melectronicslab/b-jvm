@@ -54,6 +54,10 @@ int raise_vm_exception(vm_thread *thread, const slice exception_name, slice msg_
   return 0;
 }
 
+int raise_vm_exception_no_msg(vm_thread *thread, const slice exception_name){
+  return raise_vm_exception(thread, exception_name, null_str());
+}
+
 void raise_div0_arithmetic_exception(vm_thread *thread) {
   raise_vm_exception(thread, STR("java/lang/ArithmeticException"), STR("/ by zero"));
 }

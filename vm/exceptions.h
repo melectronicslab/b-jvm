@@ -15,6 +15,9 @@ __attribute__((noinline)) void raise_exception_object(vm_thread *thread, obj_hea
 // that you have the exception class put among the cached class descriptors.
 __attribute__((noinline)) int raise_vm_exception(vm_thread *thread, slice exception_name, slice msg_modified_utf8);
 
+// Helper function to raise VM-generated exceptions.
+__attribute__((noinline)) int raise_vm_exception_no_msg(vm_thread *thread, slice exception_name) ;
+
 // Raise a division-by-zero ArithmeticException.
 __attribute__((noinline)) void raise_div0_arithmetic_exception(vm_thread *thread);
 

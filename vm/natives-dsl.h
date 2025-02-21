@@ -30,18 +30,6 @@ static inline stack_value __obj_load_field(obj_header *thing, slice field_name, 
 
 maybe_extern_end;
 
-#define ThrowLangException(exception_name) raise_vm_exception(thread, STR("java/lang/" #exception_name), null_str())
-
-#define ThrowLangExceptionM(exception_name, fmt, ...)                                                                  \
-  do {                                                                                                                 \
-    char msg[1024];                                                                                                    \
-    size_t size = snprintf(msg, 1024, fmt, __VA_ARGS__);                                                               \
-    slice msg_slice = {msg, size};                                                                                     \
-    raise_vm_exception(thread, STR("java/lang/" exception_name), msg_slice);                                           \
-  } while (0)
-
-#define MakeHandle(obj) make_handle(thread, obj)
-
 static inline obj_header *check_is_object(obj_header *thing) { return thing; }
 
 #define AsHeapString(expr, on_oom)                                                                                     \

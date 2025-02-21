@@ -14,7 +14,7 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
   char *data = (char *)ArrayData(bytes);
 
   if (offset < 0 || length < 0 || (long)offset + length > ArrayLength(bytes)) {
-    ThrowLangException(ArrayIndexOutOfBoundsException);
+    raise_vm_exception_no_msg(thread, STR("java/lang/ArrayIndexOutOfBoundsException"));
     return value_null();
   }
 

@@ -47,7 +47,7 @@ DECLARE_NATIVE("java/io", FileInputStream, read0, "()I") {
 
   obj_header *array = args[0].handle->obj;
   if (!array) {
-    ThrowLangException(NullPointerException);
+    raise_null_pointer_exception(thread);
     return value_null();
   }
 
@@ -82,7 +82,7 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
 
   obj_header *array = args[0].handle->obj;
   if (!array) {
-    ThrowLangException(NullPointerException);
+    raise_null_pointer_exception(thread);
     return value_null();
   }
 
@@ -90,7 +90,7 @@ DECLARE_NATIVE("java/io", FileInputStream, readBytes, "([BII)I") {
   s32 length = args[2].i;
 
   if (offset < 0 || length < 0 || (s64)offset + length > ArrayLength(array)) {
-    ThrowLangException(ArrayIndexOutOfBoundsException);
+    raise_vm_exception_no_msg(thread, STR("java/lang/ArrayIndexOutOfBoundsException"));
     return value_null();
   }
 

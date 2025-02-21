@@ -4,7 +4,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "io-natives.h"
 #include "unixlike-fs.h"
 
 DECLARE_NATIVE("java/io", UnixFileSystem, initIDs, "()V") { return value_null(); }
