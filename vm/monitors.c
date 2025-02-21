@@ -11,7 +11,7 @@ DEFINE_ASYNC(monitor_acquire) {
   self->handle = make_handle(args->thread, args->obj);
   monitor_data *allocated_data = nullptr; // lazily allocated
 
-  header_word volatile *shared_header = &self->handle->obj->header_word;
+#define shared_header &self->handle->obj->header_word
   assert((uintptr_t)shared_header % 8 == 0); // should be aligned due to how bump_allocate works
 
   header_word fetched_header;
@@ -24,12 +24,13 @@ DEFINE_ASYNC(monitor_acquire) {
       break; // the monitor exists
     }
     // we need to allocate one ourselves
-    if (!allocated_data)
+    if (!allocated_data) {
       allocated_data = allocate_monitor(args->thread);
-    if (unlikely(!allocated_data)) { // oom
-      drop_handle(args->thread, self->handle);
-      out_of_memory(args->thread);
-      ASYNC_RETURN(-1);
+      if (unlikely(!allocated_data)) { // oom
+        drop_handle(args->thread, self->handle);
+        out_of_memory(args->thread);
+        ASYNC_RETURN(-1);
+      }
     }
 
     allocated_data->mark_word = fetched_header.mark_word;
@@ -43,6 +44,7 @@ DEFINE_ASYNC(monitor_acquire) {
                                   __ATOMIC_ACQUIRE)) {
       break; // success
     }
+#undef shared_header
   }
 
   // now, a monitor is guaranteed to exist
@@ -79,7 +81,7 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
   self->handle = make_handle(args->thread, args->obj);
 
   // just sanity check, can remove
-  header_word volatile *shared_header = &self->handle->obj->header_word;
+#define shared_header &self->handle->obj->header_word
   assert((uintptr_t)shared_header % 8 == 0); // should be aligned due to how bump_allocate works
   header_word fetched_header;
   __atomic_load(shared_header, &fetched_header, __ATOMIC_ACQUIRE);
@@ -111,6 +113,7 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
   }
 
   // done acquiring the monitor
+#undef shared_header
   drop_handle(args->thread, self->handle);
   ASYNC_END(0);
 }
