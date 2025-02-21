@@ -32,6 +32,7 @@
   X(file_not_found_exception, "java/io/FileNotFoundException")                                                         \
   X(io_exception, "java/io/IOException")                                                                               \
   X(interrupted_exception, "java/lang/InterruptedException")                                                           \
+  X(class_format_error, "java/lang/ClassFormatError")                                                                  \
   X(clone_not_supported_exception, "java/lang/CloneNotSupportedException")                                             \
   X(illegal_monitor_state_exception, "java/lang/IllegalMonitorStateException")                                         \
   X(illegal_state_exception, "java/lang/IllegalStateException")
@@ -53,7 +54,12 @@
   X(thread_group, "java/lang/ThreadGroup")                                                                             \
   X(module, "java/lang/Module")                                                                                        \
   X(system, "java/lang/System")                                                                                        \
-  X(cloneable, "java/lang/Cloneable")
+  X(cloneable, "java/lang/Cloneable") \
+  X(integer, "java/lang/Integer") \
+  X(long_, "java/lang/Long") \
+  X(float_, "java/lang/Float") \
+  X(double_, "java/lang/Double") \
+  X(throwable, "java/lang/Throwable")
 
 #define CACHED_CLASSDESCS(X)                                                                                           \
   __CACHED_EXCEPTION_CLASSES(X)                                                                                        \

@@ -107,7 +107,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
       return status;
     }
   } else {
-    assert(utf8_equals(hslc(cd->name), "java/lang/Object"));
+    assert(utf8_equals(cd->name, "java/lang/Object"));
   }
 
   setup_super_hierarchy(cd);
@@ -159,7 +159,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
                                                              : allocate_field(&nonstatic_offset, kind);
 
 #if AGGRESSIVE_DEBUG
-    printf("Allocating field %.*s for class %.*s at %d\n", fmt_slice(field->name), fmt_slice(classdesc->name),
+    printf("Allocating field %.*s for class %.*s at %zu\n", fmt_slice(field->name), fmt_slice(cd->name),
            field->byte_offset);
 #endif
   }

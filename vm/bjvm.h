@@ -2,8 +2,8 @@
 // Created by Cowpox on 12/10/24.
 //
 
-#ifndef H
-#define H
+#ifndef BJVM_H
+#define BJVM_H
 
 #include <async.h>
 #include <types.h>
@@ -64,6 +64,7 @@ typedef struct {
   obj_header *obj;
 #ifndef NDEBUG
   int line;
+  const char *filename;
 #endif
 } handle;
 
@@ -380,7 +381,7 @@ typedef struct vm {
   obj_header **js_handles;
 
   /// Struct containing cached classdescs
-  struct cached_classdescs *cached_classdescs;
+  void *_cached_classdescs;  // struct cached_classdescs* -- type erased to discourage unsafe accesses
 
   s64 next_thread_id; // MUST BE 64 BITS
 
@@ -391,12 +392,18 @@ typedef struct vm {
   // Vector of allocations done via mmap, to be unmapped
   mmap_allocation *mmap_allocations;
 
+  // Vector of z_streams, to be freed
+  void **z_streams;  // z_stream **
+
   // Latest TID
   s32 next_tid;
 
   bool vm_initialized;
   void *scheduler; // rr_scheduler or null
+  void *debugger;  // standard_debugger or null
 } vm;
+
+struct cached_classdescs *cached_classes(vm *vm);
 
 // Java Module
 typedef struct module {
@@ -465,16 +472,28 @@ typedef struct native_frame {
   const method_descriptor *method_shape;
 } native_frame;
 
+typedef struct {
+  int pc;
+  object oops[];
+} compiled_frame;
+
+typedef enum : u8 {
+  FRAME_KIND_INTERPRETER,
+  FRAME_KIND_NATIVE,
+  FRAME_KIND_COMPILED
+} frame_kind;
+
 // A frame is either a native frame or a plain frame. They may be distinguished
 // with is_native.
 //
 // Native frames may be consecutive: for example, a native method might invoke
 // another native method, which itself raises an interrupt.
 typedef struct stack_frame {
-  u8 is_native;
+  frame_kind is_native;
   u8 is_async_suspended;
+  // todo: enum 0- non 1- synchronize in progress, 2- synchronized, and done
+  u8 attempted_synchronize; // whether this frame method has been synchronized
   u16 num_locals;
-  interpret_t async_frame;
 
   // The method associated with this frame
   cp_method *method;
@@ -482,6 +501,7 @@ typedef struct stack_frame {
   union {
     plain_frame plain;
     native_frame native;
+    compiled_frame compiled;
   };
 } stack_frame;
 
@@ -489,7 +509,8 @@ typedef struct stack_frame {
 // counter.
 u16 stack_depth(const stack_frame *frame);
 
-static inline bool is_frame_native(const stack_frame *frame) { return frame->is_native != 0; }
+static inline bool is_frame_native(const stack_frame *frame) { return frame->is_native == FRAME_KIND_NATIVE; }
+static inline bool is_interpreter_frame(const stack_frame *frame) { return frame->is_native == FRAME_KIND_INTERPRETER; }
 value *get_native_args(const stack_frame *frame); // same as locals, just called args for native
 
 stack_value *frame_stack(stack_frame *frame);
@@ -509,6 +530,7 @@ void drop_js_handle(vm *vm, int index);
 struct async_stack;
 typedef struct async_stack async_stack_t;
 
+#define MONITOR_ACQUIRE_CONTINUATION_SIZE 56
 typedef struct vm_thread {
   // Global VM corresponding to this thread
   vm *vm;
@@ -560,18 +582,28 @@ typedef struct vm_thread {
   // Current number of active synchronous calls
   u32 synchronous_depth;
 
+  char synchronize_acquire_continuation[MONITOR_ACQUIRE_CONTINUATION_SIZE];
+
   s32 tid;
 
   // Allocation for the refuel_check wakeup info
   void *refuel_wakeup_info;
 
   // Thread-local allocation buffer (objects are first created here)
+
+  // Whether this thread is currently being debugged, AND the debugger should be consulted after the execution of
+  // every bytecode instruction.
+  bool is_single_stepping;
+  // Whether this thread is currently paused in the debugger
+  bool paused_in_debugger;
 } vm_thread;
 
-handle *make_handle_impl(vm_thread *thread, obj_header *obj, int line_no);
-#define make_handle(thread, obj) make_handle_impl(thread, obj, __LINE__)
+handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char* file, int line_no);
+// Create a handle to the given object. Should always be paired with drop_handle.
+#define make_handle(thread, obj) make_handle_impl(thread, obj, __FILE__, __LINE__)
 
 void drop_handle(vm_thread *thread, handle *handle);
+bool is_builtin_class(slice chars);
 
 /**
  * Create an uninitialized frame with space sufficient for the given method.
@@ -608,7 +640,8 @@ typedef struct {
 } thread_options;
 
 thread_options default_thread_options();
-vm_thread *create_thread(vm *vm, thread_options options);
+vm_thread *create_main_thread(vm *vm, thread_options options);
+vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thread *thread_obj, thread_options options); // wraps a Thread obj
 void free_thread(vm_thread *thread);
 
 /**
@@ -639,8 +672,8 @@ cp_method **unmirror_ctor(obj_header *mirror);
 void set_field(obj_header *obj, cp_field *field, stack_value stack_value);
 int resolve_field(vm_thread *thread, cp_field_info *info);
 stack_value get_field(obj_header *obj, cp_field *field);
-cp_field *field_lookup(classdesc *classdesc, slice const name, slice const descriptor);
-cp_field *field_lookup(classdesc *classdesc, const slice name, const slice descriptor);
+// Look up a (possibly inherited) field on the class.
+cp_field *field_lookup(classdesc *classdesc, slice name, slice descriptor);
 int multianewarray(vm_thread *thread, plain_frame *frame, struct multianewarray_data *multianewarray, u16 *sd);
 void dump_frame(FILE *stream, const stack_frame *frame);
 
@@ -693,4 +726,4 @@ void *bump_allocate(vm_thread *thread, size_t bytes);
 }
 #endif
 
-#endif // H
+#endif // BJVM_H

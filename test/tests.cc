@@ -411,7 +411,7 @@ TEST_CASE("Immediate dominators computation on cursed CFG") {
   classdesc desc;
   auto cursed_file = ReadFile("test_files/cfg_fuck/Main.class").value();
   parse_classfile(cursed_file.data(), cursed_file.size(), &desc, nullptr);
-  REQUIRE(utf8_equals(hslc(desc.name), "Main"));
+  REQUIRE(utf8_equals(desc.name, "Main"));
 
   cp_method *m = desc.methods + 4;
   REQUIRE(utf8_equals(m->name, "main"));
@@ -503,7 +503,8 @@ As a char: A
   REQUIRE(result_many.stdin_ == ""); // BufferedReader tries to consume 8192 bytes, but we only provide 7
 }
 
-#if 0 // these cases are slowwww
+#define ALL_PERF_TESTS 0
+#if ALL_PERF_TESTS // these cases are slowwww
 
 TEST_CASE("Sudoku solver") {
   int num_puzzles = 33761;
@@ -545,7 +546,7 @@ TEST_CASE("Scheduled worker sudoku solver") {
   std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
   auto now = std::chrono::system_clock::now();
 
-  auto result = run_scheduled_test_case("test_files/sudoku/", false, "WorkerThreadSudoku");
+  auto result = run_scheduled_test_case("test_files/sudoku/", true, "UnsafeWorkerThreadSudoku");
   // last puzzle
   REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") != std::string::npos);
   REQUIRE(result.sleep_count == 0); // chop chop
@@ -586,8 +587,8 @@ param3
 }
 
 TEST_CASE("Extended NPE message") {
-  auto result = run_test_case("test_files/extended_npe/", false, "ExtendedNPETests");
-  REQUIRE(result.stdout_ == "");
+  auto result = run_test_case("test_files/extended_npe/", true, "ExtendedNPETests");
+  REQUIRE(result.stderr_ == "");
 }
 
 #if 0
@@ -598,11 +599,16 @@ TEST_CASE("ITextPDF") {
 }
 #endif
 
-#if 0
 TEST_CASE("Class loading") {
-  auto result = run_test_case("test_files/basic_classloader/", false, "URLClassLoaderExample");
+  auto result = run_test_case("test_files/basic_classloader/", true, "URLClassLoaderExample");
+  REQUIRE(result.stdout_ == R"(Loaded class: ExternalClass
+ExternalClass instance created!
+someMethod() in ExternalClass was called!
+Loaded class: ExternalClass
+ExternalClass instance created!
+someMethod() in ExternalClass was called!
+)");
 }
-#endif
 
 TEST_CASE("java.lang.reflect.Method") {
   auto result = run_test_case("test_files/reflection_method/", true, "ReflectionMethod");
@@ -714,3 +720,61 @@ TEST_CASE("Concurrent initialisation") {
 Finished initializing!
 )");
 }
+
+TEST_CASE("VarHandle") {
+  auto result = run_test_case("test_files/var_handles/", true, "Main");
+  REQUIRE(result.stdout_ == R"(true
+new
+)");
+}
+
+TEST_CASE("Synchronized counter") {
+  auto result = run_scheduled_test_case("test_files/synchronized_counter/", true, "Main");
+  REQUIRE(result.stdout_ == R"(Final count: 5000
+)");
+  std::cout << "Scheduler yielded " << result.yield_count << " times!" << std::endl;
+}
+
+TEST_CASE("Synchronized wait/notify") {
+  auto result = run_scheduled_test_case("test_files/synchronized_counter/", true, "TestSynchronizedCountdown");
+  REQUIRE(result.stdout_ == R"(Num arrived: 21
+Countdown value: 0
+)");
+  std::cout << "Scheduler yielded " << result.yield_count << " times!" << std::endl;
+}
+
+TEST_CASE("Random UUID") {
+  auto result = run_test_case("test_files/random_uuid/", true, "Main");
+  REQUIRE(result.stderr_ == "");
+}
+
+TEST_CASE("New instance") {
+  auto result = run_test_case("test_files/new_instance/", true, "Main");
+  REQUIRE(result.stdout_ == R"(Test 3.14
+Test
+)");
+}
+
+TEST_CASE("URLClassLoader") {
+  auto result = run_test_case("test_files/url-classloader/", true, "LoaderTest");
+  REQUIRE(result.stdout_ == "Hello, world!\n");
+}
+
+TEST_CASE("frem and drem") {
+  auto result = run_test_case("test_files/frem_drem/", true, "FremDremTest");
+  REQUIRE(result.stdout_ == R"(0.099999994
+0.09999999999999998
+)");
+}
+
+TEST_CASE("Manually thrown exception") {
+  // Tests that frames associated with fillInStackTrace are correctly skipped
+  auto result = run_test_case("test_files/manually_thrown", true, "ManuallyThrown");
+  REQUIRE(result.stderr_ == "java.lang.NullPointerException\n\tat ManuallyThrown.cow(ManuallyThrown.java:11)\n\tat ManuallyThrown.main(ManuallyThrown.java:4)\n");
+}
+
+#if 1
+TEST_CASE("Print useful trampolines") {
+  print_method_sigs();
+}
+#endif

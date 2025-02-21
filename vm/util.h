@@ -12,6 +12,7 @@ extern "C" {
 #include <string.h>
 #include <types.h>
 #include <wchar.h>
+#include "config.h"
 
 // These are unlikely (ha!) to actually improve codegen, but are actually kind
 // of nice to indicate what we "think" is going to happen. Long term we might
@@ -46,6 +47,7 @@ extern "C" {
       fprintf(stderr, "%s: %s%d: CHECK(%s) failed: ", __func__, __FILE__, __LINE__, #condition);                       \
       fprintf(stderr, " " __VA_ARGS__);                                                                                \
       fprintf(stderr, "\n");                                                                                           \
+      *(char*)1 = 0; \
       abort();                                                                                                         \
     }                                                                                                                  \
   } while (0)
@@ -215,9 +217,10 @@ static inline slice str_to_utf8(const char *str) {
 
 #define force_inline __attribute__((always_inline)) inline
 
-bool utf8_equals(const slice entry, const char *str);
-bool utf8_equals_utf8(const slice left, const slice right);
+bool utf8_equals(slice entry, const char *str);
+bool utf8_equals_utf8(slice left, slice right);
 bool utf8_ends_with(slice str, slice ending);
+u64 get_unix_us(void);
 
 #ifdef __cplusplus
 }

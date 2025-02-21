@@ -1,3 +1,5 @@
+import java.util.UUID;
+
 public final class NBodyProblem {
     static final class Body {
         public double x, y, z, vx, vy, vz, mass;
@@ -156,5 +158,21 @@ public final class NBodyProblem {
         System.out.println("Sun final position: " + bodies[0].x + " " + bodies[0].y + " " + bodies[0].z);
 
         System.out.println("Simulation took: " + (System.currentTimeMillis() - time) + "ms");
+    }
+
+    public static String getString() {
+        return "Hello, World!";
+    }
+
+    public static void printString(String s) {
+        System.out.println(s);
+    }
+
+    public static String randomUUID() {
+        return UUID.randomUUID().toString();
+    }
+
+    public static String[] exampleArray() {
+        return new String[] { "Hello", "World", "Lol", null };
     }
 }

@@ -11,7 +11,7 @@ else ()
     set(DCHECK_DEFAULT OFF)
 endif ()
 
-option( DCHECKS_ENABLED "Enable DCHECKs" ${DCHECK_DEFAULT})
+option(DCHECKS_ENABLED "Enable DCHECKs" ${DCHECK_DEFAULT})
 
 file(GLOB bjvm_SRC CONFIGURE_DEPENDS "*.c" "*.h")
 file(GLOB bjvm_wasm_SRC CONFIGURE_DEPENDS "wasm/*.c" "wasm/*.h")
@@ -58,4 +58,4 @@ check_include_file(libkern/OSByteOrder.h HAVE_OSBYTEORDER_H)
 
 configure_file(config.h.in "${CMAKE_CURRENT_BINARY_DIR}/config.h")
 
-target_compile_options(vm PRIVATE -Wl,--whole_archive -Wno-unused-command-line-argument -Werror=sign-compare -Wall -Werror -Werror=uninitialized -Wno-pragmas -Wno-unused-parameter -fno-strict-aliasing -Wno-missing-field-initializers -Wno-format-zero-length -Wno-atomic-alignment)
+target_compile_options(vm PRIVATE -Wno-c99-designator -Wl,--whole_archive -Wno-unused-command-line-argument -Werror=sign-compare -Wall -Werror -Werror=uninitialized -Wno-pragmas -Wno-unused-parameter -fno-strict-aliasing -Wno-missing-field-initializers -Wno-format-zero-length -Wno-atomic-alignment)

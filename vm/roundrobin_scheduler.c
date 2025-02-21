@@ -22,6 +22,9 @@ typedef struct {
 } impl;
 
 void free_thread_info(thread_info *info) {
+  // todo: should acquire thread_obj monitor and run notifyAll
+  info->thread->thread_obj->eetop = 0; // set the eetop to nullptr
+
   arrfree(info->call_queue);
   free(info);
 }
@@ -46,13 +49,6 @@ void rr_scheduler_uninit(rr_scheduler *scheduler) {
 
 static bool is_sleeping(thread_info *info, s64 time) {
   return info->wakeup_info && info->wakeup_info->kind == RR_WAKEUP_SLEEP && (s64)info->wakeup_info->wakeup_us > time;
-}
-
-u64 get_unix_us(void) {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
-  return time;
 }
 
 static thread_info *get_next_thr(impl *impl) {
@@ -136,7 +132,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     return SCHEDULER_RESULT_DONE;
 
   vm_thread *thread = info->thread;
-  const int MICROSECONDS_TO_RUN = 30000;
+  const int MICROSECONDS_TO_RUN = 1 << 30;
 
   thread->fuel = 50000;
 
@@ -170,7 +166,6 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     }
 
     free(call->call.args.args); // free the copied arguments
-
     unshift(impl, info);
   } else {
     info->wakeup_info = (void *)fut.wakeup;

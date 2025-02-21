@@ -304,7 +304,7 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
     u16 index = reader_next_u16(reader, "string index");
     return (cp_entry){
         .kind = CP_KIND_STRING,
-        .string = {.chars = skip_linking ? null_str() : checked_get_utf8(ctx->cp, index, "string value")}};
+        .string = {.chars = skip_linking ? null_str() : checked_get_utf8(ctx->cp, index, "string value"), .interned = nullptr}};
   }
   case CONSTANT_Integer: {
     s32 value = reader_next_s32(reader, "integer value");
@@ -346,7 +346,8 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
   case CONSTANT_MethodHandle: {
     u8 handle_kind = reader_next_u8(reader, "method handle kind");
     u16 reference_index = reader_next_u16(reader, "reference index");
-    cp_entry *entry = skip_linking ? nullptr : checked_cp_entry(ctx->cp, reference_index, 0, "method handle reference");
+    cp_entry *entry = skip_linking ? nullptr : checked_cp_entry(ctx->cp, reference_index,
+      CP_KIND_FIELD_REF | CP_KIND_METHOD_REF | CP_KIND_INTERFACE_METHOD_REF, "method handle reference");
     // TODO validate both
     return (cp_entry){.kind = CP_KIND_METHOD_HANDLE, .method_handle = {.handle_kind = handle_kind, .reference = entry}};
   }
@@ -456,10 +457,6 @@ constant_pool *parse_constant_pool(cf_byteslice *reader, classfile_parse_ctx *ct
         // TODO fix ^^ this is janky af
       }
       ent->my_index = cp_i;
-
-      if (ent->kind == CP_KIND_PACKAGE) {
-        printf("PACKAGE: %.*s\n", fmt_slice(ent->class_info.name));
-      }
 
       if (ent->kind == CP_KIND_LONG || ent->kind == CP_KIND_DOUBLE) {
         get_constant_pool_entry(pool, cp_i + 1)->kind = CP_KIND_INVALID;
@@ -1640,6 +1637,7 @@ cp_field read_field(cf_byteslice *reader, classfile_parse_ctx *ctx) {
  * if there was an error.
  */
 char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *result, arena *arena) {
+  const char *field_start = *chars;
   const char *end = *chars + len;
   int dimensions = 0;
   while (*chars < end) {
@@ -1658,6 +1656,7 @@ char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *r
     case 'Z':
     case 'V':
       result->base_kind = (type_kind)c;
+      result->unparsed = arena_make_str(arena, field_start, *chars - field_start);
       if (c == 'V' && dimensions > 0)
         return strdup("void cannot have dimensions");
       return nullptr;
@@ -1665,18 +1664,21 @@ char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *r
       ++dimensions;
       break;
     case 'L': {
-      const char *start = *chars;
+      const char *class_start = *chars;
       while (*chars < end && **chars != ';')
         ++*chars;
       if (*chars == end)
         return strdup("missing ';' in reference type");
-      int class_name_len = *chars - start;
+      int class_name_len = *chars - class_start;
       if (class_name_len == 0) {
         return strdup("missing reference type name");
       }
       ++*chars;
       result->base_kind = TYPE_KIND_REFERENCE;
-      result->class_name = arena_make_str(arena, start, class_name_len);
+      result->unparsed = arena_make_str(arena, field_start, *chars - field_start);
+      DCHECK(class_start > field_start);
+      DCHECK(*chars > field_start + 1);
+      result->class_name = subslice_to(result->unparsed, class_start - field_start, *chars - field_start - 1);
       return nullptr;
     }
     default: {
@@ -1789,9 +1791,9 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
   cp_class_info *this_class =
       &checked_cp_entry(cf->pool, reader_next_u16(&reader, "this class"), CP_KIND_CLASS, "this class")->class_info;
   cf->self = this_class;
-  cf->name = (heap_string){.chars = this_class->name.chars, .len = this_class->name.len}; // TODO unjank
+  cf->name = this_class->name;
 
-  bool is_primordial_object = utf8_equals(hslc(cf->name), "java/lang/Object");
+  bool is_primordial_object = utf8_equals(cf->name, "java/lang/Object");
 
   u16 super_class = reader_next_u16(&reader, "super class");
   cf->super_class = ((cf->access_flags & ACCESS_MODULE) | is_primordial_object)
@@ -1825,9 +1827,10 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
   cf->bootstrap_methods = nullptr;
   cf->indy_insns = nullptr;
   cf->sigpoly_insns = nullptr;
+  cf->array_type = nullptr;
 
-  bool in_MethodHandle = utf8_equals(hslc(cf->name), "java/lang/invoke/MethodHandle") ||
-                         utf8_equals(hslc(cf->name), "java/lang/invoke/VarHandle");
+  bool in_MethodHandle = utf8_equals(cf->name, "java/lang/invoke/MethodHandle") ||
+                         utf8_equals(cf->name, "java/lang/invoke/VarHandle");
   for (int i = 0; i < cf->methods_count; ++i) {
     cp_method *method = cf->methods + i;
     *method = parse_method(&reader, &ctx);

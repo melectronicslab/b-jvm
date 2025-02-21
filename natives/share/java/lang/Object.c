@@ -1,4 +1,6 @@
 #include <natives-dsl.h>
+#include <monitors.h>
+#include <roundrobin_scheduler.h>
 
 DECLARE_NATIVE("java/lang", Object, hashCode, "()I") { return (stack_value){.i = (s32)get_object_hash_code(obj->obj)}; }
 
@@ -6,20 +8,15 @@ DECLARE_NATIVE("java/lang", Object, registerNatives, "()V") { return value_null(
 
 // Check whether the class is cloneable.
 static bool cloneable(vm *vm, classdesc *cd) {
-  for (int i = 0; i < arrlen(cd->itables.interfaces); i++) {
-    if (cd->itables.interfaces[i] == vm->cached_classdescs->cloneable) {
-      return true;
-    }
-  }
-  return false;
+  return instanceof(cd, cached_classes(vm)->cloneable);
 }
 
 DECLARE_NATIVE("java/lang", Object, clone, "()Ljava/lang/Object;") {
   switch (obj->obj->descriptor->kind) {
   case CD_KIND_ORDINARY_ARRAY: {
-    obj_header *new_array = CreateObjectArray1D(thread, obj->obj->descriptor->one_fewer_dim, *ArrayLength(obj->obj));
+    obj_header *new_array = CreateObjectArray1D(thread, obj->obj->descriptor->one_fewer_dim, ArrayLength(obj->obj));
     if (new_array) {
-      memcpy(ArrayData(new_array), ArrayData(obj->obj), *ArrayLength(obj->obj) * sizeof(void *));
+      memcpy(ArrayData(new_array), ArrayData(obj->obj), ArrayLength(obj->obj) * sizeof(void *));
     }
     return (stack_value){.obj = new_array};
   }
@@ -38,12 +35,12 @@ DECLARE_NATIVE("java/lang", Object, clone, "()Ljava/lang/Object;") {
   }
   case CD_KIND_PRIMITIVE_ARRAY: {
     obj_header *new_array =
-        CreatePrimitiveArray1D(thread, obj->obj->descriptor->primitive_component, *ArrayLength(obj->obj));
+        CreatePrimitiveArray1D(thread, obj->obj->descriptor->primitive_component, ArrayLength(obj->obj));
     if (!new_array) {
       return value_null();
     }
     memcpy(ArrayData(new_array), ArrayData(obj->obj),
-           *ArrayLength(obj->obj) * sizeof_type_kind(obj->obj->descriptor->primitive_component));
+           ArrayLength(obj->obj) * sizeof_type_kind(obj->obj->descriptor->primitive_component));
     return (stack_value){.obj = new_array};
   }
   default:
@@ -56,13 +53,45 @@ DECLARE_NATIVE("java/lang", Object, getClass, "()Ljava/lang/Class;") {
 }
 
 DECLARE_NATIVE("java/lang", Object, notifyAll, "()V") {
-  return value_null(); // TODO
+  return value_null(); // TODO: no-op, since wait always returns spuriously rn
 }
 
 DECLARE_NATIVE("java/lang", Object, notify, "()V") {
-  return value_null(); // TODO
+  return value_null(); // TODO: no-op, since wait always returns spuriously rn
 }
 
-DECLARE_NATIVE("java/lang", Object, wait, "()V") {
-  return value_null(); // TODO
+DECLARE_ASYNC_NATIVE("java/lang", Object, wait0, "(J)V", locals(u32 holdCount; rr_wakeup_info wakeup_info), invoked_methods(invoked_method(monitor_reacquire_hold_count))) {
+  assert(argc == 1);
+  s64 timeoutMillis = args[0].l;
+  assert(timeoutMillis >= 0); // this is always checked before calling this private method
+
+  (void) timeoutMillis; // cope with unused var
+
+  if (thread->thread_obj->interrupted) {
+    thread->thread_obj->interrupted = false; // throw and reset flag
+    raise_vm_exception(thread, STR("java/lang/InterruptedException"), STR("Thread interrupted before monitor waiting"));
+    ASYNC_RETURN_VOID();
+  }
+
+  self->holdCount = monitor_release_all_hold_count(thread, obj->obj);
+  if (self->holdCount == 0) {
+        raise_vm_exception(thread, STR("java/lang/IllegalMonitorStateException"), STR("Thread does not hold monitor before waiting"));
+        ASYNC_RETURN_VOID();
+  }
+
+  // todo: we always just yield once and return; always "spuriously" wake up (very inefficient, lazy)
+  self->wakeup_info.kind = RR_WAKEUP_YIELDING;
+  ASYNC_YIELD((void *) &self->wakeup_info);
+
+  // wake up: re-acquire the monitor
+  AWAIT(monitor_reacquire_hold_count, thread, obj->obj, self->holdCount);
+  assert(get_async_result(monitor_reacquire_hold_count) == 0);
+
+  if (thread->thread_obj->interrupted) {
+    thread->thread_obj->interrupted = false; // throw and reset flag
+    raise_vm_exception(thread, STR("java/lang/InterruptedException"), STR("Thread interrupted before monitor waiting"));
+    ASYNC_RETURN_VOID();
+  }
+
+  ASYNC_END_VOID();
 }

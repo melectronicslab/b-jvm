@@ -9,33 +9,22 @@
 
 DECLARE_NATIVE("java/io", UnixFileSystem, initIDs, "()V") { return value_null(); }
 
-DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0, "(Ljava/io/File;)I", locals(),
-                     invoked_methods()) {
-  unixlike_fs const *fs = unix_get_active_fs();
-  if (!fs) {
-    ThrowLangException(UnsupportedOperationException);
-    goto exception;
-  }
+DECLARE_NATIVE("java/io", UnixFileSystem, checkAccess0, "(Ljava/io/File;I)Z") { return (stack_value) { .i = 1 }; }
 
-  // todo: replace with getPath when async natives work
-  obj_header *path = LoadFieldObject(args[0].handle->obj, "java/lang/String", "path");
-  heap_string str = AsHeapString(path, exception);
+DECLARE_ASYNC_NATIVE("java/io", UnixFileSystem, getBooleanAttributes0,
+"(Ljava/io/File;)I", locals(), invoked_methods()) {
+  obj_header *file_obj = args[0].handle->obj;
+  obj_header *path = LoadFieldObject(file_obj, "java/lang/String", "path");
 
-  boolean_attributes attrs;
-  fs_result result = fs->fs.get_attributes(hslc(str), &attrs);
+  heap_string path_str = AsHeapString(path, on_oom);
 
-  free_heap_str(str);
+  struct stat st;
+  int result = stat(path_str.chars, &st) != 0 ? 0 : BA_EXISTS | (S_ISDIR(st.st_mode) ? BA_DIRECTORY : BA_REGULAR);
+  free_heap_str(path_str);
 
-  if (result != FS_OK) {
-    ThrowIOExceptionM("%.*s", fmt_slice(fs_result_to_string(result)));
-    goto exception;
-  }
+  ASYNC_RETURN((stack_value) {.i = result});
 
-  ASYNC_RETURN((stack_value){.i = result});
-
-exception:
-  ASYNC_RETURN(value_null());
-
+  on_oom:
   ASYNC_END(value_null());
 }
 
@@ -78,7 +67,7 @@ DECLARE_NATIVE("java/io", UnixFileSystem, canonicalize0, "(Ljava/lang/String;)Lj
 
   // Concatenate the current working directory with the given path
   object raw = RawStringData(thread, args[0].handle->obj);
-  slice data = (slice){.chars = ArrayData(raw), .len = *ArrayLength(raw)};
+  slice data = (slice){.chars = ArrayData(raw), .len = ArrayLength(raw)};
 
   heap_string canonical = canonicalize_path(data); // todo: deal with oom here
 

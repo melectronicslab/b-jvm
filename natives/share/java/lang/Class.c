@@ -27,7 +27,7 @@ DECLARE_NATIVE("java/lang", Class, getPrimitiveClass, "(Ljava/lang/String;)Ljava
   // this is fine because if it's a primitive type, it'll look the same regardless of how it's encoded
   obj_header *str_data = RawStringData(thread, args[0].handle->obj);
   char *chars = ArrayData(str_data);
-  int len = *ArrayLength(str_data);
+  int len = ArrayLength(str_data);
 
   if (len > 10) {
     return value_null();
@@ -158,18 +158,36 @@ DECLARE_NATIVE("java/lang", Class, forName0,
   // Read args[0] as a string
   obj_header *name_obj = args[0].handle->obj;
 
+  obj_header *classloader = args[2].handle->obj;
+
   heap_string name_str = AsHeapString(name_obj, oom);
   for (size_t i = 0; i < name_str.len; ++i) {
     name_str.chars[i] = name_str.chars[i] == '.' ? '/' : name_str.chars[i];
   }
-  classdesc *c = bootstrap_lookup_class(thread, hslc(name_str));
+  classdesc *c;
+  if (!classloader) {
+    c = bootstrap_lookup_class(thread, hslc(name_str));
+  } else {
+    // Invoke findClass on the classloader
+    cp_method *find_class = method_lookup(classloader->descriptor, STR("loadClass"),
+      STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
+    CHECK(find_class);
+    stack_value args[2] = {{.obj = classloader}, {.obj = name_obj}};
+    stack_value result = call_interpreter_synchronous(thread, find_class, args);
+    if (!result.obj) {
+      return value_null();
+    }
+    c = unmirror_class(result.obj);
+  }
 
   int error = link_class(thread, c);
   CHECK(!error);
 
   if (c && args[1].i) {
     initialize_class_t ctx = {.args = {thread, c}};
+    thread->synchronous_depth++;
     future_t f = initialize_class(&ctx);
+    thread->synchronous_depth--;
     CHECK(f.status == FUTURE_READY);
 
     if (ctx._result) {
@@ -207,7 +225,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredFields0, "(Z)[Ljava/lang/reflect/F
       ++fields;
     }
   }
-  classdesc *Field = thread->vm->cached_classdescs->field;
+  classdesc *Field = cached_classes(thread->vm)->field;
   obj_header *result = CreateObjectArray1D(thread, Field, fields);
   if (!result)
     return value_null();
