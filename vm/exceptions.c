@@ -4,15 +4,15 @@
 void raise_exception_object(vm_thread *thread, object obj) {
   DCHECK(!thread->current_exception && "Exception is already raised");
   DCHECK(obj && "Exception object must be non-null");
-  DCHECK(instanceof(obj->descriptor, cached_classes(thread->vm)->throwable)
-    && "Exception is not subclass of Throwable");
+  DCHECK(instanceof(obj->descriptor, cached_classes(thread->vm)->throwable) &&
+         "Exception is not subclass of Throwable");
 
   thread->current_exception = obj;
 
 #define T ((struct native_Throwable *)obj)
 
-  if (arrlen(thread->frames) > 0) {
-    stack_frame *frame = arrlast(thread->frames);
+  if (arrlen(thread->stack.frames) > 0) {
+    stack_frame *frame = arrlast(thread->stack.frames);
     if (!is_frame_native(frame)) {
       T->faulting_insn = frame->plain.program_counter;
       T->method = frame->method;
@@ -23,7 +23,7 @@ void raise_exception_object(vm_thread *thread, object obj) {
 #undef T
 }
 
-[[noreturn]] __attribute__((noinline)) static void vm_exception_was_not_initialized(slice name) {
+[[noreturn]] static void vm_exception_was_not_initialized(slice name) {
   fprintf(stderr, "VM-generated exceptions should be initialised at VM boot\n");
   fprintf(stderr, "Raising exception of type %.*s\n", fmt_slice(name));
   abort();
@@ -38,7 +38,7 @@ int raise_vm_exception(vm_thread *thread, const slice exception_name, slice msg_
 
   // Create the exception object
   handle *handle = make_handle(thread, new_object(thread, classdesc));
-  if (msg_utf8.chars) {
+  if (msg_utf8.len > 0) {
     // Call the constructor taking in a single String value
     object msg = MakeJStringFromModifiedUTF8(thread, msg_utf8, false);
     cp_method *method = method_lookup(classdesc, STR("<init>"), STR("(Ljava/lang/String;)V"), true, false);
@@ -49,12 +49,13 @@ int raise_vm_exception(vm_thread *thread, const slice exception_name, slice msg_
     call_interpreter_synchronous(thread, method, (stack_value[]){{.obj = handle->obj}});
   }
 
-  raise_exception_object(thread, handle->obj);
+  if (!thread->current_exception)
+    raise_exception_object(thread, handle->obj);
   drop_handle(thread, handle);
   return 0;
 }
 
-int raise_vm_exception_no_msg(vm_thread *thread, const slice exception_name){
+int raise_vm_exception_no_msg(vm_thread *thread, const slice exception_name) {
   return raise_vm_exception(thread, exception_name, null_str());
 }
 

@@ -17,14 +17,13 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, shouldBeInitialized0, "(Ljava/lang/C
   return (stack_value){.i = desc->state != CD_STATE_INITIALIZED};
 }
 
-DECLARE_NATIVE("jdk/internal/misc", Unsafe, ensureClassInitialized0, "(Ljava/lang/Class;)V") {
+DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, ensureClassInitialized0, "(Ljava/lang/Class;)V", locals(),
+                     invoked_methods(invoked_method(initialize_class))) {
   classdesc *desc = unmirror_class(args[0].handle->obj);
   if (desc->state != CD_STATE_INITIALIZED) {
-    initialize_class_t pox = {.args = {thread, desc}};
-    future_t f = initialize_class(&pox);
-    CHECK(f.status == FUTURE_READY);
+    AWAIT(initialize_class, thread, desc);
   }
-  return value_null();
+  ASYNC_END(value_null());
 }
 
 DECLARE_NATIVE("jdk/internal/misc", Unsafe, objectFieldOffset0, "(Ljava/lang/reflect/Field;)J") {
@@ -186,7 +185,29 @@ DECLARE_NATIVE_OVERLOADED("jdk/internal/misc", Unsafe, putLong, "(Ljava/lang/Obj
   return value_null();
 }
 
+DECLARE_NATIVE_OVERLOADED("jdk/internal/misc", Unsafe, putLongVolatile, "(JJ)V", 1) {
+  DCHECK(argc == 2);
+  *(s64 *)args[0].l = args[1].l;
+  return value_null();
+}
+
+DECLARE_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V") { return value_null(); }
+
+DECLARE_NATIVE("jdk/internal/misc", Unsafe, unpark, "(Ljava/lang/Object;)V") { return value_null(); }
+
+DECLARE_NATIVE_OVERLOADED("jdk/internal/misc", Unsafe, putLongVolatile, "(Ljava/lang/Object;JJ)V", 2) {
+  DCHECK(argc == 3);
+  memcpy((char *)args[0].handle->obj + args[1].l, &args[2].l, sizeof(s64));
+  return value_null();
+}
+
 DECLARE_NATIVE("jdk/internal/misc", Unsafe, putInt, "(Ljava/lang/Object;JI)V") {
+  DCHECK(argc == 3);
+  *(s32 *)((uintptr_t)args[0].handle->obj + args[1].l) = args[2].i;
+  return value_null();
+}
+
+DECLARE_NATIVE("jdk/internal/misc", Unsafe, putIntVolatile, "(Ljava/lang/Object;JI)V") {
   DCHECK(argc == 3);
   *(s32 *)((uintptr_t)args[0].handle->obj + args[1].l) = args[2].i;
   return value_null();
@@ -330,6 +351,6 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, copyMemory0, "(Ljava/lang/Object;JLj
 // setMemory0(Object o, long offset, long bytes, byte value);
 DECLARE_NATIVE("jdk/internal/misc", Unsafe, setMemory0, "(Ljava/lang/Object;JJB)V") {
   assert(argc == 4);
-  memset((void*)((uintptr_t)args[0].handle->obj + args[1].l), args[3].i, args[2].l);
+  memset((void *)((uintptr_t)args[0].handle->obj + args[1].l), args[3].i, args[2].l);
   return value_null();
 }

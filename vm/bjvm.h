@@ -154,7 +154,7 @@ mark_word_t *get_mark_word(header_word *data);
 monitor_data *inspect_monitor(header_word *data);
 // only call this if inspect_monitor returns nullptr
 // doesn't store this allocated data onto the object, because that should later be done atomically by someone else
-monitor_data *allocate_monitor(vm_thread *thread); // doesn't initialize any monitor data
+monitor_data *allocate_monitor_for(vm_thread *thread, obj_header *obj); // doesn't initialize any monitor data
 
 void read_string(vm_thread *thread, obj_header *obj, s8 **buf,
                  size_t *len); // todo: get rid of
@@ -168,8 +168,8 @@ typedef int (*poll_available_bytes)(void *param); // returns the number of bytes
 
 #define CARD_BYTES 4096
 
-typedef struct plain_frame plain_frame;
 typedef struct stack_frame stack_frame;
+typedef struct plain_frame plain_frame;
 typedef struct native_frame native_frame;
 
 // Continue execution of a thread.
@@ -366,7 +366,10 @@ typedef struct vm {
   // available (even if it isn't running anything)
   vm_thread *primordial_thread;
 
+  // Swaps between these two heaps. Long term we'll have only one for memory efficiency.
   u8 *heap;
+  u8 *heap_swap;
+
   // Next object should be allocated here. Should always be 8-byte aligned
   // which is the alignment of BJVM objects.
   size_t heap_used;
@@ -381,7 +384,7 @@ typedef struct vm {
   obj_header **js_handles;
 
   /// Struct containing cached classdescs
-  void *_cached_classdescs;  // struct cached_classdescs* -- type erased to discourage unsafe accesses
+  void *_cached_classdescs; // struct cached_classdescs* -- type erased to discourage unsafe accesses
 
   s64 next_thread_id; // MUST BE 64 BITS
 
@@ -393,7 +396,7 @@ typedef struct vm {
   mmap_allocation *mmap_allocations;
 
   // Vector of z_streams, to be freed
-  void **z_streams;  // z_stream **
+  void **z_streams; // z_stream **
 
   // Latest TID
   s32 next_tid;
@@ -477,11 +480,7 @@ typedef struct {
   object oops[];
 } compiled_frame;
 
-typedef enum : u8 {
-  FRAME_KIND_INTERPRETER,
-  FRAME_KIND_NATIVE,
-  FRAME_KIND_COMPILED
-} frame_kind;
+typedef enum : u8 { FRAME_KIND_INTERPRETER, FRAME_KIND_NATIVE, FRAME_KIND_COMPILED } frame_kind;
 
 // A frame is either a native frame or a plain frame. They may be distinguished
 // with is_native.
@@ -491,8 +490,11 @@ typedef enum : u8 {
 typedef struct stack_frame {
   frame_kind is_native;
   u8 is_async_suspended;
-  // todo: enum 0- non 1- synchronize in progress, 2- synchronized, and done
-  u8 attempted_synchronize; // whether this frame method has been synchronized
+  enum : u8 {
+    SYNCHRONIZE_NONE = 0,
+    SYNCHRONIZE_IN_PROGRESS = 1,
+    SYNCHRONIZE_DONE = 2
+  } synchronized_state; // info about whether this frame method has been synchronized
   u16 num_locals;
 
   // The method associated with this frame
@@ -535,19 +537,34 @@ typedef struct vm_thread {
   // Global VM corresponding to this thread
   vm *vm;
 
-  // Essentially the stack of the thread -- a contiguous buffer which stores
-  // stack_frames
-  char *frame_buffer;
-  u32 frame_buffer_capacity;
-  // Also pointer one past the end of the last stack frame
-  u32 frame_buffer_used;
+  struct {
+    // a contiguous buffer which stores stack_frames and intermediate data
+    char *frame_buffer;
+    u32 frame_buffer_capacity;
+    // index of one past the end of the last stack frame
+    u32 frame_buffer_used;
+
+    // Pointers into the frame_buffer
+    stack_frame **frames;
+
+    /// Secondary stack for async calls from the interpreter
+    async_stack_t *async_call_stack;
+
+    // Current number of active synchronous calls
+    u32 synchronous_depth;
+
+    // If true, the call stack must fully unwind because we are e.g. waiting for
+    // a JS Promise. This should only be cleared by the top-level scheduler.
+    // This function is used in thread_run, which attempts to run code in
+    // a synchronous manner.
+    bool must_unwind;
+
+    char synchronize_acquire_continuation[MONITOR_ACQUIRE_CONTINUATION_SIZE];
+  } stack;
 
   // Pre-allocated out-of-memory and stack overflow errors
   obj_header *out_of_mem_error;
   obj_header *stack_overflow_error;
-
-  // Pointers into the frame_buffer
-  stack_frame **frames;
 
   // Currently propagating exception
   obj_header *current_exception;
@@ -565,24 +582,11 @@ typedef struct vm_thread {
   // Handle for null
   handle null_handle;
 
-  // If true, the call stack must fully unwind because we are e.g. waiting for
-  // a JS Promise. This should only be cleared by the top-level scheduler.
-  // This function is used in thread_run, which attempts to run code in
-  // a synchronous manner.
-  bool must_unwind;
-
-  /// Secondary stack for async calls from the interpreter
-  async_stack_t *async_stack;
-
   int allocations_so_far;
   // This value is used to periodically check whether we should yield back to the scheduler ...
   u32 fuel;
   // ... if the current time is past this value
   u64 yield_at_time;
-  // Current number of active synchronous calls
-  u32 synchronous_depth;
-
-  char synchronize_acquire_continuation[MONITOR_ACQUIRE_CONTINUATION_SIZE];
 
   s32 tid;
 
@@ -598,7 +602,7 @@ typedef struct vm_thread {
   bool paused_in_debugger;
 } vm_thread;
 
-handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char* file, int line_no);
+handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file, int line_no);
 // Create a handle to the given object. Should always be paired with drop_handle.
 #define make_handle(thread, obj) make_handle_impl(thread, obj, __FILE__, __LINE__)
 
@@ -641,7 +645,8 @@ typedef struct {
 
 thread_options default_thread_options();
 vm_thread *create_main_thread(vm *vm, thread_options options);
-vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thread *thread_obj, thread_options options); // wraps a Thread obj
+vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thread *thread_obj,
+                            thread_options options); // wraps a Thread obj
 void free_thread(vm_thread *thread);
 
 /**
@@ -670,6 +675,7 @@ cp_method **unmirror_method(obj_header *mirror);
 cp_method **unmirror_ctor(obj_header *mirror);
 
 void set_field(obj_header *obj, cp_field *field, stack_value stack_value);
+void set_static_field(cp_field *field, stack_value stack_value);
 int resolve_field(vm_thread *thread, cp_field_info *info);
 stack_value get_field(obj_header *obj, cp_field *field);
 // Look up a (possibly inherited) field on the class.

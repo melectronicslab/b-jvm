@@ -103,20 +103,20 @@
 #ifdef EMSCRIPTEN
 #define WITH_UNDEF(expr)                                                                                               \
   do {                                                                                                                 \
-    s64 a_undef = 0;                                                                                                       \
-    float b_undef = 0;                                                                                                     \
-    double c_undef = 0;                                                                                                    \
+    s64 a_undef = 0;                                                                                                   \
+    float b_undef = 0;                                                                                                 \
+    double c_undef = 0;                                                                                                \
     MUSTTAIL return (expr);                                                                                            \
   } while (0);
 #else
 #define WITH_UNDEF(expr)                                                                                               \
-do {                                                                                                                 \
-s64 a_undef;                                                                                                       \
-float b_undef;                                                                                                     \
-double c_undef;                                                                                                    \
-asm volatile ("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef)); \
-MUSTTAIL return (expr);                                                                                            \
-} while (0);
+  do {                                                                                                                 \
+    s64 a_undef;                                                                                                       \
+    float b_undef;                                                                                                     \
+    double c_undef;                                                                                                    \
+    asm volatile("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef));                                                    \
+    MUSTTAIL return (expr);                                                                                            \
+  } while (0);
 #endif
 
 #ifdef EMSCRIPTEN
@@ -169,9 +169,9 @@ MUSTTAIL return (expr);                                                         
   float __tos = (tos);                                                                                                 \
   WITH_UNDEF(jmp_table_float[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, __tos, c_undef));
 #define ADVANCE_DOUBLE_(tos, insn_off)                                                                                 \
-  int k = insns[insn_off].kind;                                                                                      \
-  double __tos = (tos);                                                                                              \
-  WITH_UNDEF(jmp_table_double[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, b_undef, __tos));      \
+  int k = insns[insn_off].kind;                                                                                        \
+  double __tos = (tos);                                                                                                \
+  WITH_UNDEF(jmp_table_double[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, b_undef, __tos));
 
 #define JMP_INT(tos) ADVANCE_INT_(tos, 0)
 #define JMP_FLOAT(tos) ADVANCE_FLOAT_(tos, 0)
@@ -350,11 +350,11 @@ int32_t __interpreter_intrinsic_max_insn() { return MAX_INSN_KIND; }
   }
 
 // Emit a null pointer exception when the given expression is null.
-#define NPE_ON_NULL(expr) \
-  if (unlikely(!expr)) { \
-    SPILL_VOID \
-    raise_null_pointer_exception(thread); \
-    return 0; \
+#define NPE_ON_NULL(expr)                                                                                              \
+  if (unlikely(!expr)) {                                                                                               \
+    SPILL_VOID                                                                                                         \
+    raise_null_pointer_exception(thread);                                                                              \
+    return 0;                                                                                                          \
   }
 
 /** Helper functions */
@@ -532,26 +532,26 @@ struct async_stack {
 };
 
 static s32 grow_async_stack(vm_thread *thread) {
-  struct async_stack *stk = thread->async_stack;
+  struct async_stack *stk = thread->stack.async_call_stack;
 
   size_t new_capacity = stk->max_height + stk->max_height / 2;
   if (new_capacity == 0)
     new_capacity = 4;
 
-  stk = realloc(thread->async_stack, sizeof(struct async_stack) + new_capacity * sizeof(continuation_frame));
+  stk = realloc(thread->stack.async_call_stack, sizeof(struct async_stack) + new_capacity * sizeof(continuation_frame));
   ;
   if (unlikely(!stk)) {
     thread->current_exception = thread->stack_overflow_error;
     return -1;
   }
-  thread->async_stack = stk;
+  thread->stack.async_call_stack = stk;
 
   stk->max_height = new_capacity;
   return 0;
 }
 
 static continuation_frame *async_stack_push(vm_thread *thread) {
-#define stk thread->async_stack
+#define stk thread->stack.async_call_stack
 
   if (unlikely(stk->height == stk->max_height)) {
     if ((grow_async_stack(thread)) < 0) {
@@ -560,19 +560,19 @@ static continuation_frame *async_stack_push(vm_thread *thread) {
     }
   }
 
-  return &thread->async_stack->frames[thread->async_stack->height++];
+  return &thread->stack.async_call_stack->frames[thread->stack.async_call_stack->height++];
 
 #undef stk
 }
 
 static continuation_frame *async_stack_pop(vm_thread *thread) {
-  DCHECK(thread->async_stack->height > 0);
-  return &thread->async_stack->frames[--thread->async_stack->height];
+  DCHECK(thread->stack.async_call_stack->height > 0);
+  return &thread->stack.async_call_stack->frames[--thread->stack.async_call_stack->height];
 }
 
 static void *async_stack_top(vm_thread *thread) {
-  assert(thread->async_stack->height > 0);
-  return thread->async_stack->frames[thread->async_stack->height - 1].wakeup;
+  assert(thread->stack.async_call_stack->height > 0);
+  return thread->stack.async_call_stack->frames[thread->stack.async_call_stack->height - 1].wakeup;
 }
 
 /** FUEL CHECKING */
@@ -581,7 +581,7 @@ __attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
   const int REFUEL = 50000;
   thread->fuel = REFUEL;
 
-  if (thread->synchronous_depth) // we're in a synchronous call, don't try to yield
+  if (thread->stack.synchronous_depth) // we're in a synchronous call, don't try to yield
     return false;
 
   // Get the current time in milliseconds since 1970
@@ -589,7 +589,7 @@ __attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
   gettimeofday(&tv, NULL);
   u64 now = tv.tv_sec * 1000000 + tv.tv_usec;
   if (thread->yield_at_time != 0 && now >= thread->yield_at_time) {
-    arrlast(thread->frames)->is_async_suspended = true;
+    arrlast(thread->stack.frames)->is_async_suspended = true;
 
     continuation_frame *cont = async_stack_push(thread);
     // Provide a way for us to free the wakeup info. There will never be multiple refuel checks in flight within a
@@ -746,7 +746,7 @@ __attribute__((noinline)) static s64 putstatic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(putstatic)
 
-force_inline static s64 getstatic_L_impl_void(ARGS_VOID) {
+static s64 getstatic_L_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -754,7 +754,7 @@ force_inline static s64 getstatic_L_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_L)
 
-force_inline static s64 getstatic_F_impl_void(ARGS_VOID) {
+static s64 getstatic_F_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -762,7 +762,7 @@ force_inline static s64 getstatic_F_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_F)
 
-force_inline static s64 getstatic_D_impl_void(ARGS_VOID) {
+static s64 getstatic_D_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -770,7 +770,7 @@ force_inline static s64 getstatic_D_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_D)
 
-force_inline static s64 getstatic_J_impl_void(ARGS_VOID) {
+static s64 getstatic_J_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -778,7 +778,7 @@ force_inline static s64 getstatic_J_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_J)
 
-force_inline static s64 getstatic_I_impl_void(ARGS_VOID) {
+static s64 getstatic_I_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -786,7 +786,7 @@ force_inline static s64 getstatic_I_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_I)
 
-force_inline static s64 getstatic_S_impl_void(ARGS_VOID) {
+static s64 getstatic_S_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -794,7 +794,7 @@ force_inline static s64 getstatic_S_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_S)
 
-force_inline static s64 getstatic_C_impl_void(ARGS_VOID) {
+static s64 getstatic_C_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -802,7 +802,7 @@ force_inline static s64 getstatic_C_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_C)
 
-force_inline static s64 getstatic_B_impl_void(ARGS_VOID) {
+static s64 getstatic_B_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -810,7 +810,7 @@ force_inline static s64 getstatic_B_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(getstatic_B)
 
-force_inline static s64 getstatic_Z_impl_void(ARGS_VOID) {
+static s64 getstatic_Z_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
@@ -957,7 +957,7 @@ static s64 getfield_impl_int(ARGS_INT) {
   JMP_INT(tos)
 }
 
-force_inline static s64 putfield_impl_void(ARGS_VOID) {
+static s64 putfield_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
   TryResolve(thread, insn, &frame->plain, sp);
@@ -1122,7 +1122,7 @@ static s64 putfield_D_impl_double(ARGS_DOUBLE) {
 
 // Binary operation on two integers (ints or longs)
 #define INTEGER_BIN_OP(which, eval)                                                                                    \
-  force_inline static s64 which##_impl_int(ARGS_INT) {                                                                 \
+  static s64 which##_impl_int(ARGS_INT) {                                                                              \
     DEBUG_CHECK();                                                                                                     \
     s64 a = (sp - 2)->l, b = tos;                                                                                      \
     s64 result = eval;                                                                                                 \
@@ -1152,7 +1152,7 @@ INTEGER_BIN_OP(lushr, (s64)((u64)a >> (b & 0x3f)))
 #undef INTEGER_BIN_OP
 
 #define INTEGER_UN_OP(which, eval, NEXT)                                                                               \
-  force_inline static s64 which##_impl_int(ARGS_INT) {                                                                 \
+  static s64 which##_impl_int(ARGS_INT) {                                                                              \
     DEBUG_CHECK();                                                                                                     \
     s64 a = tos;                                                                                                       \
     NEXT(eval)                                                                                                         \
@@ -1173,14 +1173,14 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
 #undef INTEGER_UN_OP
 
 #define FLOAT_BIN_OP(which, eval, out_float, out_double, NEXT1, NEXT2)                                                 \
-  force_inline static s64 f##which##_impl_float(ARGS_FLOAT) {                                                          \
+  static s64 f##which##_impl_float(ARGS_FLOAT) {                                                                       \
     DEBUG_CHECK();                                                                                                     \
     float a = (sp - 2)->f, b = tos;                                                                                    \
     out_float result = eval;                                                                                           \
     sp--;                                                                                                              \
     NEXT1(result)                                                                                                      \
   }                                                                                                                    \
-  force_inline static s64 d##which##_impl_double(ARGS_DOUBLE) {                                                        \
+  static s64 d##which##_impl_double(ARGS_DOUBLE) {                                                                     \
     DEBUG_CHECK();                                                                                                     \
     double a = (sp - 2)->d, b = tos;                                                                                   \
     out_double result = eval;                                                                                          \
@@ -1189,7 +1189,7 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
   }
 
 #define FLOAT_UN_OP(which, eval, out, NEXT)                                                                            \
-  force_inline static s64 which##_impl_float(ARGS_FLOAT) {                                                             \
+  static s64 which##_impl_float(ARGS_FLOAT) {                                                                          \
     DEBUG_CHECK();                                                                                                     \
     float a = tos;                                                                                                     \
     out result = eval;                                                                                                 \
@@ -1197,7 +1197,7 @@ INTEGER_UN_OP(l2d, (double)a, NEXT_DOUBLE)
   }
 
 #define DOUBLE_UN_OP(which, eval, out, NEXT)                                                                           \
-  force_inline static s64 which##_impl_double(ARGS_DOUBLE) {                                                           \
+  static s64 which##_impl_double(ARGS_DOUBLE) {                                                                        \
     DEBUG_CHECK();                                                                                                     \
     double a = tos;                                                                                                    \
     out result = eval;                                                                                                 \
@@ -1291,7 +1291,7 @@ static s64 arraylength_impl_int(ARGS_INT) {
     obj_header *array = (obj_header *)(sp - 2)->obj;                                                                   \
     int index = (int)tos;                                                                                              \
     NPE_ON_NULL(array);                                                                                                \
-    int length = ArrayLength(array);                                                                                  \
+    int length = ArrayLength(array);                                                                                   \
     if (unlikely(index < 0 || index >= length)) {                                                                      \
       SPILL_VOID;                                                                                                      \
       raise_array_index_oob_exception(thread, index, length);                                                          \
@@ -1316,8 +1316,8 @@ ARRAY_LOAD(caload, CharArrayLoad, s64, NEXT_INT)
     DEBUG_CHECK();                                                                                                     \
     obj_header *array = (obj_header *)(sp - 3)->obj;                                                                   \
     int index = (int)(sp - 2)->i;                                                                                      \
-    NPE_ON_NULL(array);                                                                                                            \
-    int length = ArrayLength(array);                                                                                  \
+    NPE_ON_NULL(array);                                                                                                \
+    int length = ArrayLength(array);                                                                                   \
     if (unlikely(index < 0 || index >= length)) {                                                                      \
       SPILL_VOID;                                                                                                      \
       raise_array_index_oob_exception(thread, index, length);                                                          \
@@ -1363,7 +1363,7 @@ static s64 aastore_impl_int(ARGS_INT) {
 
 /** Control-flow instructions (returns, jumps, branches) */
 
-force_inline static s64 return_impl_void(ARGS_VOID) {
+static s64 return_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
   return 0;
@@ -1461,7 +1461,7 @@ static s64 tableswitch_impl_int(ARGS_INT) {
 
 static s64 lookupswitch_impl_int(ARGS_INT) {
   DEBUG_CHECK();
-  struct bc_lookupswitch_data data = *insn->lookupswitch;
+  struct lookupswitch_data data = *insn->lookupswitch;
 
   s32 key = (s32)tos;
   s32 *keys = data.keys;
@@ -1582,7 +1582,6 @@ static s64 monitorexit_impl_int(ARGS_INT) {
 
   obj_header *obj = (obj_header *)tos;
   int result = monitor_release(thread, obj);
-  assert(!thread->current_exception && "monitor_release raised an exception");
 
   if (unlikely(result)) {
     SPILL_VOID
@@ -1607,7 +1606,7 @@ DEFINE_ASYNC(resolve_new_inst) {
   ASYNC_END(0);
 }
 
-force_inline static s64 new_impl_void(ARGS_VOID) {
+static s64 new_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
 
@@ -1621,7 +1620,7 @@ force_inline static s64 new_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(new)
 
-force_inline static s64 new_resolved_impl_void(ARGS_VOID) {
+static s64 new_resolved_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
   obj_header *obj = new_object(thread, insn->classdesc);
@@ -1733,9 +1732,8 @@ __attribute__((noinline)) static s64 invokestatic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokestatic)
 
-static u8
-attempt_invoke(vm_thread *thread, stack_frame *invoked_frame, stack_frame *outer_frame, u8 argc, bool returns,
-               stack_value *result) {
+static u8 attempt_invoke(vm_thread *thread, stack_frame *invoked_frame, stack_frame *outer_frame, u8 argc, bool returns,
+                         stack_value *result) {
   future_t fut;
   *result = interpret_2(&fut, thread, invoked_frame);
   if (unlikely(fut.status == FUTURE_NOT_READY)) {
@@ -1760,7 +1758,7 @@ attempt_invoke(vm_thread *thread, stack_frame *invoked_frame, stack_frame *outer
     result;                                                                                                            \
   })
 
-force_inline static s64 invokestatic_resolved_impl_void(ARGS_VOID) {
+static s64 invokestatic_resolved_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   cp_method *method = insn->ic;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
@@ -1806,9 +1804,9 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   resolve_methodref_t ctx = {};
   ctx.args.thread = thread;
   ctx.args.info = &insn->cp->methodref;
-  thread->synchronous_depth++; // TODO remove
+  thread->stack.synchronous_depth++; // TODO remove
   future_t fut = resolve_methodref(&ctx);
-  thread->synchronous_depth--;
+  thread->stack.synchronous_depth--;
   CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
     return 0;
@@ -1907,7 +1905,7 @@ __attribute__((noinline)) static s64 invokespecial_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokespecial)
 
-force_inline static s64 invokespecial_resolved_impl_void(ARGS_VOID) {
+static s64 invokespecial_resolved_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
@@ -1983,7 +1981,7 @@ __attribute__((noinline)) void make_invokeitable_polymorphic_(bytecode_insn *ins
   inst->ic2 = (void *)inst->cp->methodref.resolved->itable_index;
 }
 
-force_inline static s64 invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
+static s64 invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
@@ -2014,8 +2012,7 @@ force_inline static s64 invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokeitable_vtable_monomorphic)
 
-__attribute__((noinline))
-static s64 invokesigpoly_impl_void(ARGS_VOID) {
+__attribute__((noinline)) static s64 invokesigpoly_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   obj_header *target = (sp - insn->args)->obj;
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
@@ -2111,9 +2108,9 @@ __attribute__((noinline)) static s64 invokedynamic_impl_void(ARGS_VOID) {
 #define insn (&insns[0])
       insn;
   ctx.args.indy = indy;
-  thread->synchronous_depth++;
+  thread->stack.synchronous_depth++;
   future_t fut = indy_resolve(&ctx);
-  thread->synchronous_depth--;
+  thread->stack.synchronous_depth--;
   CHECK(fut.status == FUTURE_READY);
 
   if (thread->current_exception) {
@@ -2181,40 +2178,38 @@ static s64 invokecallsite_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokecallsite)
 
-force_inline static stack_value *get_local(stack_frame *frame, bytecode_insn *inst) {
-  return frame_locals(frame) + inst->index;
-}
+static stack_value *get_local(stack_frame *frame, bytecode_insn *inst) { return frame_locals(frame) + inst->index; }
 
 /** Local variable accessors */
-force_inline static s64 iload_impl_void(ARGS_VOID) {
+static s64 iload_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   sp++;
   NEXT_INT(get_local(frame, insn)->i)
 }
 FORWARD_TO_NULLARY(iload)
 
-force_inline static s64 fload_impl_void(ARGS_VOID) {
+static s64 fload_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   sp++;
   NEXT_FLOAT(get_local(frame, insn)->f)
 }
 FORWARD_TO_NULLARY(fload)
 
-force_inline static s64 dload_impl_void(ARGS_VOID) {
+static s64 dload_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   sp++;
   NEXT_DOUBLE(get_local(frame, insn)->d)
 }
 FORWARD_TO_NULLARY(dload)
 
-force_inline static s64 lload_impl_void(ARGS_VOID) {
+static s64 lload_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   sp++;
   NEXT_INT(get_local(frame, insn)->l)
 }
 FORWARD_TO_NULLARY(lload)
 
-force_inline static s64 aload_impl_void(ARGS_VOID) {
+static s64 aload_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   sp++;
   NEXT_INT(get_local(frame, insn)->obj)
@@ -2598,22 +2593,19 @@ static s64 drem_impl_double(ARGS_DOUBLE) {
   return bytecode_tables[index & 0x3][index >> 2](thread, frame, insns, pc_, sp_, arg_1, arg_2, arg_3);
 }
 
-[[maybe_unused]] static standard_debugger* get_active_debugger(vm *vm) {
-  return vm->debugger;
-}
+[[maybe_unused]] static standard_debugger *get_active_debugger(vm *vm) { return vm->debugger; }
 
-__attribute__((noinline))
-void debugger_pause(vm_thread *thread, stack_frame *frame) {
+__attribute__((noinline)) void debugger_pause(vm_thread *thread, stack_frame *frame) {
   continuation_frame *cont = async_stack_push(thread);
-  *cont = (continuation_frame) {.pnt = CONT_DEBUGGER_PAUSE};
+  *cont = (continuation_frame){.pnt = CONT_DEBUGGER_PAUSE};
   frame->is_async_suspended = true;
 }
 
 #if DO_TAILS
 static s64 entry_impl_void(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
 #else
-force_inline static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn *code, u16 pc_,
-                                                 stack_value *sp_, unsigned handler_i, bool check_stepping) {
+static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn *code, u16 pc_, stack_value *sp_,
+                            unsigned handler_i, bool check_stepping) {
   struct {
     stack_value *temp_sp_;
     int64_t temp_int_tos;
@@ -2705,13 +2697,15 @@ force_inline static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, 
   }
 }
 
-[[maybe_unused]] __attribute__((noinline)) static s64 entry_notco_no_stepping(
-  vm_thread *thread, stack_frame *frame, bytecode_insn *code, u16 pc_, stack_value *sp_, unsigned handler_i) {
+[[maybe_unused]] __attribute__((noinline)) static s64 entry_notco_no_stepping(vm_thread *thread, stack_frame *frame,
+                                                                              bytecode_insn *code, u16 pc_,
+                                                                              stack_value *sp_, unsigned handler_i) {
   return entry_notco_impl(thread, frame, code, pc_, sp_, handler_i, false);
 }
 
-[[maybe_unused]] __attribute__((noinline)) static s64 entry_notco_with_stepping(
-  vm_thread *thread, stack_frame *frame, bytecode_insn *code, u16 pc_, stack_value *sp_, unsigned handler_i) {
+[[maybe_unused]] __attribute__((noinline)) static s64 entry_notco_with_stepping(vm_thread *thread, stack_frame *frame,
+                                                                                bytecode_insn *code, u16 pc_,
+                                                                                stack_value *sp_, unsigned handler_i) {
   return entry_notco_impl(thread, frame, code, pc_, sp_, handler_i, true);
 }
 #endif
@@ -2931,18 +2925,19 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *frame_) {
   InstrumentMethodEntry(thread, frame_);
 
   object synchronized_on = get_sync_object(thread, frame_);
-  if (unlikely(synchronized_on) && frame_->attempted_synchronize < 2) {
-    char *store = thread->synchronize_acquire_continuation;
-    monitor_acquire_t ctx = frame_->attempted_synchronize ? *(monitor_acquire_t *)store
-                                                        : (monitor_acquire_t){.args = {thread, synchronized_on}};
-    frame_->attempted_synchronize = 1;
+  if (unlikely(synchronized_on) && frame_->synchronized_state < SYNCHRONIZE_DONE) {
+    monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
+    monitor_acquire_t ctx =
+        frame_->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
+    frame_->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
     *fut = monitor_acquire(&ctx);
     if (fut->status == FUTURE_NOT_READY) {
       memcpy(store, &ctx, sizeof(ctx));
-      static_assert(sizeof(ctx) <= sizeof(thread->synchronize_acquire_continuation), "context can not be stored within thread cache");
+      static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
+                    "context can not be stored within thread cache");
       return value_null();
     }
-    frame_->attempted_synchronize = 2;
+    frame_->synchronized_state = SYNCHRONIZE_DONE;
   }
 
   stack_value result;
@@ -2954,7 +2949,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *frame_) {
 
   if (likely(fut->status == FUTURE_READY)) {
     synchronized_on = get_sync_object(thread, frame_); // re-compute in case of intervening GC
-    if (unlikely(synchronized_on)) {
+    if (unlikely(synchronized_on)) {                   // monitor release at the end of synchronized
       int err = monitor_release(thread, synchronized_on);
       if (err) {
         // the current exception is replaced with an IllegalMonitorStateException

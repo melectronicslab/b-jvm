@@ -172,7 +172,7 @@ struct native_Constructor {
 struct native_Thread {
   obj_header base;
   // implementation-dependent fields
-  vm_thread *thread;
+  vm_thread *vm_thread;
 
   // my fields
   s64 eetop;                                 // J
@@ -212,18 +212,10 @@ struct native_MethodHandle {
 struct native_VarHandle {
   obj_header base;
   // my fields
-  obj_header *vform;  // Ljava/lang/invoke/VarForm;
-  s32 exact;  // Z
-  obj_header *methodTypeTable;  // [Ljava/lang/invoke/MethodType;
-  obj_header *methodHandleTable;  // [Ljava/lang/invoke/MethodHandle;
-};
-struct native_VarForm {
-  obj_header base;
-  // my fields
-  obj_header *implClass;  // Ljava/lang/Class;
-  obj_header *methodType_table;  // [Ljava/lang/invoke/MethodType;
-  obj_header *memberName_table;  // [Ljava/lang/invoke/MemberName;
-  obj_header *methodType_V_table;  // [Ljava/lang/invoke/MethodType;
+  obj_header *vform;             // Ljava/lang/invoke/VarForm;
+  s32 exact;                     // Z
+  obj_header *methodTypeTable;   // [Ljava/lang/invoke/MethodType;
+  obj_header *methodHandleTable; // [Ljava/lang/invoke/MethodHandle;
 };
 struct native_MethodType {
   obj_header base;
@@ -237,6 +229,14 @@ struct native_MethodType {
   obj_header *wrapAlt;          // Ljava/lang/Object;
   obj_header *invokers;         // Ljava/lang/invoke/Invokers;
   obj_header *methodDescriptor; // Ljava/lang/String;
+};
+struct native_VarForm {
+  obj_header base;
+  // my fields
+  obj_header *implClass;          // Ljava/lang/Class;
+  obj_header *methodType_table;   // [Ljava/lang/invoke/MethodType;
+  obj_header *memberName_table;   // [Ljava/lang/invoke/MemberName;
+  obj_header *methodType_V_table; // [Ljava/lang/invoke/MethodType;
 };
 struct native_MemberName {
   obj_header base;
@@ -262,15 +262,23 @@ struct native_Reference {
   obj_header *discovered; // Ljava/lang/ref/Reference;
 };
 static inline void register_native_padding(vm *vm) {
+  (void)hash_table_insert(&vm->class_padding, "java/lang/String", -1, (void *)(0 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/StackTraceElement", -1, (void *)(0 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/Throwable", -1, (void *)(2 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/LambdaForm", -1, (void *)(0 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/CallSite", -1, (void *)(0 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "jdk/internal/reflect/ConstantPool", -1, (void *)(1 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/Class", -1, (void *)(1 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/reflect/Parameter", -1, (void *)(0 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/reflect/Field", -1, (void *)(1 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/reflect/Method", -1, (void *)(1 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/reflect/Constructor", -1, (void *)(1 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/Thread", -1, (void *)(1 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/MethodHandle", -1, (void *)(1 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/VarHandle", -1, (void *)(0 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/MethodType", -1, (void *)(1 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/VarForm", -1, (void *)(0 * sizeof(void *)));
   (void)hash_table_insert(&vm->class_padding, "java/lang/invoke/MemberName", -1, (void *)(2 * sizeof(void *)));
+  (void)hash_table_insert(&vm->class_padding, "java/lang/ref/Reference", -1, (void *)(0 * sizeof(void *)));
 }
 /** END CODEGEN SECTION (gen_natives.c) */

@@ -82,8 +82,10 @@ DECLARE_NATIVE("java/lang", Class, getEnclosingMethod0, "()[Ljava/lang/Object;")
   CHECK(!error);
   data[0] = (void *)enclosing_method.class_info->classdesc->mirror;
   if (enclosing_method.nat != nullptr) {
-    data[1] = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->name, true);
-    data[2] = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->descriptor, true);
+    object name = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->name, true); // todo oom
+    data[1] = name;
+    name = MakeJStringFromModifiedUTF8(thread, enclosing_method.nat->descriptor, true);
+    data[2] = name;
   }
 #undef data
   stack_value result = (stack_value){.obj = array->obj};
@@ -170,7 +172,7 @@ DECLARE_NATIVE("java/lang", Class, forName0,
   } else {
     // Invoke findClass on the classloader
     cp_method *find_class = method_lookup(classloader->descriptor, STR("loadClass"),
-      STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
+                                          STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
     CHECK(find_class);
     stack_value args[2] = {{.obj = classloader}, {.obj = name_obj}};
     stack_value result = call_interpreter_synchronous(thread, find_class, args);
@@ -185,9 +187,9 @@ DECLARE_NATIVE("java/lang", Class, forName0,
 
   if (c && args[1].i) {
     initialize_class_t ctx = {.args = {thread, c}};
-    thread->synchronous_depth++;
+    thread->stack.synchronous_depth++;
     future_t f = initialize_class(&ctx);
-    thread->synchronous_depth--;
+    thread->stack.synchronous_depth--;
     CHECK(f.status == FUTURE_READY);
 
     if (ctx._result) {

@@ -12,18 +12,18 @@ typedef struct gc_ctx {
   object **roots;
   object *objs;
   object *new_location;
+
+  object *worklist;
 } gc_ctx;
 
-static int in_heap(gc_ctx *ctx, object field) {
-  return (u8*)field >= ctx->vm->heap && (u8*)field < ctx->vm->heap + ctx->vm->true_heap_capacity;
-}
+int in_heap(vm *vm, object field) { return (u8 *)field >= vm->heap && (u8 *)field < vm->heap + vm->true_heap_capacity; }
 
 #define lengthof(x) (sizeof(x) / sizeof(x[0]))
 #define PUSH_ROOT(x)                                                                                                   \
   {                                                                                                                    \
     __typeof(x) v = (x);                                                                                               \
-    if (*v && in_heap(ctx, (void *)*v)) {                                                                              \
-      arrput(ctx->roots, (object *)v);                                                                            \
+    if (*v && in_heap(ctx->vm, (void *)*v)) {                                                                          \
+      arrput(ctx->roots, (object *)v);                                                                                 \
     }                                                                                                                  \
   }
 
@@ -92,8 +92,8 @@ static void push_thread_roots(gc_ctx *ctx, vm_thread *thr) {
 
   uintptr_t min_frame_addr_scanned = UINTPTR_MAX;
 
-  for (int frame_i = arrlen(thr->frames) - 1; frame_i >= 0; --frame_i) {
-    stack_frame *raw_frame = thr->frames[frame_i];
+  for (int frame_i = arrlen(thr->stack.frames) - 1; frame_i >= 0; --frame_i) {
+    stack_frame *raw_frame = thr->stack.frames[frame_i];
     if (is_frame_native(raw_frame))
       continue;
     plain_frame *frame = get_plain_frame(raw_frame);
@@ -199,21 +199,19 @@ static u32 *get_flags(object o) {
   return &get_mark_word(&o->header_word)->data[0];
 }
 
-static void mark_reachable(gc_ctx *ctx, object obj, int **bitsets, int depth) {
-  *get_flags(obj) |= IS_REACHABLE;
+static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
   arrput(ctx->objs, obj);
 
   // Visit all instance fields
   classdesc *desc = obj->descriptor;
   if (desc->kind == CD_KIND_ORDINARY) {
     compressed_bitset bits = desc->instance_references;
-    int **bitset = &bitsets[depth];
     list_compressed_bitset_bits(bits, bitset);
     for (int i = 0; i < arrlen(*bitset); ++i) {
       object field_obj = *((object *)obj + (*bitset)[i]);
-      if (field_obj && !(*get_flags(field_obj) & IS_REACHABLE) && in_heap(ctx, field_obj)) {
-        // Visiting instance field at offset on class
-        mark_reachable(ctx, field_obj, bitsets, depth + 1);
+      if (field_obj && !(*get_flags(field_obj) & IS_REACHABLE) && in_heap(ctx->vm, field_obj)) {
+        *get_flags(field_obj) |= IS_REACHABLE;
+        arrput(ctx->worklist, field_obj);
       }
     }
   } else if (desc->kind == CD_KIND_ORDINARY_ARRAY || (desc->kind == CD_KIND_PRIMITIVE_ARRAY && desc->dimensions > 1)) {
@@ -221,8 +219,9 @@ static void mark_reachable(gc_ctx *ctx, object obj, int **bitsets, int depth) {
     int arr_len = ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
       object arr_element = ReferenceArrayLoad(obj, i);
-      if (arr_element && !(*get_flags(arr_element) & IS_REACHABLE) && in_heap(ctx, arr_element)) {
-        mark_reachable(ctx, arr_element, bitsets, depth + 1);
+      if (arr_element && !(*get_flags(arr_element) & IS_REACHABLE) && in_heap(ctx->vm, arr_element)) {
+        *get_flags(arr_element) |= IS_REACHABLE;
+        arrput(ctx->worklist, arr_element);
       }
     }
   }
@@ -230,12 +229,11 @@ static void mark_reachable(gc_ctx *ctx, object obj, int **bitsets, int depth) {
 
 static int comparator(const void *a, const void *b) { return *(object *)a - *(object *)b; }
 
-static size_t size_of_object(object obj) {
+size_t size_of_object(object obj) {
   if (obj->descriptor->kind == CD_KIND_ORDINARY) {
     return obj->descriptor->instance_bytes;
   }
-  if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY ||
-      (obj->descriptor->kind == CD_KIND_PRIMITIVE_ARRAY && obj->descriptor->dimensions > 1)) {
+  if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY) {
     return kArrayDataOffset + ArrayLength(obj) * sizeof(void *);
   }
   return kArrayDataOffset + ArrayLength(obj) * sizeof_type_kind(obj->descriptor->primitive_component);
@@ -246,7 +244,7 @@ static void relocate_object(const gc_ctx *ctx, object *obj) {
     return;
 
   // Binary search for obj in ctx->roots
-  object *found = (object *)bsearch(obj, ctx->objs, arrlen(ctx->objs), sizeof(object ), comparator);
+  object *found = (object *)bsearch(obj, ctx->objs, arrlen(ctx->objs), sizeof(object), comparator);
   if (found) {
     *obj = ctx->new_location[found - ctx->objs];
   }
@@ -308,26 +306,38 @@ void major_gc(vm *vm) {
   major_gc_enumerate_gc_roots(&ctx);
 
   // Mark phase
-  int *bitset_list[1000] = {nullptr};
   for (int i = 0; i < arrlen(ctx.roots); ++i) {
     object root = *ctx.roots[i];
-    if (!(*get_flags(root) & IS_REACHABLE))
-      mark_reachable(&ctx, root, bitset_list, 0);
+    if (*get_flags(root) & IS_REACHABLE) // already visited
+      continue;
+    *get_flags(root) |= IS_REACHABLE;
+    arrput(ctx.worklist, root);
   }
-  for (int i = 0; i < 1000; ++i) {
-    arrfree(bitset_list[i]);
+
+  int *bitset[1] = {nullptr};
+  while (arrlen(ctx.worklist) > 0) {
+    object obj = arrpop(ctx.worklist);
+    *get_flags(obj) |= IS_REACHABLE;
+    mark_reachable(&ctx, obj, bitset);
   }
+  arrfree(ctx.worklist);
+  arrfree(bitset[0]);
 
   // Sort roots by address
-  qsort(ctx.objs, arrlen(ctx.objs), sizeof(object ), comparator);
-  object *new_location = ctx.new_location = malloc(arrlen(ctx.objs) * sizeof(object ));
+  qsort(ctx.objs, arrlen(ctx.objs), sizeof(object), comparator);
+  object *new_location = ctx.new_location = malloc(arrlen(ctx.objs) * sizeof(object));
 
-  // For now, create a new heap of the same size
-  [[maybe_unused]] u8 *new_heap = aligned_alloc(4096, vm->true_heap_capacity), *end = new_heap + vm->true_heap_capacity;
+  // Create a new heap of the same size so ASAN can enjoy itself
+#if DCHECKS_ENABLED
+  u8 *new_heap = aligned_alloc(4096, vm->true_heap_capacity), *end = new_heap + vm->true_heap_capacity;
+#else
+  u8 *new_heap = vm->heap_swap, *end = vm->heap_swap + vm->true_heap_capacity;
+#endif
+
   u8 *write_ptr = new_heap;
 
   // Copy object by object
-  for (int i = 0; i < arrlen(ctx.objs); ++i) {
+  for (size_t i = 0; i < arrlenu(ctx.objs); ++i) {
     // Align to 8 bytes
     write_ptr = (u8 *)(align_up((uintptr_t)write_ptr, 8));
     object obj = ctx.objs[i];
@@ -336,19 +346,19 @@ void major_gc(vm *vm) {
     DCHECK(write_ptr + sz <= end);
 
     *get_flags(obj) &= ~IS_REACHABLE; // clear the reachable flag
-    memcpy(write_ptr, obj, sz);
+    memmove(write_ptr, obj, sz);      // not memcpy because the heap is the same
 
-    object new_obj = (object )write_ptr;
+    object new_obj = (object)write_ptr;
     new_location[i] = new_obj;
     write_ptr += sz;
 
     if (has_expanded_data(&obj->header_word)) {
       // Copy the expanded data (align to 8 bytes for atomic ops to be happy)
       write_ptr = (u8 *)align_up((uintptr_t)write_ptr, 8);
-      constexpr size_t monitor_data_size = sizeof(*obj->header_word.expanded_data);
+      constexpr size_t monitor_data_size = sizeof(monitor_data);
       DCHECK(write_ptr + monitor_data_size <= end);
 
-      memcpy(write_ptr, obj->header_word.expanded_data, monitor_data_size);
+      memmove(write_ptr, obj->header_word.expanded_data, monitor_data_size);
       new_obj->header_word.expanded_data = (monitor_data *)write_ptr;
       write_ptr += monitor_data_size;
     }
@@ -366,7 +376,11 @@ void major_gc(vm *vm) {
   free(ctx.new_location);
   arrfree(ctx.roots);
 
+#if !DCHECKS_ENABLED
+  vm->heap_swap = vm->heap;
+#else
   free(vm->heap);
+#endif
 
   vm->heap = new_heap;
   vm->heap_used = align_up(write_ptr - new_heap, 8);

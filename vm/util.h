@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include "config.h"
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -12,7 +13,6 @@ extern "C" {
 #include <string.h>
 #include <types.h>
 #include <wchar.h>
-#include "config.h"
 
 // These are unlikely (ha!) to actually improve codegen, but are actually kind
 // of nice to indicate what we "think" is going to happen. Long term we might
@@ -47,7 +47,7 @@ extern "C" {
       fprintf(stderr, "%s: %s%d: CHECK(%s) failed: ", __func__, __FILE__, __LINE__, #condition);                       \
       fprintf(stderr, " " __VA_ARGS__);                                                                                \
       fprintf(stderr, "\n");                                                                                           \
-      *(char*)1 = 0; \
+      *(char *)1 = 0;                                                                                                  \
       abort();                                                                                                         \
     }                                                                                                                  \
   } while (0)
@@ -83,7 +83,7 @@ typedef struct {
 #define INIT_STACK_STRING(name, buffer_size)                                                                           \
   char name##_chars[buffer_size + 1] = {0};                                                                            \
   slice name = {.chars = name##_chars, .len = buffer_size}
-#define null_str() ((slice){.chars = nullptr, .len = 0})
+#define null_str() ((slice){.chars = "\0", .len = 0})
 
 /// Slices the given string from the given start index to the end.
 static inline slice subslice(slice str, u32 start) {
@@ -214,8 +214,6 @@ static inline slice str_to_utf8(const char *str) {
 #define fmt_slice(slice) (int)(slice).len, (slice).chars
 
 #define STR(literal) ((slice){.chars = (char *)(literal), .len = sizeof(literal) - 1})
-
-#define force_inline __attribute__((always_inline)) inline
 
 bool utf8_equals(slice entry, const char *str);
 bool utf8_equals_utf8(slice left, slice right);

@@ -60,11 +60,13 @@ inval:
 
 obj_header *make_jstring_modified_utf8(vm_thread *thread, slice string) {
   // This function is called very early at VM boot, so we can't necessarily use the cache.
-  classdesc *String = thread->vm->_cached_classdescs ? cached_classes(thread->vm)->string :
-    bootstrap_lookup_class(thread, STR("java/lang/String"));
+  classdesc *String = thread->vm->_cached_classdescs ? cached_classes(thread->vm)->string
+                                                     : bootstrap_lookup_class(thread, STR("java/lang/String"));
   handle *str = make_handle(thread, new_object(thread, String));
 
 #define S ((struct native_String *)str->obj)
+  if (!S)
+    return nullptr; // oom
 
   obj_header *result = nullptr;
 
@@ -74,18 +76,20 @@ obj_header *make_jstring_modified_utf8(vm_thread *thread, slice string) {
     goto error;
 
   if (do_latin1(chars, len)) {
-    S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
-    if (!S->value)
+    object value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
+    if (!value)
       goto oom;
+    S->value = value;
     for (int i = 0; i < len; ++i) {
       ByteArrayStore(S->value, i, (s8)chars[i]);
     }
     S->coder = STRING_CODER_LATIN1; // LATIN1
     result = (void *)S;
   } else {
-    S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, 2 * len);
+    object value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, 2 * len);
     if (!S->value)
       goto oom;
+    S->value = value;
     memcpy(ArrayData(S->value), chars, len * sizeof(short));
     S->coder = STRING_CODER_UTF16; // UTF-16
     result = (void *)S;
@@ -109,7 +113,8 @@ object make_jstring_cstr(vm_thread *thread, char const *cstr) {
   DCHECK(len_ < INT32_MAX);
   s32 len = (s32)len_;
 
-  S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
+  object value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
+  S->value = value;
   if (!S->value)
     goto oom;
   ByteArrayStoreBlock(S->value, 0, len, (u8 *)cstr);
@@ -180,7 +185,8 @@ obj_header *MakeJStringFromData(vm_thread *thread, slice data, string_coder_kind
   DCHECK(data.len < INT32_MAX);
   s32 len = (s32)data.len;
 
-  S->value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
+  object value = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, len);
+  S->value = value;
   if (!S->value)
     goto oom;
   ByteArrayStoreBlock(S->value, 0, len, (u8 const *)data.chars);

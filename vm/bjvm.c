@@ -12,8 +12,6 @@
 
 #include "analysis.h"
 #include "arrays.h"
-#include "bjvm.h"
-#include "classloader.h"
 #include "objects.h"
 #include "util.h"
 #include <config.h>
@@ -88,11 +86,16 @@ mark_word_t *get_mark_word(header_word *data) {
   return has_expanded_data(data) ? &data->expanded_data->mark_word : &data->mark_word;
 }
 
-monitor_data *inspect_monitor(header_word *data) {
-  return has_expanded_data(data) ? data->expanded_data : nullptr;
-}
+monitor_data *inspect_monitor(header_word *data) { return has_expanded_data(data) ? data->expanded_data : nullptr; }
 
-monitor_data *allocate_monitor(vm_thread *thread) {
+monitor_data *allocate_monitor_for(vm_thread *thread, obj_header *obj) {
+  if (unlikely(!in_heap(thread->vm, obj))) {
+    // this object is not heap-allocated, so it should not heap allocate its monitor
+    // monitor_data *data = malloc(sizeof(monitor_data)); // todo: this leaks memory, never freed
+    UNREACHABLE("Monitor allocated for an off-heap object"); // todo: should this just throw an illegal monitor
+                                                             // exception instead
+    // return data;
+  }
   monitor_data *data = bump_allocate(thread, sizeof(monitor_data));
   return data;
 }
@@ -103,7 +106,7 @@ u16 stack_depth(const stack_frame *frame) {
   DCHECK(!is_frame_native(frame), "Can't get stack depth of native frame");
   DCHECK(frame->method, "Can't get stack depth of fake frame");
   int pc = frame->plain.program_counter;
-  if (pc == 0)  // stack is always 0 at method entry, common case
+  if (pc == 0) // stack is always 0 at method entry, common case
     return 0;
   code_analysis *analy = frame->method->code_analysis;
   DCHECK(pc < analy->insn_count);
@@ -248,7 +251,7 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
   size_t args_bytes = argc * sizeof(value);
   size_t total = header_bytes + args_bytes;
 
-  if (total + thread->frame_buffer_used > thread->frame_buffer_capacity) {
+  if (total + thread->stack.frame_buffer_used > thread->stack.frame_buffer_capacity) {
     raise_exception_object(thread, thread->stack_overflow_error);
     return nullptr;
   }
@@ -257,9 +260,9 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
   stack_frame *frame = (stack_frame *)(locals + argc);
 
   DCHECK((uintptr_t)frame % 8 == 0, "Frame is aligned");
-  arrput(thread->frames, frame);
+  arrput(thread->stack.frames, frame);
 
-  thread->frame_buffer_used = (char *)frame + sizeof(*frame) - thread->frame_buffer;
+  thread->stack.frame_buffer_used = (char *)frame + sizeof(*frame) - thread->stack.frame_buffer;
 
   frame->is_native = FRAME_KIND_NATIVE;
   frame->num_locals = argc;
@@ -267,7 +270,7 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
   frame->native.method_shape = descriptor;
   frame->native.state = 0;
   frame->is_async_suspended = false;
-  frame->attempted_synchronize = false;
+  frame->synchronized_state = SYNCHRONIZE_NONE;
 
   // Now wrap arguments in handles and copy them into the frame
   make_handles_array(thread, descriptor, method->access_flags & ACCESS_STATIC, args, locals);
@@ -287,23 +290,23 @@ stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value 
   size_t values_bytes = code->max_stack * sizeof(stack_value);
   size_t total = header_bytes + values_bytes;
 
-  if (total + thread->frame_buffer_used > thread->frame_buffer_capacity) {
+  if (total + thread->stack.frame_buffer_used > thread->stack.frame_buffer_capacity) {
     raise_exception_object(thread, thread->stack_overflow_error);
     return nullptr;
   }
 
-  //  stack_frame *frame = (stack_frame *)(thread->frame_buffer + thread->frame_buffer_used);
+  //  stack_frame *frame = (stack_frame *)(thread->stack.frame_buffer + thread->stack.frame_buffer_used);
   stack_frame *frame = (stack_frame *)(args + code->max_locals);
 
-  thread->frame_buffer_used = (char *)(frame->plain.stack + code->max_stack) - thread->frame_buffer;
-  arrput(thread->frames, frame);
+  thread->stack.frame_buffer_used = (char *)(frame->plain.stack + code->max_stack) - thread->stack.frame_buffer;
+  arrput(thread->stack.frames, frame);
   frame->is_native = FRAME_KIND_INTERPRETER;
   frame->num_locals = code->max_locals;
   frame->plain.program_counter = 0;
   frame->plain.max_stack = code->max_stack;
   frame->method = method;
   frame->is_async_suspended = false;
-  frame->attempted_synchronize = false;
+  frame->synchronized_state = SYNCHRONIZE_NONE;
 
   memset(frame_stack(frame), 0x0, code->max_stack * sizeof(stack_value));
 
@@ -376,17 +379,18 @@ void dump_frame(FILE *stream, const stack_frame *frame) {
   fprintf(stream, "%s", buf);
 }
 
-u32 compute_used(vm_thread * thread) {
-  if (arrlen(thread->frames) == 0) {
+u32 compute_used(vm_thread *thread) {
+  if (arrlen(thread->stack.frames) == 0) {
     return 0;
   }
-  stack_frame *frame = arrlast(thread->frames);
+  stack_frame *frame = arrlast(thread->stack.frames);
   DCHECK(frame);
   switch (frame->is_native) {
   case FRAME_KIND_INTERPRETER:
-    return (char *)frame + sizeof(stack_frame) + frame->plain.max_stack * sizeof(stack_value) - thread->frame_buffer;
+    return (char *)frame + sizeof(stack_frame) + frame->plain.max_stack * sizeof(stack_value) -
+           thread->stack.frame_buffer;
   case FRAME_KIND_NATIVE:
-    return (char *)frame + sizeof(stack_frame) - thread->frame_buffer;
+    return (char *)frame + sizeof(stack_frame) - thread->stack.frame_buffer;
   case FRAME_KIND_COMPILED:
     UNREACHABLE();
   default:
@@ -395,13 +399,13 @@ u32 compute_used(vm_thread * thread) {
 }
 
 void pop_frame(vm_thread *thr, [[maybe_unused]] const stack_frame *reference) {
-  DCHECK(arrlen(thr->frames) > 0);
-  stack_frame *frame = arrpop(thr->frames);
+  DCHECK(arrlen(thr->stack.frames) > 0);
+  stack_frame *frame = arrpop(thr->stack.frames);
   DCHECK(reference == nullptr || reference == frame);
   if (is_frame_native(frame)) {
     drop_handles_array(thr, frame->method, frame->native.method_shape, get_native_args(frame));
   }
-  thr->frame_buffer_used = compute_used(thr);
+  thr->stack.frame_buffer_used = compute_used(thr);
 }
 
 // Symmetry with make_primitive_classdesc
@@ -688,6 +692,7 @@ vm *create_vm(const vm_options options) {
   vm->main_thread_group = nullptr;
 
   vm->heap = aligned_alloc(4096, options.heap_size);
+  vm->heap_swap = aligned_alloc(4096, options.heap_size);
   vm->heap_used = 0;
   vm->heap_capacity = options.heap_size;
   vm->true_heap_capacity = vm->heap_capacity + OOM_SLOP_BYTES;
@@ -755,6 +760,7 @@ void free_vm(vm *vm) {
   }
   arrfree(vm->active_threads);
   free(vm->heap);
+  free(vm->heap_swap);
   free_unsafe_allocations(vm);
   free_zstreams(vm);
 
@@ -773,16 +779,17 @@ thread_options default_thread_options() {
 /// to suspend.
 stack_value call_interpreter_synchronous(vm_thread *thread, cp_method *method, stack_value *args) {
   if (args == nullptr) {
+    assert(method->descriptor->args_count == 0 && "No arguments provided for method with arguments");
     args = (stack_value[]){};
   }
 
-  thread->synchronous_depth++;
+  thread->stack.synchronous_depth++;
 
   call_interpreter_t ctx = (call_interpreter_t){.args = {thread, method, args}};
   future_t fut = call_interpreter(&ctx);
   CHECK(fut.status == FUTURE_READY, "method tried to suspend");
 
-  thread->synchronous_depth--;
+  thread->stack.synchronous_depth--;
 
   return ctx._result;
 }
@@ -851,13 +858,13 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
   arrput(vm->active_threads, thr);
 
   thr->vm = vm;
-  thr->frame_buffer = calloc(1, thr->frame_buffer_capacity = options.stack_space);
+  thr->stack.frame_buffer = calloc(1, thr->stack.frame_buffer_capacity = options.stack_space);
   thr->js_jit_enabled = options.js_jit_enabled;
   const int HANDLES_CAPACITY = 200;
   thr->handles = calloc(1, sizeof(handle) * HANDLES_CAPACITY);
   thr->handles_capacity = HANDLES_CAPACITY;
 
-  thr->async_stack = calloc(1, 0x20);
+  thr->stack.async_call_stack = calloc(1, 0x20);
   thr->tid = vm->next_tid++;
 
   bool initializing = !vm->vm_initialized;
@@ -882,7 +889,8 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
   thr->thread_obj = java_thr;
 
   java_thr->eetop = (intptr_t)thr;
-  java_thr->name = MakeJStringFromCString(thr, "main", true);
+  object name = MakeJStringFromCString(thr, "main", true);
+  java_thr->name = name;
 
   // Call (Ljava/lang/ThreadGroup;Ljava/lang/String;)V
   cp_method *make_thread = method_lookup(cached_classes(vm)->thread, STR("<init>"),
@@ -939,26 +947,29 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
       CHECK(read_string_to_utf8(thr, &java_home, ret.obj) == 0);
       free_heap_str(java_home);
     }
+
+    vm->vm_initialized = true;
   }
 
   thr->current_exception = nullptr;
   return thr;
 }
 
-vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thread *thread_obj, thread_options options) {
-  handle *java_thread = make_handle(creator_thread, (obj_header *) thread_obj);
+vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thread *thread_obj,
+                            thread_options options) {
+  handle *java_thread = make_handle(creator_thread, (obj_header *)thread_obj);
 
   vm_thread *thr = calloc(1, sizeof(vm_thread));
   arrput(vm->active_threads, thr);
 
   thr->vm = vm;
-  thr->frame_buffer = calloc(1, thr->frame_buffer_capacity = options.stack_space);
+  thr->stack.frame_buffer = calloc(1, thr->stack.frame_buffer_capacity = options.stack_space);
   thr->js_jit_enabled = options.js_jit_enabled;
   const int HANDLES_CAPACITY = 200;
   thr->handles = calloc(1, sizeof(handle) * HANDLES_CAPACITY);
   thr->handles_capacity = HANDLES_CAPACITY;
 
-  thr->async_stack = calloc(1, 0x20);
+  thr->stack.async_call_stack = calloc(1, 0x20);
   thr->tid = vm->next_tid++;
 
   bool initializing = !vm->vm_initialized;
@@ -969,7 +980,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
     vm_init_primitive_classes(thr);
     init_unsafe_constants(thr);
 
-    init_cached_classdescs_t init = { .args = { thr } };
+    init_cached_classdescs_t init = {.args = {thr}};
     future_t result = init_cached_classdescs(&init);
     CHECK(result.status == FUTURE_READY);
   }
@@ -978,19 +989,19 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
   thr->out_of_mem_error = new_object(thr, cached_classes(vm)->oom_error);
   thr->stack_overflow_error = new_object(thr, cached_classes(vm)->stack_overflow_error);
 
-  thr->thread_obj = ((struct native_Thread *) java_thread->obj);
+  thr->thread_obj = (struct native_Thread *)java_thread->obj;
   drop_handle(creator_thread, java_thread);
 
   if (initializing) {
-    slice const phases[3] = { STR("initPhase1"), STR("initPhase2"), STR("initPhase3") };
-    slice const signatures[3] = { STR("()V"), STR("(ZZ)I"), STR("()V") };
+    slice const phases[3] = {STR("initPhase1"), STR("initPhase2"), STR("initPhase3")};
+    slice const signatures[3] = {STR("()V"), STR("(ZZ)I"), STR("()V")};
 
     cp_method *method;
     stack_value ret;
     for (uint_fast8_t i = 0; i < sizeof(phases) / sizeof(*phases); i++) {
       method = method_lookup(cached_classes(vm)->system, phases[i], signatures[i], false, false);
       assert(method);
-      stack_value args[2] = {{ .i = 1 }, { .i = 1 }};
+      stack_value args[2] = {{.i = 1}, {.i = 1}};
       call_interpreter_synchronous(thr, method, args); // void methods, no result
 
       if (thr->current_exception) {
@@ -999,7 +1010,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
                                true);
         assert(method);
 
-        stack_value get_message_args[] = {{ .obj = thr->current_exception }};
+        stack_value get_message_args[] = {{.obj = thr->current_exception}};
         stack_value obj = call_interpreter_synchronous(thr, method, get_message_args);
         heap_string message;
         if (obj.obj) {
@@ -1013,7 +1024,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
       method = method_lookup(cached_classes(vm)->system, STR("getProperty"),
                              STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
       assert(method);
-      stack_value args2[1] = {{ .obj = (void *) MakeJStringFromCString(thr, "java.home", true) }};
+      stack_value args2[1] = {{.obj = (void *)MakeJStringFromCString(thr, "java.home", true)}};
       ret = call_interpreter_synchronous(thr, method, args2); // returns a String
 
       heap_string java_home;
@@ -1038,9 +1049,9 @@ static void remove_thread_from_vm_list(vm_thread *thread) {
 void free_thread(vm_thread *thread) {
   // TODO remove from the VM
 
-  free(thread->async_stack);
-  arrfree(thread->frames);
-  free(thread->frame_buffer);
+  free(thread->stack.async_call_stack);
+  arrfree(thread->stack.frames);
+  free(thread->stack.frame_buffer);
   free(thread->handles);
   free(thread->refuel_wakeup_info);
   remove_thread_from_vm_list(thread);
@@ -1067,7 +1078,8 @@ struct native_MethodType *resolve_method_type(vm_thread *thread, method_descript
 
     if (!arg_desc)
       return nullptr;
-    *((struct native_Class **)ArrayData(ptypes->obj) + i) = get_class_mirror(thread, arg_desc);
+    object mirror = (void *)get_class_mirror(thread, arg_desc);
+    *((struct native_Class **)ArrayData(ptypes->obj) + i) = (void *)mirror;
   }
 
   classdesc *ret_desc = load_class_of_field_descriptor(thread, method->return_type.unparsed);
@@ -1168,9 +1180,10 @@ static int compute_mh_type_info(vm_thread *thread, cp_method_handle_info *info, 
 DEFINE_ASYNC(resolve_mh_mt) {
   CHECK(mh_handle_supported(args->info->handle_kind), "Unsupported method handle kind");
 
-  cp_class_info *required_type = args->info->handle_kind == MH_KIND_GET_FIELD || args->info->handle_kind == MH_KIND_PUT_FIELD
-                                     ? args->info->reference->field.class_info
-                                     : args->info->reference->methodref.class_info;
+  cp_class_info *required_type =
+      args->info->handle_kind == MH_KIND_GET_FIELD || args->info->handle_kind == MH_KIND_PUT_FIELD
+          ? args->info->reference->field.class_info
+          : args->info->reference->methodref.class_info;
 
   resolve_class(args->thread, required_type);
   AWAIT(initialize_class, args->thread, required_type->classdesc);
@@ -1188,13 +1201,14 @@ DEFINE_ASYNC(resolve_mh_mt) {
   self->ptypes_array = make_handle(
       args->thread, CreateObjectArray1D(args->thread, cached_classes(args->thread->vm)->klass, info.ptypes_count));
   for (u32 i = 0; i < info.ptypes_count; ++i) {
-    *((obj_header **)ArrayData(self->ptypes_array->obj) + i) = (void *)get_class_mirror(args->thread, info.ptypes[i]);
+    object mirror = (void *)get_class_mirror(args->thread, info.ptypes[i]);
+    *((obj_header **)ArrayData(self->ptypes_array->obj) + i) = mirror;
   }
   arrfree(info.ptypes);
 
+  object mirror = (void *)get_class_mirror(args->thread, info.rtype);
   AWAIT(call_interpreter, args->thread, make,
-        (stack_value[]){
-            {.obj = (void *)get_class_mirror(args->thread, info.rtype)}, {.obj = self->ptypes_array->obj}, {.i = 0}});
+        (stack_value[]){{.obj = mirror}, {.obj = self->ptypes_array->obj}, {.i = 0}});
   stack_value result = get_async_result(call_interpreter);
   drop_handle(args->thread, self->ptypes_array);
 
@@ -1475,8 +1489,8 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
   if (!class) {
     // Maybe it's an anonymous class, read the thread stack looking for a
     // class with a matching name
-    for (int i = (int)arrlen(thread->frames) - 1; i >= 0; --i) {
-      classdesc *d = get_frame_method(thread->frames[i])->my_class;
+    for (int i = (int)arrlen(thread->stack.frames) - 1; i >= 0; --i) {
+      classdesc *d = get_frame_method(thread->stack.frames[i])->my_class;
       if (utf8_equals_utf8(d->name, chars)) {
         class = d;
         break;
@@ -1564,6 +1578,7 @@ void *bump_allocate(vm_thread *thread, size_t bytes) {
   // round up to multiple of 8
   bytes = align_up(bytes, 8);
   vm *vm = thread->vm;
+  DCHECK(vm->heap_used % 8 == 0);
   if (vm->heap_used + bytes > vm->heap_capacity) {
     major_gc(thread->vm);
     if (vm->heap_used + bytes > vm->heap_capacity) {
@@ -1793,9 +1808,9 @@ static bool initialize_async_ctx(async_run_ctx *ctx, vm_thread *thread, cp_metho
   memset(ctx, 0, sizeof(*ctx));
 
   u8 argc = method_argc(method);
-  stack_value *stack_top = (stack_value *)(thread->frame_buffer + thread->frame_buffer_used);
-  if (arrlen(thread->frames)) {
-    stack_frame *last = arrlast(thread->frames);
+  stack_value *stack_top = (stack_value *)(thread->stack.frame_buffer + thread->stack.frame_buffer_used);
+  if (arrlen(thread->stack.frames)) {
+    stack_frame *last = arrlast(thread->stack.frames);
     if (last->is_native == FRAME_KIND_INTERPRETER) {
       // Make sure we're not trampling over the previous interpreter frame
       DCHECK((uintptr_t)last->plain.stack + last->plain.max_stack * sizeof(stack_value) <= (uintptr_t)stack_top);
@@ -1803,13 +1818,13 @@ static bool initialize_async_ctx(async_run_ctx *ctx, vm_thread *thread, cp_metho
   }
   size_t args_size = sizeof(stack_value) * argc;
 
-  if (args_size + thread->frame_buffer_used > thread->frame_buffer_capacity) {
+  if (args_size + thread->stack.frame_buffer_used > thread->stack.frame_buffer_capacity) {
     raise_exception_object(thread, thread->stack_overflow_error);
     return true;
   }
 
   memcpy(stack_top, args, args_size);
-  thread->frame_buffer_used += args_size;
+  thread->stack.frame_buffer_used += args_size;
 
   ctx->thread = thread;
   ctx->frame = push_frame(thread, method, stack_top, argc);
@@ -1843,8 +1858,8 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
   // TODO this is rly dumb, review the spec for how this should really work (need to ignore stack frames associated
   // with reflection n' shit)
   object loader = nullptr;
-  for (int i = arrlen(thread->frames) - 1; i >= 0; --i) {
-    void *candidate = thread->frames[i]->method->my_class->classloader;
+  for (int i = arrlen(thread->stack.frames) - 1; i >= 0; --i) {
+    void *candidate = thread->stack.frames[i]->method->my_class->classloader;
     if (candidate) {
       loader = candidate;
       break;
@@ -1864,15 +1879,15 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
     }
     slice subslice = subslice_to(info->name, dims + (dims != 0), info->name.len - (dims != 0));
 
-    cp_method *loadClass = method_lookup(loader->descriptor,
-      STR("loadClass"), STR("(Ljava/lang/String;)Ljava/lang/Class;"),
-                                         true, false);
+    cp_method *loadClass =
+        method_lookup(loader->descriptor, STR("loadClass"), STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
     INIT_STACK_STRING(s, 1000);
     exchange_slashes_and_dots(&s, subslice);
     s.len = subslice.len;
 
     object name = MakeJStringFromModifiedUTF8(thread, s, false);
-    stack_value result = call_interpreter_synchronous(thread, loadClass, (stack_value[]){{.obj = loader}, {.obj = name}});
+    stack_value result =
+        call_interpreter_synchronous(thread, loadClass, (stack_value[]){{.obj = loader}, {.obj = name}});
 
     if (thread->current_exception) {
       thread->current_exception = nullptr;
@@ -1885,7 +1900,7 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
       info->classdesc = make_array_classdesc(thread, info->classdesc);
     }
   } else {
-    welp:
+  welp:
     info->classdesc = bootstrap_lookup_class(thread, info->name);
   }
   if (!info->classdesc) {
@@ -2061,7 +2076,8 @@ struct native_Class *get_class_mirror(vm_thread *thread, classdesc *cd) {
     class_mirror->reflected_class = cd;
     if (cd->module)
       class_mirror->module = cd->module->reflection_object;
-    class_mirror->componentType = cd->one_fewer_dim ? (void *)get_class_mirror(thread, cd->one_fewer_dim) : nullptr;
+    object componentType = cd->one_fewer_dim ? (void *)get_class_mirror(thread, cd->one_fewer_dim) : nullptr;
+    class_mirror->componentType = componentType;
   }
   struct native_Class *result = class_mirror;
   drop_handle(thread, cm_handle);
@@ -2165,31 +2181,31 @@ enum {
   VH_SET_VOLATILE,
   VH_GET_ACQUIRE,
   VH_SET_RELEASE,
- VH_GET_OPAQUE,
- VH_SET_OPAQUE,
- VH_COMPARE_AND_SET,
- VH_COMPARE_AND_EXCHANGE,
- VH_COMPARE_AND_EXCHANGE_ACQUIRE,
- VH_COMPARE_AND_EXCHANGE_RELEASE,
- VH_WEAK_COMPARE_AND_SET,
- VH_WEAK_COMPARE_AND_SET_PLAIN,
- VH_WEAK_COMPARE_AND_SET_ACQUIRE,
- VH_WEAK_COMPARE_AND_SET_RELEASE,
- VH_GET_AND_SET,
- VH_GET_AND_SET_ACQUIRE,
- VH_GET_AND_SET_RELEASE,
- VH_GET_AND_ADD,
- VH_GET_AND_ADD_ACQUIRE,
- VH_GET_AND_ADD_RELEASE,
- VH_GET_AND_BITWISE_OR,
- VH_GET_AND_BITWISE_OR_RELEASE,
- VH_GET_AND_BITWISE_OR_ACQUIRE,
- VH_GET_AND_BITWISE_AND,
- VH_GET_AND_BITWISE_AND_RELEASE,
- VH_GET_AND_BITWISE_AND_ACQUIRE,
- VH_GET_AND_BITWISE_XOR,
- VH_GET_AND_BITWISE_XOR_RELEASE,
- VH_GET_AND_BITWISE_XOR_ACQUIRE,
+  VH_GET_OPAQUE,
+  VH_SET_OPAQUE,
+  VH_COMPARE_AND_SET,
+  VH_COMPARE_AND_EXCHANGE,
+  VH_COMPARE_AND_EXCHANGE_ACQUIRE,
+  VH_COMPARE_AND_EXCHANGE_RELEASE,
+  VH_WEAK_COMPARE_AND_SET,
+  VH_WEAK_COMPARE_AND_SET_PLAIN,
+  VH_WEAK_COMPARE_AND_SET_ACQUIRE,
+  VH_WEAK_COMPARE_AND_SET_RELEASE,
+  VH_GET_AND_SET,
+  VH_GET_AND_SET_ACQUIRE,
+  VH_GET_AND_SET_RELEASE,
+  VH_GET_AND_ADD,
+  VH_GET_AND_ADD_ACQUIRE,
+  VH_GET_AND_ADD_RELEASE,
+  VH_GET_AND_BITWISE_OR,
+  VH_GET_AND_BITWISE_OR_RELEASE,
+  VH_GET_AND_BITWISE_OR_ACQUIRE,
+  VH_GET_AND_BITWISE_AND,
+  VH_GET_AND_BITWISE_AND_RELEASE,
+  VH_GET_AND_BITWISE_AND_ACQUIRE,
+  VH_GET_AND_BITWISE_XOR,
+  VH_GET_AND_BITWISE_XOR_RELEASE,
+  VH_GET_AND_BITWISE_XOR_ACQUIRE,
 };
 
 DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
@@ -2202,7 +2218,7 @@ DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
   struct native_MethodHandle *mh = (void *)target;
   bool doing_var_handle = false;
 
-  doit:
+doit:
   if (!mh->reflected_mh) {
     // MethodHandle!
     struct native_MethodType *targ = (void *)mh->type;
@@ -2263,7 +2279,7 @@ DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
       UNREACHABLE();
     }
   } else {
-    struct native_VarHandle *vh = (void*)target;
+    struct native_VarHandle *vh = (void *)target;
     // Call valueFromMethodName on java.lang.invoke.VarHandle.AccessMode with the method name
     // to get the method handle
     classdesc *AccessMode = bootstrap_lookup_class(thread, STR("java/lang/invoke/VarHandle$AccessMode"));
@@ -2271,15 +2287,15 @@ DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
     future_t fut = initialize_class(&init);
     CHECK(fut.status == FUTURE_READY);
 
-    cp_method *valueFromMethodName = method_lookup(AccessMode, STR("valueFromMethodName"),
-                            STR("(Ljava/lang/String;)Ljava/lang/invoke/VarHandle$AccessMode;"),
-                            true, false);
+    cp_method *valueFromMethodName =
+        method_lookup(AccessMode, STR("valueFromMethodName"),
+                      STR("(Ljava/lang/String;)Ljava/lang/invoke/VarHandle$AccessMode;"), true, false);
     DCHECK(valueFromMethodName);
 
     // Now invoke it with the name of the method
     void *str = MakeJStringFromData(thread, self->args.method->name, false);
     // TODO oom
-    stack_value arg[] = {{.obj = (void*)str}};
+    stack_value arg[] = {{.obj = (void *)str}};
     AWAIT(call_interpreter, thread, valueFromMethodName, arg);
     if (thread->current_exception) {
       ASYNC_RETURN_VOID();
@@ -2290,13 +2306,13 @@ DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
     // Second, a reference to an instance of java.lang.invoke.MethodType is obtained as if by invocation of the
     // accessModeType method of java.lang.invoke.VarHandle on the instance objectref, with the instance of
     // java.lang.invoke.VarHandle.AccessMode as the argument.
-    cp_method *accessModeType = method_lookup(vh->base.descriptor, STR("accessModeType"),
-                            STR("(Ljava/lang/invoke/VarHandle$AccessMode;)Ljava/lang/invoke/MethodType;"),
-                            true, false);
+    cp_method *accessModeType =
+        method_lookup(vh->base.descriptor, STR("accessModeType"),
+                      STR("(Ljava/lang/invoke/VarHandle$AccessMode;)Ljava/lang/invoke/MethodType;"), true, false);
     DCHECK(accessModeType);
 
     // Now invoke it with the result of the previous call
-    stack_value arg2[] = {{.obj = (void*)vh}, {.obj = result->obj}};
+    stack_value arg2[] = {{.obj = (void *)vh}, {.obj = result->obj}};
     AWAIT(call_interpreter, thread, accessModeType, arg2);
     if (thread->current_exception) {
       ASYNC_RETURN_VOID();
@@ -2309,17 +2325,18 @@ DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
     classdesc *MethodHandles = cached_classes(thread->vm)->method_handles;
     CHECK(MethodHandles);
     stack_value arg3[] = {{.obj = result->obj}, {.obj = get_async_result(call_interpreter).obj}};
-    cp_method *varHandleExactInvoker = method_lookup(MethodHandles, STR("varHandleExactInvoker"),
-                            STR("(Ljava/lang/invoke/VarHandle$AccessMode;Ljava/lang/invoke/MethodType;)"
-                                    "Ljava/lang/invoke/MethodHandle;"),
-                            true, false);
+    cp_method *varHandleExactInvoker =
+        method_lookup(MethodHandles, STR("varHandleExactInvoker"),
+                      STR("(Ljava/lang/invoke/VarHandle$AccessMode;Ljava/lang/invoke/MethodType;)"
+                          "Ljava/lang/invoke/MethodHandle;"),
+                      true, false);
     DCHECK(varHandleExactInvoker);
     AWAIT(call_interpreter, thread, varHandleExactInvoker, arg3);
     if (thread->current_exception) {
       ASYNC_RETURN_VOID();
     }
 
-    mh = (void*)get_async_result(call_interpreter).obj;
+    mh = (void *)get_async_result(call_interpreter).obj;
     drop_handle(thread, result);
     doing_var_handle = true;
 
@@ -2398,28 +2415,28 @@ int multianewarray(vm_thread *thread, plain_frame *frame, struct multianewarray_
 static stack_value box_cp_integral(vm_thread *thread, cp_kind kind, cp_entry *ent) {
   switch (kind) {
   case CP_KIND_INTEGER: {
-    stack_value args[1] = { {.i = (jint)ent->integral.value} };
+    stack_value args[1] = {{.i = (jint)ent->integral.value}};
     // Call Integer.valueOf
-    cp_method *valueOf = method_lookup(cached_classes(thread->vm)->integer,
-      STR("valueOf"), STR("(I)Ljava/lang/Integer;"), true, false);
+    cp_method *valueOf =
+        method_lookup(cached_classes(thread->vm)->integer, STR("valueOf"), STR("(I)Ljava/lang/Integer;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   case CP_KIND_FLOAT: {
-    stack_value args[1] = { {.f = (jfloat)ent->floating.value} };
-    cp_method *valueOf = method_lookup(cached_classes(thread->vm)->float_,
-      STR("valueOf"), STR("(F)Ljava/lang/Float;"), true, false);
+    stack_value args[1] = {{.f = (jfloat)ent->floating.value}};
+    cp_method *valueOf =
+        method_lookup(cached_classes(thread->vm)->float_, STR("valueOf"), STR("(F)Ljava/lang/Float;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   case CP_KIND_LONG: {
-    stack_value args[1] = { {.l = (jlong)ent->integral.value} };
-    cp_method *valueOf = method_lookup(cached_classes(thread->vm)->long_,
-      STR("valueOf"), STR("(J)Ljava/lang/Long;"), true, false);
+    stack_value args[1] = {{.l = (jlong)ent->integral.value}};
+    cp_method *valueOf =
+        method_lookup(cached_classes(thread->vm)->long_, STR("valueOf"), STR("(J)Ljava/lang/Long;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   case CP_KIND_DOUBLE: {
-    stack_value args[1] = { {.d = (jdouble)ent->floating.value} };
-    cp_method *valueOf = method_lookup(cached_classes(thread->vm)->double_,
-      STR("valueOf"), STR("(D)Ljava/lang/Double;"), true, false);
+    stack_value args[1] = {{.d = (jdouble)ent->floating.value}};
+    cp_method *valueOf =
+        method_lookup(cached_classes(thread->vm)->double_, STR("valueOf"), STR("(D)Ljava/lang/Double;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   default:
@@ -2575,7 +2592,7 @@ DEFINE_ASYNC(run_native) {
 DEFINE_ASYNC(interpret) {
 #define thread args->thread
 #define raw_frame args->raw_frame
-  DCHECK(arrlast(thread->frames) == raw_frame, "Frame is not last frame on stack");
+  DCHECK(arrlast(thread->stack.frames) == raw_frame, "Frame is not last frame on stack");
 
   for (;;) {
     future_t f;

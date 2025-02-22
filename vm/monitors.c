@@ -25,7 +25,7 @@ DEFINE_ASYNC(monitor_acquire) {
     }
     // we need to allocate one ourselves
     if (!allocated_data) {
-      allocated_data = allocate_monitor(args->thread);
+      allocated_data = allocate_monitor_for(args->thread, self->handle->obj);
       if (unlikely(!allocated_data)) { // oom
         drop_handle(args->thread, self->handle);
         out_of_memory(args->thread);
@@ -44,18 +44,18 @@ DEFINE_ASYNC(monitor_acquire) {
                                   __ATOMIC_ACQUIRE)) {
       break; // success
     }
-#undef shared_header
   }
 
   // now, a monitor is guaranteed to exist
   for (;;) {
-    monitor_data *lock =
-        __atomic_load_n((monitor_data **)&self->handle->obj->header_word, __ATOMIC_ACQUIRE); // must refetch
+    monitor_data *lock = __atomic_load_n(shared_header.expanded_data, __ATOMIC_ACQUIRE); // must refetch
+    assert(!((u64)lock & IS_MARK_WORD) && "Monitor data does not exist"); // weird, because we just set it up above
     assert(lock);
     s32 read_tid = NOT_HELD_TID;
 
     // try to acquire mutex- loop again if CAS fails
-    if (__atomic_compare_exchange_n(&lock->tid, &read_tid, args->thread->tid, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+    if (__atomic_compare_exchange_n(&lock->tid, &read_tid, args->thread->tid, false, __ATOMIC_ACQ_REL,
+                                    __ATOMIC_ACQUIRE)) {
       lock->hold_count = 1;
       break; // success
     }
@@ -72,6 +72,7 @@ DEFINE_ASYNC(monitor_acquire) {
   }
 
   // done acquiring the monitor
+#undef shared_header
   drop_handle(args->thread, self->handle);
   ASYNC_END(0);
 }
@@ -96,7 +97,8 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
 
     // try to acquire mutex- loop again if CAS fails
     // todo: are these memory semantics even correct
-    if (__atomic_compare_exchange_n(&lock->tid, &read_tid, args->thread->tid, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+    if (__atomic_compare_exchange_n(&lock->tid, &read_tid, args->thread->tid, false, __ATOMIC_ACQ_REL,
+                                    __ATOMIC_ACQUIRE)) {
       lock->hold_count = args->hold_count;
       break; // success
     }
