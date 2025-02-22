@@ -20,7 +20,9 @@ typedef struct gc_ctx {
   object **relocations;
 } gc_ctx;
 
-int in_heap(vm *vm, object field) { return (u8 *)field >= vm->heap && (u8 *)field < vm->heap + vm->true_heap_capacity; }
+int in_heap(const vm *vm, object field) {
+  return (u8 *)field >= vm->heap && (u8 *)field < vm->heap + vm->true_heap_capacity;
+}
 
 #define lengthof(x) (sizeof(x) / sizeof(x[0]))
 #define PUSH_ROOT(x)                                                                                                   \
@@ -416,8 +418,6 @@ void major_gc(vm *vm) {
 
 #if NEW_HEAP_EACH_GC
   free(vm->heap);
-#else
-  //vm->heap_swap = vm->heap;
 #endif
 
   vm->heap = new_heap;

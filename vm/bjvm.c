@@ -699,7 +699,6 @@ vm *create_vm(const vm_options options) {
   vm->main_thread_group = nullptr;
 
   vm->heap = aligned_alloc(4096, options.heap_size);
-  vm->heap_swap = aligned_alloc(4096, options.heap_size);
   vm->heap_used = 0;
   vm->heap_capacity = options.heap_size;
   vm->true_heap_capacity = vm->heap_capacity + OOM_SLOP_BYTES;
@@ -767,7 +766,6 @@ void free_vm(vm *vm) {
   }
   arrfree(vm->active_threads);
   free(vm->heap);
-  free(vm->heap_swap);
   free_unsafe_allocations(vm);
   free_zstreams(vm);
 
@@ -2655,25 +2653,3 @@ obj_header *get_main_thread_group(vm_thread *thread) {
   }
   return vm->main_thread_group;
 }
-
-#if defined(EMSCRIPTEN)
-EMSCRIPTEN_KEEPALIVE
-__attribute__((constructor)) static void nodejs_bootloader() {
-  MAIN_THREAD_EM_ASM_INT({
-    if (ENVIRONMENT_IS_NODE) {
-      if (!FS.initialized)
-        FS.init();
-      const fs = require('f' + String.fromCharCode(115));
-      const needed = ([ 'jdk23.jar', 'jdk23/lib/modules' ]);
-
-      // Read each of these from disk and put them in the filesystem
-      for (let i = 0; i < needed.length; ++i) {
-        const path = needed[i];
-        const data = fs.readFileSync("./" + path); // Buffer
-        FS.createPath('/', path.substring(0, path.lastIndexOf('/')));
-        FS.writeFile(path, data);
-      }
-    }
-  });
-}
-#endif

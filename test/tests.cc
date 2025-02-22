@@ -778,6 +778,6 @@ TEST_CASE("Manually thrown exception") {
                             "ManuallyThrown.main(ManuallyThrown.java:4)\n");
 }
 
-#if 1
+#if 0
 TEST_CASE("Print useful trampolines") { print_method_sigs(); }
 #endif
