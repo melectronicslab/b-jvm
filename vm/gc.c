@@ -4,16 +4,20 @@
 #include "arrays.h"
 #include "bjvm.h"
 #include <gc.h>
+#include <roundrobin_scheduler.h>
 
 typedef struct gc_ctx {
   vm *vm;
 
-  // Vector of pointer to pointer to things to rewrite
+  // Vector of pointer to things to rewrite
   object **roots;
-  object *objs;
-  object *new_location;
 
-  object *worklist;
+  // If lowest bit is a 1, it's a monitor_data*, otherwise it's an object.
+  void **objs;
+  object *new_location;
+  object *worklist;  // should contain a reachable object exactly once over its lifetime
+
+  object **relocations;
 } gc_ctx;
 
 int in_heap(vm *vm, object field) { return (u8 *)field >= vm->heap && (u8 *)field < vm->heap + vm->true_heap_capacity; }
@@ -23,9 +27,21 @@ int in_heap(vm *vm, object field) { return (u8 *)field >= vm->heap && (u8 *)fiel
   {                                                                                                                    \
     __typeof(x) v = (x);                                                                                               \
     if (*v && in_heap(ctx->vm, (void *)*v)) {                                                                          \
+      check_duplicate_root(ctx, (object *)v);                                                                          \
       arrput(ctx->roots, (object *)v);                                                                                 \
     }                                                                                                                  \
   }
+
+void check_duplicate_root(gc_ctx *ctx, object *root) {
+#if DCHECKS_ENABLED
+  for (int i = 0; i < arrlen(ctx->roots); ++i) {
+    if (ctx->roots[i] == root) {
+      fprintf(stderr, "Duplicate root %p\n", root);
+      CHECK(false);
+    }
+  }
+#endif
+}
 
 static void enumerate_reflection_roots(gc_ctx *ctx, classdesc *desc) {
   // Push the mirrors of this base class and all of its array types
@@ -192,15 +208,23 @@ static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
     PUSH_ROOT(&it.current->data);
     hash_table_iterator_next(&it);
   }
+
+  // Scheduler roots
+  if (vm->scheduler) {
+    rr_scheduler_enumerate_gc_roots(vm->scheduler, ctx->roots);
+  }
 }
 
-static u32 *get_flags(object o) {
+static u32 *get_flags(vm *vm, object o) {
   assert(o != nullptr);
-  return &get_mark_word(&o->header_word)->data[0];
+  return &get_mark_word(vm, &o->header_word)->data[0];
 }
 
 static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
   arrput(ctx->objs, obj);
+  if (has_expanded_data(&obj->header_word)) {
+    arrput(ctx->objs, (void*)((uintptr_t)obj->header_word.expanded_data | 1));
+  }
 
   // Visit all instance fields
   classdesc *desc = obj->descriptor;
@@ -209,8 +233,8 @@ static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
     list_compressed_bitset_bits(bits, bitset);
     for (int i = 0; i < arrlen(*bitset); ++i) {
       object field_obj = *((object *)obj + (*bitset)[i]);
-      if (field_obj && !(*get_flags(field_obj) & IS_REACHABLE) && in_heap(ctx->vm, field_obj)) {
-        *get_flags(field_obj) |= IS_REACHABLE;
+      if (field_obj && in_heap(ctx->vm, field_obj) && !(*get_flags(ctx->vm, field_obj) & IS_REACHABLE)) {
+        *get_flags(ctx->vm,field_obj) |= IS_REACHABLE;
         arrput(ctx->worklist, field_obj);
       }
     }
@@ -219,15 +243,15 @@ static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
     int arr_len = ArrayLength(obj);
     for (int i = 0; i < arr_len; ++i) {
       object arr_element = ReferenceArrayLoad(obj, i);
-      if (arr_element && !(*get_flags(arr_element) & IS_REACHABLE) && in_heap(ctx->vm, arr_element)) {
-        *get_flags(arr_element) |= IS_REACHABLE;
+      if (arr_element && in_heap(ctx->vm, arr_element) && !(*get_flags(ctx->vm,arr_element) & IS_REACHABLE)) {
+        *get_flags(ctx->vm,arr_element) |= IS_REACHABLE;
         arrput(ctx->worklist, arr_element);
       }
     }
   }
 }
 
-static int comparator(const void *a, const void *b) { return *(object *)a - *(object *)b; }
+static int comparator(const void *a, const void *b) { return *(char **)a - *(char **)b; }
 
 size_t size_of_object(object obj) {
   if (obj->descriptor->kind == CD_KIND_ORDINARY) {
@@ -239,46 +263,58 @@ size_t size_of_object(object obj) {
   return kArrayDataOffset + ArrayLength(obj) * sizeof_type_kind(obj->descriptor->primitive_component);
 }
 
-static void relocate_object(const gc_ctx *ctx, object *obj) {
+static void relocate_object(gc_ctx *ctx, object *obj) {
   if (!*obj)
     return;
 
+  DCHECK(((uintptr_t)obj & 1) == 0);
+
+#if DCHECKS_ENABLED
+  arrput(ctx->relocations, obj);
+#endif
+
   // Binary search for obj in ctx->roots
-  object *found = (object *)bsearch(obj, ctx->objs, arrlen(ctx->objs), sizeof(object), comparator);
+  void **found = bsearch(obj, ctx->objs, arrlen(ctx->objs), sizeof(object), comparator);
   if (found) {
-    *obj = ctx->new_location[found - ctx->objs];
-  }
-}
-
-static void relocate_static_fields(gc_ctx *ctx) {
-  vm *vm = ctx->vm;
-
-  // Static fields of bootstrap-loaded classes
-  hash_table_iterator it = hash_table_get_iterator(&vm->classes);
-  char *key;
-  size_t key_len;
-  classdesc *desc;
-  int *bitset_list = NULL;
-  while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
-    list_compressed_bitset_bits(desc->static_references, &bitset_list);
-    for (int i = 0; i < arrlen(bitset_list); ++i) {
-      relocate_object(ctx, ((object *)desc->static_fields) + bitset_list[i]);
+    object relocated = ctx->new_location[found - ctx->objs];
+    DCHECK(relocated);
+    DCHECK(!((uintptr_t)relocated & 1));
+    *obj = relocated;
+  } else {
+    if (in_heap(ctx->vm, *obj)) {
+      // Check for a double relocation
+      for (int i = 0; i < arrlen(ctx->relocations); ++i) {
+        if (ctx->relocations[i] == obj) {
+          fprintf(stderr, "Double relocation.");
+          break;
+        }
+      }
+      fprintf(stderr, "Dangling reference! %p %p", obj, *obj);
+      CHECK(false);
     }
-    // Push the mirrors of this base class and all of its array types
-    classdesc *array = desc;
-    while (array) {
-      relocate_object(ctx, (object *)&array->mirror);
-      array = array->array_type;
-    }
-    hash_table_iterator_next(&it);
   }
-  arrfree(bitset_list);
 }
 
 void relocate_instance_fields(gc_ctx *ctx) {
   int *bitset = nullptr;
   for (int i = 0; i < arrlen(ctx->objs); ++i) {
+    if ((uintptr_t) ctx->objs[i] & 1) {  // monitor
+      continue;
+    }
     object obj = ctx->new_location[i];
+
+    // Re-map the monitor, if any
+    if (has_expanded_data(&obj->header_word)) {
+      monitor_data *monitor = obj->header_word.expanded_data;
+      void *key = (void*)((uintptr_t)monitor | 1);
+      void **found = bsearch(&key, ctx->objs, arrlen(ctx->objs), sizeof(object), comparator);
+      if (!found) {
+        fprintf(stderr, "Can't find monitor %p!\n", monitor);
+        abort();
+      }
+      obj->header_word.expanded_data = (void*)ctx->new_location[found - ctx->objs];
+    }
+
     if (obj->descriptor->kind == CD_KIND_ORDINARY) {
       classdesc *desc = obj->descriptor;
       compressed_bitset bits = desc->instance_references;
@@ -299,6 +335,12 @@ void relocate_instance_fields(gc_ctx *ctx) {
   arrfree(bitset);
 }
 
+#if DCHECKS_ENABLED
+#define NEW_HEAP_EACH_GC 1
+#else
+#define NEW_HEAP_EACH_GC 0
+#endif
+
 void major_gc(vm *vm) {
   // TODO wait for all threads to get ready (for now we'll just call this from
   // an already-running thread)
@@ -308,16 +350,16 @@ void major_gc(vm *vm) {
   // Mark phase
   for (int i = 0; i < arrlen(ctx.roots); ++i) {
     object root = *ctx.roots[i];
-    if (*get_flags(root) & IS_REACHABLE) // already visited
+    if (!in_heap(vm, root) || *get_flags(vm,root) & IS_REACHABLE) // already visited
       continue;
-    *get_flags(root) |= IS_REACHABLE;
+    *get_flags(vm,root) |= IS_REACHABLE;
     arrput(ctx.worklist, root);
   }
 
   int *bitset[1] = {nullptr};
   while (arrlen(ctx.worklist) > 0) {
     object obj = arrpop(ctx.worklist);
-    *get_flags(obj) |= IS_REACHABLE;
+    *get_flags(vm,obj) |= IS_REACHABLE;
     mark_reachable(&ctx, obj, bitset);
   }
   arrfree(ctx.worklist);
@@ -328,45 +370,40 @@ void major_gc(vm *vm) {
   object *new_location = ctx.new_location = malloc(arrlen(ctx.objs) * sizeof(object));
 
   // Create a new heap of the same size so ASAN can enjoy itself
-#if DCHECKS_ENABLED
+#if NEW_HEAP_EACH_GC
   u8 *new_heap = aligned_alloc(4096, vm->true_heap_capacity), *end = new_heap + vm->true_heap_capacity;
 #else
-  u8 *new_heap = vm->heap_swap, *end = vm->heap_swap + vm->true_heap_capacity;
+  u8 *new_heap = vm->heap, *end = vm->heap + vm->true_heap_capacity;
 #endif
 
   u8 *write_ptr = new_heap;
 
-  // Copy object by object
+  // Copy object by object. Monitors are "objects" with a low bit of 1 to differentiate them.
   for (size_t i = 0; i < arrlenu(ctx.objs); ++i) {
     // Align to 8 bytes
-    write_ptr = (u8 *)(align_up((uintptr_t)write_ptr, 8));
+    write_ptr = (u8 *)align_up((uintptr_t)write_ptr, 8);
     object obj = ctx.objs[i];
-    size_t sz = size_of_object(obj);
 
+#if !NEW_HEAP_EACH_GC
+    DCHECK((uintptr_t)obj >= (uintptr_t)write_ptr);
+#endif
+
+    bool is_monitor = (uintptr_t)obj & 1;
+    size_t sz = is_monitor ? sizeof(monitor_data) : size_of_object(obj);
+    sz = align_up(sz, 8);
+    obj = (void*)((uintptr_t) obj & ~1ULL);  // get the actual underlying pointer
     DCHECK(write_ptr + sz <= end);
-
-    *get_flags(obj) &= ~IS_REACHABLE; // clear the reachable flag
-    memmove(write_ptr, obj, sz);      // not memcpy because the heap is the same
-
+    if (!is_monitor) {
+      *get_flags(vm, obj) &= ~IS_REACHABLE; // clear the reachable flag
+    }
+    memmove(write_ptr, obj, sz);      // not memcpy because the heap is the same; overlap is possible
     object new_obj = (object)write_ptr;
     new_location[i] = new_obj;
     write_ptr += sz;
-
-    if (has_expanded_data(&obj->header_word)) {
-      // Copy the expanded data (align to 8 bytes for atomic ops to be happy)
-      write_ptr = (u8 *)align_up((uintptr_t)write_ptr, 8);
-      constexpr size_t monitor_data_size = sizeof(monitor_data);
-      DCHECK(write_ptr + monitor_data_size <= end);
-
-      memmove(write_ptr, obj->header_word.expanded_data, monitor_data_size);
-      new_obj->header_word.expanded_data = (monitor_data *)write_ptr;
-      write_ptr += monitor_data_size;
-    }
   }
 
   // Go through all static and instance fields and rewrite in place
   relocate_instance_fields(&ctx);
-  relocate_static_fields(&ctx);
   for (int i = 0; i < arrlen(ctx.roots); ++i) {
     object *obj = ctx.roots[i];
     relocate_object(&ctx, obj);
@@ -375,11 +412,12 @@ void major_gc(vm *vm) {
   arrfree(ctx.objs);
   free(ctx.new_location);
   arrfree(ctx.roots);
+  arrfree(ctx.relocations);
 
-#if !DCHECKS_ENABLED
-  vm->heap_swap = vm->heap;
-#else
+#if NEW_HEAP_EACH_GC
   free(vm->heap);
+#else
+  //vm->heap_swap = vm->heap;
 #endif
 
   vm->heap = new_heap;

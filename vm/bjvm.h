@@ -148,8 +148,10 @@ typedef enum : u32 {
   IS_REACHABLE = 1 << 1,
 } mark_word_flags;
 
+struct vm;
+
 bool has_expanded_data(header_word *data);
-mark_word_t *get_mark_word(header_word *data);
+mark_word_t *get_mark_word(struct vm *vm, header_word *data);
 // nullptr if the object has never been locked, otherwise a pointer to a lock_record.
 monitor_data *inspect_monitor(header_word *data);
 // only call this if inspect_monitor returns nullptr
@@ -275,7 +277,7 @@ DECLARE_ASYNC_VOID(invokevirtual_signature_polymorphic,
                     vm_thread *thread;
                     stack_value *sp_;
                     cp_method *method;
-                    struct native_MethodType *provider_mt;
+                    struct native_MethodType **provider_mt;  // pointer to GC root
                     obj_header *target;
                   ),
                   invoked_methods(
@@ -631,8 +633,6 @@ void pop_frame(vm_thread *thr, [[maybe_unused]] const stack_frame *reference);
 vm_options default_vm_options();
 
 vm *create_vm(vm_options options);
-
-vm_options *default_vm_options_ptr();
 
 typedef struct {
   u32 stack_space;

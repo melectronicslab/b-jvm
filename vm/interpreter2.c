@@ -48,19 +48,23 @@
 #include <roundrobin_scheduler.h>
 #include <sys/time.h>
 
+[[maybe_unused]] int cow = 0;
+
 // Define this macro to print debug dumps upon the execution of every interpreter instruction. Useful for debugging.
 #define DEBUG_CHECK() ;
 #if 0
 #undef DEBUG_CHECK
 #define DEBUG_CHECK()                                                                                                  \
-  SPILL_VOID                                                                                                           \
+  if (cow++ > 25000000) { \
+  SPILL_VOID    \
   cp_method *m = frame->method;                                                                                        \
   printf("Calling method %.*s, descriptor %.*s, on class %.*s; %d\n", fmt_slice(m->name),                              \
          fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), __LINE__);                                   \
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
-  dump_frame(stdout, frame);
+  dump_frame(stdout, frame); \
+  }
 #endif
 
 // If true, use a sequence of tail calls rather than computed goto. We try to make the code reasonably generic to handle
@@ -2021,7 +2025,9 @@ __attribute__((noinline)) static s64 invokesigpoly_impl_void(ARGS_VOID) {
 
   invokevirtual_signature_polymorphic_t ctx = {
       .args = {
-          .thread = thread, .method = insn->ic, .provider_mt = insn->ic2, .sp_ = sp - insn->args, .target = target}};
+          .thread = thread, .method = insn->ic,
+        .provider_mt = (struct native_MethodType**) &insn->ic2, // GC root
+        .sp_ = sp - insn->args, .target = target}};
 
   future_t fut = invokevirtual_signature_polymorphic(&ctx);
   if (unlikely(fut.status == FUTURE_NOT_READY)) {
@@ -2301,10 +2307,14 @@ static s64 ldc_impl_void(ARGS_VOID) {
     // Initialize the class, then get its Java mirror
     if (!ent->class_info.vm_object) {
       SPILL_VOID
-      if (resolve_class(thread, &ent->class_info))
+      if (resolve_class(thread, &ent->class_info)) {
+        DCHECK(thread->current_exception);
         return 0;
-      if (link_class(thread, ent->class_info.classdesc))
+      }
+      if (link_class(thread, ent->class_info.classdesc)) {
+        DCHECK(thread->current_exception);
         return 0;
+      }
       obj_header *obj = (void *)get_class_mirror(thread, ent->class_info.classdesc);
       ent->class_info.vm_object = obj;
     }
@@ -2317,8 +2327,10 @@ static s64 ldc_impl_void(ARGS_VOID) {
     slice s = ent->string.chars;
     SPILL_VOID
     obj_header *obj = MakeJStringFromModifiedUTF8(thread, s, true);
-    if (!obj) // oom
+    if (!obj) {
+      DCHECK(thread->current_exception);
       return 0;
+    }
     ent->string.interned = obj;
     NEXT_INT(obj);
   }
@@ -2666,7 +2678,13 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
     case 0: // special value in case of exception or suspend (theoretically also nop_impl_void, but javac doesn't use
             // that)
 
-      DCHECK(thread->current_exception || frame->is_async_suspended);
+      if (!(thread->current_exception || frame->is_async_suspended)) {
+#if DCHECKS_ENABLED
+        INIT_STACK_STRING(s, 1000);
+        s = bprintf(s, "Interpreter not in an exception or in a suspended state (insn kind: %d)", code[pc_].kind);
+        raise_vm_exception(thread, STR("java/lang/InternalError"), s);
+#endif
+      }
       return 0;
     default: {
       // outlined case
