@@ -47,7 +47,7 @@ declare class VM<Classes> {
     // the root thread is made the active thread.
     // Exceptional behavior:
     //   - Throws a JS error if the thread does not belong to this VM.
-    makeActiveThread(thread: VMThread<Classes> | null)
+    makeActiveThread(thread: VMThread<Classes> | null): void;
 
     // Get the root thread.
     // Exceptional behavior: none.

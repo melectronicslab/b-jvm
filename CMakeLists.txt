@@ -44,7 +44,7 @@ if (EMSCRIPTEN)
             -sFORCE_FILESYSTEM=1
             -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
             -sWARN_ON_UNDEFINED_SYMBOLS=0
-            -sEXPORTED_RUNTIME_METHODS=ccall,wasmMemory,cwrap,addFunction,removeFunction,wasmTable,FS,UTF8ToString,getValue,setValue
+            -sEXPORTED_RUNTIME_METHODS=wasmMemory,addFunction,removeFunction,wasmTable,FS,UTF8ToString,getValue,setValue
             )
 
     add_executable(bjvm_main vm/bin/main.c)  # for now

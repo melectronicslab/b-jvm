@@ -140,7 +140,7 @@ function makePrimitiveArrayName(descElement: string, dims: number) {
     return "[".repeat(dims) + descElement;
 }
 
-function makeArrayName(s: string, dims: number) {
+function makeArrayName(s: string, dims: number): string {
     return "[".repeat(dims) + "L" + s;
 }
 
@@ -158,8 +158,8 @@ function parseParameterType(desc: string, i: number, parameterTypes: JavaType[])
         parameterTypes.push({ kind: 'L', className: makeArrayName(desc.substring(j, i), dims) } as JavaType);
     } else {
         parameterTypes.push(dims ?
-            { kind: 'L', className: makePrimitiveArrayName(desc[i], dims) } :
-            { kind: desc[i], className: "" } as JavaType);
+            { kind: 'L', className: makePrimitiveArrayName(desc[i]!, dims) } :
+            { kind: desc[i]!, className: "" } as JavaType);
     }
     i++;
     return i;
@@ -208,7 +208,9 @@ function ptr(handle: BaseHandle) {
 
 // Handle to a Java object
 class BaseHandle {
+    // @ts-ignore
     vm: VM;
+    // @ts-ignore
     handleIndex: number;
 
     drop() {
@@ -250,11 +252,11 @@ class OverloadResolver {
         if (!this.grouped.has(method.name)) {
             this.grouped.set(method.name, new Map());
         }
-        let group = this.grouped.get(method.name);
+        let group = this.grouped.get(method.name)!;
         if (!group.has(method.parameterNames.length)) {
             group.set(method.parameterNames.length, []);
         }
-        group.get(method.parameterNames.length).push(method);
+        group.get(method.parameterNames.length)!.push(method);
     }
 
     flattenCollisions() {
@@ -267,7 +269,7 @@ class OverloadResolver {
                 }
 
                 for (let i = 0; i < methods.length; ++i) {
-                    let method = methods[i];
+                    let method = methods[i]!;
                     let desc = parseMethodDescriptor(method);
                     let newName = `${name}_$${desc.parameterTypes.map(stringifyParameter).join('$')}`;
 
@@ -279,7 +281,7 @@ class OverloadResolver {
         }
     }
 
-    createImpls(classInfo: ClassInfo, static_: boolean): string {
+    createImpls(static_: boolean): string {
         let impls: string[] = [];
         this.flattenCollisions();
 
@@ -299,7 +301,7 @@ class OverloadResolver {
                 switch (arguments.length) {
                     ${[...group.entries()].map(([argc, method]) => {
                         const m = method[0];
-                        return `case ${argc}: { i = ${m.index}; break; }`;
+                        return `case ${argc}: { i = ${m!.index}; break; }`;
                     }).join('\n')}
                     default:
                     throw new RangeError("Invalid number of arguments (expected one of ${[...group.keys()].join(', ')}, got " + arguments.length + ")");
@@ -329,7 +331,7 @@ function createClassImpl(vm: VM, bjvm_classdesc_ptr: number): HandleConstructor 
 
     // Static methods
     for (let i = 0 ; i < classInfo.methods.length; ++i) {
-        let method = classInfo.methods[i];
+        let method = classInfo.methods[i]!;
         if (!(method.accessFlags & 0x0001)) {
             continue;
         }
@@ -344,8 +346,8 @@ function createClassImpl(vm: VM, bjvm_classdesc_ptr: number): HandleConstructor 
 
     const cow = binaryNameToJSName(classInfo.binaryName);
     const body = `return class ${cow} extends BaseHandle {
-    ${instanceResolver.createImpls(classInfo, false)}
-    ${staticResolver.createImpls(classInfo, true)}
+    ${instanceResolver.createImpls(false)}
+    ${staticResolver.createImpls(true)}
     ${arrayMethods}
     };`;
 
@@ -388,26 +390,15 @@ type JavaPrimitive<N extends string, T> = T & {[_PRIMITIVE]: N}
 type JavaInt = JavaPrimitive<"int", number>;
 type JavaFloat = JavaPrimitive<"float", number>;
 
-function makeInt(n: number): JavaInt {
-    if (n < 2 ** 31 && n >= -(2 ** 31) && Number.isInteger(n)) {
-        return (n | 0) as JavaInt;
-    }
-    throw new Error("NO!");
-}
-
-function makeFloat(n: number): JavaFloat {
-    return Math.fround(n) as JavaFloat;
-}
-
 export declare class ArrayList<E extends TSJavaType> extends AbstractList<E> {
     private static vm: number;
     constructor(capacity: number);  // VERY GOOD. DO NOT YIELD TO ASYNC IN THE CONSTRUCTOR
 
     add(item: E): Promise<boolean>;
-    add(index: JavaInt | Integer, item: E);
+    add(index: JavaInt | Integer, item: E): void;
 
-    pox(float: JavaFloat);
-    pox(integer: JavaInt | Integer);
+    pox(float: JavaFloat): void;
+    pox(integer: JavaInt | Integer): void;
 
     [_BRANDS]: {
         "TSJavaType": [];
@@ -420,7 +411,7 @@ export declare class ArrayList<E extends TSJavaType> extends AbstractList<E> {
 export declare class Integer {
     static "valueOf_$I": (value: number) => Promise<Integer>;
 
-    static cow(list: List<Integer>);
+    static cow(list: List<Integer>): void;
 
     [_BRANDS]: {
         "TSJavaType": [];
@@ -458,6 +449,8 @@ export function sync<T>(toExecute: ForceablePromise<T>): T {
         return result.value;
     } else if (result.success === false /* convince TS */) {
         throw result.illegalStateException;
+    } else {
+        throw 'unreachable';
     }
 }
 
@@ -479,7 +472,7 @@ class Thread {
         this.ptr = ptr;
     }
 
-    private async _runConstructor(method: MethodInfo, ...args: any[]): Promise<any> {
+    async _runConstructor(method: MethodInfo, ...args: any[]): Promise<any> {
         console.log(method.methodPointer);
         const this_ = module._ffi_allocate_object(this.ptr, method.methodPointer);
         if (!this_) {
@@ -526,7 +519,7 @@ class Thread {
             }
             const nonInstanceArgc = args.length - +isInstanceMethod;
             for (let i = 0; i < nonInstanceArgc; i++, j++) {
-                setJavaType(this, argsPtr + j * 8, parsed.parameterTypes[i], args[j]);
+                setJavaType(this, argsPtr + j * 8, parsed.parameterTypes[i]!, args[j]!);
             }
             const scheduled = this.vm.scheduleMethod(this, method, argsPtr);
             executionRecord = scheduled.record;
@@ -549,7 +542,7 @@ class Thread {
                 }
             })() as ForceablePromise<any>;
 
-            promise.__forceSync = (raiseIllegalState: boolean) => {
+            promise.__forceSync = (_raiseIllegalState: boolean) => {
                 const status = module._ffi_execute_immediately(scheduled.record);
                 if (status == 0 /* DONE */) {
                     const ret: ReturnType<typeof promise.__forceSync> = { success: true, value: readResult() };
@@ -650,27 +643,18 @@ class Thread {
     }
 }
 
-function forwardChars(stdout: (byte: number) => void): Function {
-    // (char *buf, int len, void *param) -> void
-    return function (buf: number, len: number, _param: number) {
-        for (let i = 0; i < len; i++) {
-            stdout(module.HEAPU8[buf + i]);
-        }
-    }
-}
-
 class VM {
     ptr: number;
     handleRegistry: FinalizationRegistry<BaseHandle> = new FinalizationRegistry((handle) => {
         module._drop_js_handle(this.ptr, handle.handleIndex);
     });
     namedClasses: Map<number /* bjvm_classdesc* */, any> = new Map();
-    cachedThread: Thread;
+    cachedThread: Thread | null = null;
 
     scheduler: number;
     timeout: number; // if not -1, then a scheduler step is scheduled
 
-    waitingForYield: number;
+    waitingForYield: number = 0;
     pending: Function[] = [];  // hook here to be called every time the timeout fires
 
     private constructor(options: VMOptions) {
@@ -704,7 +688,7 @@ class VM {
                     this.scheduleTimeout(this.waitingForYield = waitUs);
                 }
                 for (let i = 0; i < this.pending.length; i++) {
-                    this.pending[i]();
+                    this.pending[i]!();
                 }
                 this.pending.length = 0;
             }, waitUs / 1000);
@@ -806,58 +790,6 @@ export function appendRuntimeFiles(files: string[]) {
     runtimeFilesList.push(...files);
 }
 
-const dbName = 'bjvm';
-
-function openDatabase(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open("FileStorageDB", 1);
-
-        request.onupgradeneeded = (event) => {
-            const db = (event.target as IDBRequest).result as IDBDatabase;
-            if (!db.objectStoreNames.contains(dbName)) {
-                db.createObjectStore(dbName, { keyPath: "name" });
-            }
-        };
-
-        request.onsuccess = (event) => {
-            resolve((event.target as IDBRequest).result as IDBDatabase);
-        };
-
-        request.onerror = (event) => {
-            reject((event.target as IDBRequest).error);
-        };
-    });
-}
-
-function addFile(db: IDBDatabase, name: string, data: Uint8Array): Promise<void> {
-    // Delete the existing file
-    return new Promise((resolve, reject) => {
-        const req = db.transaction(dbName, "readwrite").objectStore(dbName).delete(name);
-        req.onsuccess = req.onerror = () => {
-            const transaction = db.transaction(dbName, "readwrite");
-            const store = transaction.objectStore(dbName);
-
-            const file = { name, data }; // Object with name and Uint8Array
-            const request = store.add(file);
-
-            request.onsuccess = () => resolve();
-            request.onerror = (event) => reject((event.target as IDBRequest).error);
-        }
-    });
-}
-
-function getFile(db: IDBDatabase, name: string): Promise<{ name: string; data: Uint8Array } | undefined> {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(dbName, "readonly");
-        const store = transaction.objectStore(dbName);
-
-        const request = store.get(name);
-
-        request.onsuccess = (event) => resolve((event.target as IDBRequest).result as { name: string; data: Uint8Array });
-        request.onerror = (event) => reject((event.target as IDBRequest).error);
-    });
-}
-
 const TOTAL_BYTES = 0;
 
 export function setWasmLocation(location: string) {
@@ -877,8 +809,6 @@ export function setWasmLocation(location: string) {
 
 async function installRuntimeFiles(baseUrl: string, progress?: (loaded: number, total: number) => void) {
     let totalLoaded = 0;
-
-    const db = await openDatabase();
 
     // Spawn fetch requests
     const requests = runtimeFilesList.map(async (file) => {
@@ -900,7 +830,7 @@ async function installRuntimeFiles(baseUrl: string, progress?: (loaded: number, 
         const contentLength = response.headers.get('Content-Length');
         const total = contentLength ? parseInt(contentLength) : 0;
 
-        const reader = response.body?.getReader();
+        const reader = response.body?.getReader()!;
         let loaded = 0;
         const data = new Uint8Array(total);
         while (true) {
