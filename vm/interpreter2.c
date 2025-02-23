@@ -34,7 +34,9 @@
 #include "arrays.h"
 #include "bjvm.h"
 #include "classfile.h"
+#include "dumb_jit.h"
 #include "util.h"
+#include "wasm_trampolines.h"
 
 #include <debugger.h>
 #include <math.h>
@@ -1762,6 +1764,40 @@ static u8 attempt_invoke(vm_thread *thread, stack_frame *invoked_frame, stack_fr
     result;                                                                                                            \
   })
 
+#define JIT_THRESHOLD 500
+
+void attempt_jit(cp_method *method) {
+  method->call_count = INT_MIN;
+  return;
+
+  CHECK(!method->jit_entry);
+  dumb_jit_options options = {};
+  dumb_jit_result *result = dumb_jit_compile(method, options);
+  printf("Attempted JIT for %.*s.%.*s\n", fmt_slice(method->my_class->name), fmt_slice(method->name));
+  if (result && method->trampoline) {
+    printf("Result: %p\n", result->entry);
+    method->jit_entry = result->entry;
+  } else {
+    method->call_count = INT_MIN;
+  }
+}
+
+// Expects sp and insn->args to be in scope
+#define ConsiderJitEntry(thread, method, argz) \
+  retry: \
+  if (method->jit_entry) {                      \
+    ((jit_trampoline)(method)->trampoline)((method)->jit_entry, thread, method, argz); \
+    if (thread->current_exception) {            \
+      return 0;                                  \
+    }                                            \
+    sp -= insn->args; \
+    sp += returns; \
+    return 0; \
+  } else if (method->call_count > JIT_THRESHOLD) {               \
+    attempt_jit(method); \
+    goto retry; \
+  } else { method->call_count += 15; }
+
 static s64 invokestatic_resolved_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   cp_method *method = insn->ic;
@@ -1771,6 +1807,8 @@ static s64 invokestatic_resolved_impl_void(ARGS_VOID) {
   if (method->is_signature_polymorphic) {
     invoked_frame = push_native_frame(thread, method, insn->cp->methodref.descriptor, sp - insn->args, insn->args);
   } else {
+    ConsiderJitEntry(thread, method, sp - insn->args)
+
     invoked_frame = push_frame(thread, method, sp - insn->args, insn->args);
   }
   if (unlikely(!invoked_frame)) {
@@ -1915,7 +1953,10 @@ static s64 invokespecial_resolved_impl_void(ARGS_VOID) {
   bool returns = insn->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
   SPILL_VOID
   NPE_ON_NULL(target);
+
   cp_method *target_method = insn->ic;
+  ConsiderJitEntry(thread, target_method, sp - insn->args);
+
   stack_frame *invoked_frame = push_frame(thread, target_method, sp - insn->args, insn->args);
   if (!invoked_frame)
     return 0;
@@ -1998,6 +2039,9 @@ static s64 invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
       make_invokeitable_polymorphic_(insn);
     JMP_VOID
   }
+
+  ConsiderJitEntry(thread, ((cp_method*)insn->ic), sp - insn->args);
+
   stack_frame *invoked_frame = push_frame(thread, insn->ic, sp - insn->args, insn->args);
   if (!invoked_frame)
     return 0;
@@ -2058,6 +2102,9 @@ static s64 invokeitable_polymorphic_impl_void(ARGS_VOID) {
     return 0;
   }
   DCHECK(target_method);
+
+  ConsiderJitEntry(thread, target_method, sp - insn->args);
+
   stack_frame *invoked_frame = push_frame(thread, target_method, sp - insn->args, insn->args);
   if (!invoked_frame)
     return 0;
@@ -2084,6 +2131,9 @@ static s64 invokevtable_polymorphic_impl_void(ARGS_VOID) {
   NPE_ON_NULL(target);
   cp_method *target_method = vtable_lookup(target->descriptor, (size_t)insn->ic2);
   DCHECK(target_method);
+
+  ConsiderJitEntry(thread, target_method, sp - insn->args);
+
   stack_frame *invoked_frame = push_frame(thread, target_method, sp - insn->args, insn->args);
   if (!invoked_frame)
     return 0;

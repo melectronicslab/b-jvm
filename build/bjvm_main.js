@@ -31,10 +31,13 @@ var readyPromise = new Promise((resolve, reject) => {
 // Determine the runtime environment we are in. You can customize this by
 // setting the ENVIRONMENT setting at compile time (see settings.js).
 
-var ENVIRONMENT_IS_WEB = true;
-var ENVIRONMENT_IS_WORKER = false;
-var ENVIRONMENT_IS_NODE = false;
-var ENVIRONMENT_IS_SHELL = false;
+// Attempt to auto-detect the environment
+var ENVIRONMENT_IS_WEB = typeof window == 'object';
+var ENVIRONMENT_IS_WORKER = typeof WorkerGlobalScope != 'undefined';
+// N.b. Electron.js environment is simultaneously a NODE-environment, but
+// also a web environment.
+var ENVIRONMENT_IS_NODE = typeof process == 'object' && typeof process.versions == 'object' && typeof process.versions.node == 'string' && process.type != 'renderer';
+var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIRONMENT_IS_WORKER;
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
@@ -101,7 +104,17 @@ if (ENVIRONMENT_IS_WEB || ENVIRONMENT_IS_WORKER) {
 
   {
 // include: web_or_worker_shell_read.js
-readAsync = async (url) => {
+if (ENVIRONMENT_IS_WORKER) {
+    readBinary = (url) => {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url, false);
+      xhr.responseType = 'arraybuffer';
+      xhr.send(null);
+      return new Uint8Array(/** @type{!ArrayBuffer} */(xhr.response));
+    };
+  }
+
+  readAsync = async (url) => {
     assert(!isFileURI(url), "readAsync does not work with file:// URLs");
     var response = await fetch(url, { credentials: 'same-origin' });
     if (response.ok) {
@@ -159,8 +172,6 @@ var JSFILEFS = 'JSFILEFS is no longer included by default; build with -ljsfilefs
 var OPFS = 'OPFS is no longer included by default; build with -lopfs.js';
 
 var NODEFS = 'NODEFS is no longer included by default; build with -lnodefs.js';
-
-assert(!ENVIRONMENT_IS_WORKER, 'worker environment detected but not enabled at build time.  Add `worker` to `-sENVIRONMENT` to enable.');
 
 assert(!ENVIRONMENT_IS_NODE, 'node environment detected but not enabled at build time.  Add `node` to `-sENVIRONMENT` to enable.');
 
@@ -962,13 +973,6 @@ async function createWasm() {
       return func;
     };
   var ___call_sighandler = (fp, sig) => getWasmTableEntry(fp)(sig);
-
-  /** @type {function(...*):?} */
-  function ___interpreter_intrinsic_notco_call_outlined(
-  ) {
-  abort('missing function: __interpreter_intrinsic_notco_call_outlined');
-  }
-  ___interpreter_intrinsic_notco_call_outlined.stub = true;
 
   var __abort_js = () =>
       abort('native code called abort()');
@@ -2507,8 +2511,6 @@ var wasmImports = {
   /** @export */
   __call_sighandler: ___call_sighandler,
   /** @export */
-  __interpreter_intrinsic_notco_call_outlined: ___interpreter_intrinsic_notco_call_outlined,
-  /** @export */
   _abort_js: __abort_js,
   /** @export */
   _emscripten_get_progname: __emscripten_get_progname,
@@ -2620,6 +2622,7 @@ var _ffi_get_class_json = Module['_ffi_get_class_json'] = createExportWrapper('f
 var _main = Module['_main'] = createExportWrapper('main', 2);
 var _make_js_handle = Module['_make_js_handle'] = createExportWrapper('make_js_handle', 2);
 var _drop_js_handle = Module['_drop_js_handle'] = createExportWrapper('drop_js_handle', 2);
+var _finish_profiler = Module['_finish_profiler'] = createExportWrapper('finish_profiler', 1);
 var _set_max_calls = Module['_set_max_calls'] = createExportWrapper('set_max_calls', 1);
 var _wasm_runtime_newarray = Module['_wasm_runtime_newarray'] = createExportWrapper('wasm_runtime_newarray', 3);
 var _wasm_runtime_anewarray = Module['_wasm_runtime_anewarray'] = createExportWrapper('wasm_runtime_anewarray', 3);
@@ -2629,6 +2632,8 @@ var ___interpreter_intrinsic_float_table_base = Module['___interpreter_intrinsic
 var ___interpreter_intrinsic_double_table_base = Module['___interpreter_intrinsic_double_table_base'] = createExportWrapper('__interpreter_intrinsic_double_table_base', 0);
 var ___interpreter_intrinsic_max_insn = Module['___interpreter_intrinsic_max_insn'] = createExportWrapper('__interpreter_intrinsic_max_insn', 0);
 var _nop_impl_void = Module['_nop_impl_void'] = createExportWrapper('nop_impl_void', 8);
+var _launch_profiler = Module['_launch_profiler'] = createExportWrapper('launch_profiler', 1);
+var _read_profiler = Module['_read_profiler'] = createExportWrapper('read_profiler', 1);
 var _wasm_push_export = Module['_wasm_push_export'] = createExportWrapper('wasm_push_export', 3);
 var _FileDescriptor_initIDs_cb0 = Module['_FileDescriptor_initIDs_cb0'] = createExportWrapper('FileDescriptor_initIDs_cb0', 5);
 var _FileDescriptor_set_cb0 = Module['_FileDescriptor_set_cb0'] = createExportWrapper('FileDescriptor_set_cb0', 5);

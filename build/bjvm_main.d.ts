@@ -173,6 +173,7 @@ interface WasmModule {
   _main(_0: number, _1: number): number;
   _make_js_handle(_0: number, _1: number): number;
   _drop_js_handle(_0: number, _1: number): void;
+  _finish_profiler(_0: number): void;
   _set_max_calls(_0: number): number;
   _wasm_runtime_newarray(_0: number, _1: number, _2: number): number;
   _wasm_runtime_anewarray(_0: number, _1: number, _2: number): number;
@@ -182,6 +183,8 @@ interface WasmModule {
   ___interpreter_intrinsic_double_table_base(): number;
   ___interpreter_intrinsic_max_insn(): number;
   _nop_impl_void(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number, _6: number, _7: number): BigInt;
+  _launch_profiler(_0: number): number;
+  _read_profiler(_0: number): number;
   _wasm_push_export(_0: number, _1: number, _2: number): void;
   _FileDescriptor_initIDs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileDescriptor_set_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
