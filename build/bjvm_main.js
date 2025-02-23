@@ -974,6 +974,13 @@ async function createWasm() {
     };
   var ___call_sighandler = (fp, sig) => getWasmTableEntry(fp)(sig);
 
+  /** @type {function(...*):?} */
+  function ___interpreter_intrinsic_notco_call_outlined(
+  ) {
+  abort('missing function: __interpreter_intrinsic_notco_call_outlined');
+  }
+  ___interpreter_intrinsic_notco_call_outlined.stub = true;
+
   var __abort_js = () =>
       abort('native code called abort()');
 
@@ -2510,6 +2517,8 @@ var wasmImports = {
   __assert_fail: ___assert_fail,
   /** @export */
   __call_sighandler: ___call_sighandler,
+  /** @export */
+  __interpreter_intrinsic_notco_call_outlined: ___interpreter_intrinsic_notco_call_outlined,
   /** @export */
   _abort_js: __abort_js,
   /** @export */
