@@ -1,8 +1,6 @@
 #include <assert.h>
-#include <limits.h>
 #include <math.h>
 #include <pthread.h>
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +19,6 @@
 
 #include "cached_classdescs.h"
 #include <errno.h>
-#include <jit_allocator.h>
 #include <linkage.h>
 #include <monitors.h>
 #include <profiler.h>
@@ -69,9 +66,8 @@ DEFINE_ASYNC(init_cached_classdescs) {
 
     AWAIT(initialize_class, args->thread, self->cached_classdescs[self->i]);
     int result = get_async_result(initialize_class);
-
     if (result != 0) {
-      free(self->cached_classdescs);
+      free(self->cached_classdescs);  // TODO this is not at all safe
       ASYNC_RETURN(result);
     }
   }
@@ -103,13 +99,7 @@ mark_word_t *get_mark_word(vm *vm, header_word *data) {
 monitor_data *inspect_monitor(header_word *data) { return has_expanded_data(data) ? data->expanded_data : nullptr; }
 
 monitor_data *allocate_monitor_for(vm_thread *thread, obj_header *obj) {
-  if (unlikely(!in_heap(thread->vm, obj))) {
-    // this object is not heap-allocated, so it should not heap allocate its monitor
-    // monitor_data *data = malloc(sizeof(monitor_data)); // todo: this leaks memory, never freed
-    UNREACHABLE("Monitor allocated for an off-heap object"); // todo: should this just throw an illegal monitor
-                                                             // exception instead
-    // return data;
-  }
+  CHECK(in_heap(thread->vm, obj)); // if you're synchronizing on staticFieldBase, you deserve the chair
   monitor_data *data = bump_allocate(thread, sizeof(monitor_data));
   return data;
 }
@@ -124,7 +114,7 @@ u16 stack_depth(const stack_frame *frame) {
     return 0;
   code_analysis *analy = frame->method->code_analysis;
   DCHECK(pc < analy->insn_count);
-  return analy->insn_index_to_stack_depth[pc];
+  return analy->insn_index_to_sd[pc];
 }
 
 value *get_native_args(const stack_frame *frame) {
@@ -355,20 +345,7 @@ stack_frame *push_frame(vm_thread *thread, cp_method *method, stack_value *args,
 }
 
 const char *infer_type(code_analysis *analysis, int insn, int index) {
-  compressed_bitset refs = analysis->insn_index_to_references[insn], ints = analysis->insn_index_to_ints[insn],
-                    floats = analysis->insn_index_to_floats[insn], doubles = analysis->insn_index_to_doubles[insn],
-                    longs = analysis->insn_index_to_longs[insn];
-  if (test_compressed_bitset(refs, index))
-    return "ref";
-  if (test_compressed_bitset(ints, index))
-    return "int";
-  if (test_compressed_bitset(floats, index))
-    return "float";
-  if (test_compressed_bitset(doubles, index))
-    return "double";
-  if (test_compressed_bitset(longs, index))
-    return "long";
-  return "void";
+  return type_kind_to_string(analysis->stack_states[insn]->entries[index]);
 }
 
 void dump_frame(FILE *stream, const stack_frame *frame) {
@@ -406,7 +383,6 @@ u32 compute_used(vm_thread *thread) {
   case FRAME_KIND_NATIVE:
     return (char *)frame + sizeof(stack_frame) - thread->stack.frame_buffer;
   case FRAME_KIND_COMPILED:
-    UNREACHABLE();
   default:
     UNREACHABLE();
   }
@@ -465,13 +441,13 @@ void register_native(vm *vm, slice class, const slice method_name, const slice m
   }
   class = hslc(heap_class);
 
-  classdesc *cd = hash_table_lookup(&vm->classes, class.chars, class.len);
+  classdesc *cd = hash_table_lookup(&vm->classes, class.chars, (int)class.len);
   CHECK(cd == nullptr, "%.*s: Natives must be registered before class is loaded", fmt_slice(class));
 
-  native_entries *existing = hash_table_lookup(&vm->natives, class.chars, class.len);
+  native_entries *existing = hash_table_lookup(&vm->natives, class.chars, (int)class.len);
   if (!existing) {
     existing = calloc(1, sizeof(native_entries));
-    (void)hash_table_insert(&vm->natives, class.chars, class.len, existing);
+    (void)hash_table_insert(&vm->natives, class.chars, (int)class.len, existing);
   }
 
   native_entry ent = (native_entry){method_name, method_descriptor, callback};
@@ -507,9 +483,6 @@ int read_string_to_utf8(vm_thread *thread, heap_string *result, obj_header *obj)
 
   return 0;
 }
-
-void *ArrayData(obj_header *array);
-bool instanceof(const classdesc *o, const classdesc *target);
 
 int primitive_order(type_kind kind) {
   switch (kind) {
@@ -626,14 +599,14 @@ static slice get_default_boot_cp() {
 }
 
 vm_options default_vm_options() {
-  vm_options options = {0};
+  vm_options options = {nullptr};
   options.heap_size = 1 << 21;
   options.runtime_classpath = get_default_boot_cp();
 
   return options;
 }
 
-static void _free_classdesc(void *cd) {
+static void free_classdesc(void *cd) {
   classdesc *classdesc = cd;
   classdesc->dtor(classdesc);
 }
@@ -663,7 +636,7 @@ struct cached_classdescs *cached_classes(vm *vm) {
 int define_module(vm *vm, slice module_name, obj_header *module_) {
   module *mod = calloc(1, sizeof(module));
   mod->reflection_object = module_;
-  (void)hash_table_insert(&vm->modules, module_name.chars, module_name.len, mod);
+  (void)hash_table_insert(&vm->modules, module_name.chars, (int)module_name.len, mod);
   if (utf8_equals(module_name, "java.base")) {
     existing_classes_are_javabase(vm, mod);
   }
@@ -671,15 +644,13 @@ int define_module(vm *vm, slice module_name, obj_header *module_) {
 }
 
 module *get_module(vm *vm, slice module_name) {
-  return hash_table_lookup(&vm->modules, module_name.chars, module_name.len);
+  return hash_table_lookup(&vm->modules, module_name.chars, (int)module_name.len);
 }
 
 #define OOM_SLOP_BYTES (1 << 12)
 
 vm *create_vm(const vm_options options) {
   vm *vm = calloc(1, sizeof(*vm));
-
-  // initialize_jit_arena();
 
   INIT_STACK_STRING(classpath, 1000);
   classpath = bprintf(classpath, "%.*s:%.*s", fmt_slice(options.runtime_classpath), fmt_slice(options.classpath));
@@ -691,7 +662,7 @@ vm *create_vm(const vm_options options) {
     return nullptr;
   }
 
-  vm->classes = make_hash_table(_free_classdesc, 0.75, 16);
+  vm->classes = make_hash_table(free_classdesc, 0.75, 16);
   vm->inchoate_classes = make_hash_table(nullptr, 0.75, 16);
   vm->natives = make_hash_table(free_native_entries, 0.75, 16);
   vm->interned_strings = make_hash_table(nullptr, 0.75, 16);
@@ -800,7 +771,11 @@ stack_value call_interpreter_synchronous(vm_thread *thread, cp_method *method, s
   return ctx._result;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 __attribute__((noinline)) cp_field *field_lookup(classdesc *classdesc, slice const name, slice const descriptor) {
+  if (!classdesc->super_class)  // java/lang/Object has no fields (this is commonly called due to (*) below)
+    return nullptr;
+
   for (int i = 0; i < classdesc->fields_count; ++i) {
     cp_field *field = classdesc->fields + i;
     if (utf8_equals_utf8(field->name, name) && utf8_equals_utf8(field->descriptor, descriptor)) {
@@ -808,18 +783,15 @@ __attribute__((noinline)) cp_field *field_lookup(classdesc *classdesc, slice con
     }
   }
 
-  // Then look on superinterfaces
+  // Then look on superinterfaces (*)
   for (int i = 0; i < classdesc->interfaces_count; ++i) {
     cp_field *result = field_lookup(classdesc->interfaces[i]->classdesc, name, descriptor);
     if (result)
       return result;
   }
 
-  if (classdesc->super_class) {
-    return field_lookup(classdesc->super_class->classdesc, name, descriptor);
-  }
-
-  return nullptr;
+  // Then look on the superclass
+  return field_lookup(classdesc->super_class->classdesc, name, descriptor);
 }
 
 obj_header *get_main_thread_group(vm_thread *thread);
@@ -900,7 +872,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
 #define java_thr ((struct native_Thread *)java_thread->obj)
   thr->thread_obj = java_thr;
 
-  java_thr->eetop = (intptr_t)thr;
+  java_thr->eetop = (uintptr_t)thr;
   object name = MakeJStringFromCString(thr, "main", true);
   java_thr->name = name;
 
@@ -1018,8 +990,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
 
     cp_method *method;
     stack_value ret;
-    for (uint_fast8_t i = 0; i < sizeof(phases) / sizeof(*phases); i++) {
-      if (i == 1) continue;
+    for (size_t i = 0; i < sizeof(phases) / sizeof(*phases); i++) {
       method = method_lookup(cached_classes(vm)->system, phases[i], signatures[i], false, false);
       assert(method);
       stack_value args[2] = {{.i = 1}, {.i = 1}};
@@ -1080,8 +1051,6 @@ void free_thread(vm_thread *thread) {
   remove_thread_from_vm_list(thread);
   free(thread);
 }
-
-int resolve_class(vm_thread *thread, cp_class_info *info);
 
 classdesc *load_class_of_field(vm_thread *thread, const field_descriptor *field) {
   classdesc *result = load_class_of_field_descriptor(thread, field->unparsed);
@@ -1376,6 +1345,7 @@ void class_circularity_error(vm_thread *thread, const classdesc *class) {
   raise_vm_exception(thread, STR("java/lang/ClassCircularityError"), message);
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 module *get_unnamed_module(vm_thread *thread) {
   vm *vm = thread->vm;
   module *result = get_module(vm, STR("<unnamed>"));
@@ -1396,6 +1366,7 @@ bool is_builtin_class(slice chars) {
          strncmp(chars.chars, "jdk/", 4) == 0 || strncmp(chars.chars, "sun/", 4) == 0;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *classfile_bytes, size_t classfile_len) {
   vm *vm = thread->vm;
   classdesc *class = calloc(1, sizeof(classdesc));
@@ -1415,7 +1386,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   cp_class_info *super = class->super_class;
   if (super) {
     // If the superclass is currently being loaded -> circularity  error
-    if (hash_table_lookup(&vm->inchoate_classes, super->name.chars, super->name.len)) {
+    if (hash_table_lookup(&vm->inchoate_classes, super->name.chars, (int)super->name.len)) {
       class_circularity_error(thread, class);
       goto error_2;
     }
@@ -1431,8 +1402,8 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   // 4. If C has any direct superinterfaces, the symbolic references from C to
   // its direct superinterfaces are resolved using the algorithm of §5.4.3.1.
   for (int i = 0; i < class->interfaces_count; ++i) {
-    cp_class_info *super = class->interfaces[i];
-    if (hash_table_lookup(&vm->inchoate_classes, super->name.chars, super->name.len)) {
+    cp_class_info *sup = class->interfaces[i];
+    if (hash_table_lookup(&vm->inchoate_classes, sup->name.chars, (int)sup->name.len)) {
       class_circularity_error(thread, class);
       goto error_2;
     }
@@ -1446,7 +1417,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   }
 
   // Look up in the native methods list and add native handles as appropriate
-  native_entries *entries = hash_table_lookup(&vm->natives, chars.chars, chars.len);
+  native_entries *entries = hash_table_lookup(&vm->natives, chars.chars, (int)chars.len);
   if (entries) {
     for (int i = 0; i < arrlen(entries->entries); i++) {
       native_entry *entry = entries->entries + i;
@@ -1473,7 +1444,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
     class->module = get_unnamed_module(thread);
   }
 
-  (void)hash_table_insert(&vm->classes, chars.chars, chars.len, class);
+  (void)hash_table_insert(&vm->classes, chars.chars, (int)chars.len, class);
   return class;
 
 error_2:
@@ -1483,6 +1454,7 @@ error_1:
   return nullptr;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool raise_class_not_found) {
   vm *vm = thread->vm;
 
@@ -1498,7 +1470,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
 
   if (dimensions && *chars.chars != 'L') {
     // Primitive array type
-    type_kind kind = *chars.chars;
+    type_kind kind = (type_kind)*chars.chars;
     class = primitive_classdesc(thread, kind);
   } else {
     if (dimensions) {
@@ -1506,7 +1478,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
       chars = subslice_to(chars, 1, chars.len - 1);
       DCHECK(chars.len >= 1);
     }
-    class = hash_table_lookup(&vm->classes, chars.chars, chars.len);
+    class = hash_table_lookup(&vm->classes, chars.chars, (int)chars.len);
   }
 
   if (!class) {
@@ -1522,7 +1494,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
   }
 
   if (!class) {
-    (void)hash_table_insert(&vm->inchoate_classes, chars.chars, chars.len, (void *)1);
+    (void)hash_table_insert(&vm->inchoate_classes, chars.chars, (int)chars.len, (void *)1);
 
     // e.g. "java/lang/Object.class"
     const slice cf_ending = STR(".class");
@@ -1546,8 +1518,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
       }
 
       u32 i = 0;
-      for (; (i < chars.len) && (filename.chars[i] != '.'); ++i)
-        filename.chars[i] = filename.chars[i] == '/' ? '.' : filename.chars[i];
+      exchange_slashes_and_dots(&chars, chars);
       // ClassNotFoundException: com.google.DontBeEvil
       filename = subslice_to(filename, 0, i);
       raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), filename);
@@ -1556,7 +1527,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
 
     class = define_bootstrap_class(thread, chars, bytes, cf_len);
     free(bytes);
-    (void)hash_table_delete(&vm->inchoate_classes, chars.chars, chars.len);
+    (void)hash_table_delete(&vm->inchoate_classes, chars.chars, (int)chars.len);
     if (!class)
       return nullptr;
   }
@@ -1572,6 +1543,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
 }
 
 // name = "java/lang/Object" or "[[J" or "[Ljava/lang/String;"
+// NOLINTNEXTLINE(misc-no-recursion)
 classdesc *bootstrap_lookup_class(vm_thread *thread, const slice name) {
   return bootstrap_lookup_class_impl(thread, name, true);
 }
@@ -1616,6 +1588,7 @@ void *bump_allocate(vm_thread *thread, size_t bytes) {
 }
 
 // Returns true if the class descriptor is a subclass of java.lang.Error.
+// NOLINTNEXTLINE(misc-no-recursion)
 bool is_error(classdesc *d) {
   return utf8_equals(d->name, "java/lang/Error") || (d->super_class && is_error(d->super_class->classdesc));
 }
@@ -1686,6 +1659,7 @@ void wrap_in_exception_in_initializer_error(vm_thread *thread) {
 }
 
 // Call <clinit> on the class, if it hasn't already been called.
+// NOLINTNEXTLINE(misc-no-recursion)
 DEFINE_ASYNC(initialize_class) {
 #define thread (args->thread)
 
@@ -1745,7 +1719,7 @@ DEFINE_ASYNC(initialize_class) {
       goto done;
   }
 
-  for (self->i = 0; self->i < cd->interfaces_count; ++self->i) {
+  for (self->i = 0; (int)self->i < cd->interfaces_count; ++self->i) {
     AWAIT_INNER(self->recursive_call_space, initialize_class, thread, cd->interfaces[self->i]->classdesc);
     cd = args->classdesc;
 
@@ -1789,7 +1763,7 @@ bool method_candidate_matches(const cp_method *candidate, const slice name, cons
           utf8_equals_utf8(candidate->unparsed_descriptor, method_descriptor));
 }
 
-// TODO look at this more carefully
+// NOLINTNEXTLINE(misc-no-recursion)
 cp_method *method_lookup(classdesc *descriptor, const slice name, const slice method_descriptor,
                          bool search_superclasses, bool search_superinterfaces) {
   DCHECK(descriptor->state >= CD_STATE_LINKED);
@@ -1865,6 +1839,7 @@ DEFINE_ASYNC(call_interpreter) {
   ASYNC_END(result);
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 int resolve_class(vm_thread *thread, cp_class_info *info) {
   // TODO use current class loader
   // TODO synchronize on some object, probably the class which this info is a
@@ -1919,7 +1894,7 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
 
     info->classdesc = (classdesc *)unmirror_class(result.obj);
     // Now repeatedly instantiate array classes
-    for (int i = 0; i < dims; ++i) {
+    for (int dim_i = 0; dim_i < dims; ++dim_i) {
       info->classdesc = make_array_classdesc(thread, info->classdesc);
     }
   } else {
@@ -2075,6 +2050,7 @@ struct native_ConstantPool *get_constant_pool_mirror(vm_thread *thread, classdes
   return cp_mirror;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 struct native_Class *get_class_mirror(vm_thread *thread, classdesc *cd) {
   if (!cd)
     return nullptr;
@@ -2127,6 +2103,7 @@ bool instanceof_super(const classdesc *o, const classdesc *target) {
 }
 
 // Returns true if o is an instance of target
+// NOLINTNEXTLINE(misc-no-recursion)
 bool instanceof(const classdesc *o, const classdesc *target) {
   assert(o->kind != CD_KIND_PRIMITIVE && "instanceof not intended for primitives");
   assert(target->kind != CD_KIND_PRIMITIVE && "instanceof not intended for primitives");
@@ -2270,7 +2247,7 @@ doit:
 
       AWAIT(call_interpreter, thread, asType, (stack_value[]){{.obj = (void *)mh}, {.obj = (void *)provider_mt}});
       stack_value result = get_async_result(call_interpreter);
-      if (thread->current_exception != 0) // asType failed
+      if (thread->current_exception) // asType failed
         ASYNC_RETURN_VOID();
       mh = (void *)result.obj;
     }
