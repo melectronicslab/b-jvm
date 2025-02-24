@@ -675,7 +675,7 @@ class VM {
     static module: MainModule;
 
     scheduleTimeout(waitUs: number = 0) {
-        if (this.waitingForYield > waitUs && this.timeout !== -1) {
+        if (this.waitingForYield > waitUs && this.timeout !== -1 as unknown as ReturnType<typeof setTimeout>) {
             clearTimeout(this.timeout);
             this.timeout = -1 as unknown as ReturnType<typeof setTimeout>;
         }
