@@ -652,7 +652,7 @@ class VM {
     cachedThread: Thread | null = null;
 
     scheduler: number;
-    timeout: number; // if not -1, then a scheduler step is scheduled
+    timeout: ReturnType<typeof setTimeout>; // if not -1, then a scheduler step is scheduled
 
     waitingForYield: number = 0;
     pending: Function[] = [];  // hook here to be called every time the timeout fires
@@ -665,7 +665,7 @@ class VM {
         options.stdout ??= buffered();
         options.stderr ??= buffered();
 
-        this.timeout = -1;
+        this.timeout = -1 as ReturnType<typeof setTimeout>;
         this.ptr = module._ffi_create_vm(classpath, options.heapSize ?? 1 << 26, module.addFunction(options.stdout, 'viii'), module.addFunction(options.stderr, 'viii'));
         module._free(classpath);
 
@@ -677,11 +677,11 @@ class VM {
     scheduleTimeout(waitUs: number = 0) {
         if (this.waitingForYield > waitUs && this.timeout !== -1) {
             clearTimeout(this.timeout);
-            this.timeout = -1;
+            this.timeout = -1 as ReturnType<typeof setTimeout>;
         }
         if (this.timeout === -1) {
             this.timeout = setTimeout(() => {
-                this.timeout = -1;
+                this.timeout = -1 as ReturnType<typeof setTimeout>;
                 const status = module._ffi_rr_scheduler_step(this.scheduler);
                 if (status !== 0) {
                     const waitUs = module._ffi_rr_scheduler_wait_for_us(this.scheduler);
