@@ -19,7 +19,7 @@ Message me on Discord if you are interested in collaborating: forevermilk#0001. 
 - Single-threaded compacting GC
 - Integration with JS GC through handles and FinalizationRegistry
 - Fast [tail call–based](https://blog.reverberate.org/2021/04/21/musttail-efficient-interpreters.html) interpreter (0–30% slower than interpreter-only HotSpot on native, ~2–3x slower on WASM)
-- Multithreading support via context switching on a single thread
+- Multithreading support via context switching on a single thread (including special methods like Object.wait, Object.notify, Unsafe.park, *etc.*)
 - Preëmption of threads
 - Easy-to-use JavaScript interface
 - Scheduler with JS event loop integration
@@ -30,7 +30,6 @@ Message me on Discord if you are interested in collaborating: forevermilk#0001. 
 ### Goals
 
 - TypeScript type generation (including generics, which will require parsing the Java source)
-
 - JIT compilation to WebAssembly with SSA-based IR
 - JIT compilation to x86 and ARM64 (lower priority – more for fun)
 - Generational GC (probably not concurrent though – that's too hard)
