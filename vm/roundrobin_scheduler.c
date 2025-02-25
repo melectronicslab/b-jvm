@@ -53,22 +53,23 @@ static bool is_sleeping(thread_info *info, s64 time) {
 
 static thread_info *get_next_thr(impl *impl) {
   assert(impl->round_robin && "No threads to run");
-  thread_info *info = impl->round_robin[0], *first = info;
+  thread_info *info = nullptr;
   s64 time = (s64)get_unix_us();
-  do {
+  for (int i = 0; i < arrlen(impl->round_robin); ++i) {
     info = impl->round_robin[0];
     arrdel(impl->round_robin, 0);
     arrput(impl->round_robin, info);
     if (!is_sleeping(info, time)) {
       return info;
     }
-  } while (info != first);
+  }
 
   // all are sleeping, find the one with the minimum sleep time
   int best_i = 0;
   u64 closest = UINT64_MAX;
   for (int i = 0; i < arrlen(impl->round_robin); i++) {
-    if (impl->round_robin[i]->wakeup_info->wakeup_us < closest) {
+    rr_wakeup_info *wakeup = impl->round_robin[i]->wakeup_info;
+    if (wakeup->wakeup_us < closest) {
       info = impl->round_robin[i];
       best_i = i;
       closest = info->wakeup_info->wakeup_us;
@@ -132,7 +133,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     return SCHEDULER_RESULT_DONE;
 
   vm_thread *thread = info->thread;
-  const int MICROSECONDS_TO_RUN = 1 << 30;
+  const int MICROSECONDS_TO_RUN = 30000;
 
   thread->fuel = 50000;
 

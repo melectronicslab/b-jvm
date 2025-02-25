@@ -58,12 +58,12 @@
 #if 0
 #undef DEBUG_CHECK
 #define DEBUG_CHECK()                                                                                                  \
-  if (cow++ > 18500000) { \
+  if (cow++ > 22000000) { \
   SPILL_VOID    \
   printf("Frame method: %p\n", frame->method); \
   cp_method *m = frame->method;                                                                                        \
   printf("Calling method %.*s, descriptor %.*s, on class %.*s; sp = %ld; %d\n", fmt_slice(m->name),                              \
-         fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp_ - frame->plain.stack, __LINE__);                                   \
+         fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp - frame->plain.stack, __LINE__);                                   \
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
@@ -2880,6 +2880,12 @@ static s64 async_resume_impl_void(ARGS_VOID) {
     *(sp - 1) = result;  // sp has the correct value above, don't move it
   }
 
+#if !DO_TAILS
+  arg_1 = &(sp - 1)->l;
+  arg_2 = &(sp - 1)->f;
+  arg_3 = &(sp - 1)->d;
+#endif
+
   if (advance_pc) {
     STACK_POLYMORPHIC_NEXT(*(sp - 1));
   } else if (needs_polymorphic_jump) {
@@ -2931,7 +2937,7 @@ __attribute__((noinline)) static stack_value interpret_java_frame(future_t *fut,
       result.l = async_resume_impl_void(thread, frame_, insns + pc_, pc_, sp_, 0, 0, 0);
 #else
       handler_i =
-          async_resume_impl_void(thread, frame_, insns + pc_, &pc_, &sp_, &(sp_ - 1)->l, &(sp_ - 1)->f, &(sp_ - 1)->d);
+          async_resume_impl_void(thread, frame_, insns + pc_, &pc_, &sp_, nullptr /* computed */, nullptr, nullptr);
 #endif
     }
 

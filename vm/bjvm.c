@@ -2280,7 +2280,7 @@ doit:
       UNREACHABLE();
     }
   } else {
-    struct native_VarHandle *vh = (void *)target;
+    self->vh = make_handle(thread, target);
     // Call valueFromMethodName on java.lang.invoke.VarHandle.AccessMode with the method name
     // to get the method handle
     classdesc *AccessMode = bootstrap_lookup_class(thread, STR("java/lang/invoke/VarHandle$AccessMode"));
@@ -2308,12 +2308,12 @@ doit:
     // accessModeType method of java.lang.invoke.VarHandle on the instance objectref, with the instance of
     // java.lang.invoke.VarHandle.AccessMode as the argument.
     cp_method *accessModeType =
-        method_lookup(vh->base.descriptor, STR("accessModeType"),
+        method_lookup(self->vh->obj->descriptor, STR("accessModeType"),
                       STR("(Ljava/lang/invoke/VarHandle$AccessMode;)Ljava/lang/invoke/MethodType;"), true, false);
     DCHECK(accessModeType);
 
     // Now invoke it with the result of the previous call
-    stack_value arg2[] = {{.obj = (void *)vh}, {.obj = self->result->obj}};
+    stack_value arg2[] = {{.obj = (void *)self->vh->obj}, {.obj = self->result->obj}};
     AWAIT(call_interpreter, thread, accessModeType, arg2);
     if (thread->current_exception) {
       ASYNC_RETURN_VOID();

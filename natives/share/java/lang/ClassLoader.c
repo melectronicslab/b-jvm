@@ -64,8 +64,10 @@ stack_value define_class(vm_thread *thread, handle *loader, handle *parent_class
   free_heap_str(name_str);
   if (initialize) {
     initialize_class_t pox = {.args = {thread, result}};
+    thread->stack.synchronous_depth++;
     future_t fut = initialize_class(&pox);
     CHECK(fut.status == FUTURE_READY);
+    thread->stack.synchronous_depth--;
   }
   if (result) {
     return (stack_value){.obj = (void *)get_class_mirror(thread, result)};
