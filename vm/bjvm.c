@@ -344,8 +344,9 @@ stack_frame *push_frame(vm_thread *thread, cp_method *method, stack_value *args,
   return push_plain_frame(thread, method, args, argc);
 }
 
-const char *infer_type(code_analysis *analysis, int insn, int index) {
-  return type_kind_to_string(analysis->stack_states[insn]->entries[index]);
+const char *infer_type(code_analysis *analysis, int insn, int index, bool is_local) {
+  stack_summary *sum = analysis->stack_states[insn];
+  return type_kind_to_string(sum->entries[index + (is_local ? sum->stack : 0)]);
 }
 
 void dump_frame(FILE *stream, const stack_frame *frame) {
@@ -356,14 +357,14 @@ void dump_frame(FILE *stream, const stack_frame *frame) {
 
   for (int i = 0; i < sd; ++i) {
     stack_value value = frame_stack((void *)frame)[i];
-    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i);
+    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i, false);
     write += snprintf(write, end - write, " stack[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj, value.i, is_ref);
   }
 
   for (int i = 0; i < frame->num_locals; ++i) {
     stack_value value = frame_locals(frame)[i];
     const char *is_ref =
-        infer_type(frame->method->code_analysis, frame->plain.program_counter, i + frame->plain.max_stack);
+        infer_type(frame->method->code_analysis, frame->plain.program_counter, i, true);
     write += snprintf(write, end - write, "locals[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj, value.i, is_ref);
   }
 
@@ -2301,7 +2302,7 @@ doit:
       ASYNC_RETURN_VOID();
     }
 
-    handle *result = make_handle(thread, get_async_result(call_interpreter).obj);
+    self->result = make_handle(thread, get_async_result(call_interpreter).obj);
 
     // Second, a reference to an instance of java.lang.invoke.MethodType is obtained as if by invocation of the
     // accessModeType method of java.lang.invoke.VarHandle on the instance objectref, with the instance of
@@ -2312,7 +2313,7 @@ doit:
     DCHECK(accessModeType);
 
     // Now invoke it with the result of the previous call
-    stack_value arg2[] = {{.obj = (void *)vh}, {.obj = result->obj}};
+    stack_value arg2[] = {{.obj = (void *)vh}, {.obj = self->result->obj}};
     AWAIT(call_interpreter, thread, accessModeType, arg2);
     if (thread->current_exception) {
       ASYNC_RETURN_VOID();
@@ -2324,7 +2325,7 @@ doit:
     // as the second argument. The resulting instance is called the invoker method handle.
     classdesc *MethodHandles = cached_classes(thread->vm)->method_handles;
     CHECK(MethodHandles);
-    stack_value arg3[] = {{.obj = result->obj}, {.obj = get_async_result(call_interpreter).obj}};
+    stack_value arg3[] = {{.obj = self->result->obj}, {.obj = get_async_result(call_interpreter).obj}};
     cp_method *varHandleExactInvoker =
         method_lookup(MethodHandles, STR("varHandleExactInvoker"),
                       STR("(Ljava/lang/invoke/VarHandle$AccessMode;Ljava/lang/invoke/MethodType;)"
@@ -2337,7 +2338,7 @@ doit:
     }
 
     mh = (void *)get_async_result(call_interpreter).obj;
-    drop_handle(thread, result);
+    drop_handle(thread, self->result);
     doing_var_handle = true;
 
     goto doit;

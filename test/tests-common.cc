@@ -16,6 +16,7 @@
 #include <optional>
 #include <profiler.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <roundrobin_scheduler.h>
@@ -171,102 +172,7 @@ void print_method_sigs() {
 }
 
 TestCaseResult run_test_case(std::string classpath, bool capture_stdio, std::string main_class, std::string input) {
-  printf("Classpath: %s\n", classpath.c_str());
-  vm_options options = default_vm_options();
-
-  TestCaseResult result{};
-  result.stdin_ = input;
-
-  options.classpath = (slice){.chars = (char *)classpath.c_str(), .len = static_cast<u16>(classpath.size())};
-
-  options.read_stdin = capture_stdio ? +[](char *buf, int len, void *param) {
-    auto *result = (TestCaseResult *) param;
-    int remaining = result->stdin_.length();
-    int num_bytes = std::min(len, remaining);
-    result->stdin_.copy(buf, num_bytes);
-    result->stdin_ = result->stdin_.substr(num_bytes);
-    return num_bytes;
-  } : nullptr;
-  options.poll_available_stdin = capture_stdio ? +[](void *param) {
-    auto *result = (TestCaseResult *) param;
-    return (int) result->stdin_.length();
-  } : nullptr;
-  options.write_stdout = capture_stdio ? +[](char *buf, int len, void *param) {
-    auto *result = (TestCaseResult *) param;
-    result->stdout_.append(buf, len);
-  } : nullptr;
-  options.write_stderr = capture_stdio ? +[](char *buf, int len, void *param) {
-    auto *result = (TestCaseResult *) param;
-    result->stderr_.append(buf, len);
-  } : nullptr;
-  options.stdio_override_param = &result;
-
-  vm *vm = create_vm(options);
-  if (!vm) {
-    fprintf(stderr, "Failed to create VM");
-    return result;
-  }
-  vm_thread *thread = create_main_thread(vm, default_thread_options());
-
-  slice m{.chars = (char *)main_class.c_str(), .len = static_cast<u16>(main_class.size())};
-
-  classdesc *desc = bootstrap_lookup_class(thread, m);
-  if (!desc) {
-    fprintf(stderr, "Failed to find main class %.*s\n", fmt_slice(m));
-    throw std::runtime_error("Failed to find main class");
-  }
-  stack_value args[1] = {{.obj = nullptr}};
-
-  cp_method *method;
-
-  initialize_class_t pox = {.args = {thread, desc}};
-  future_t f = initialize_class(&pox);
-  CHECK(f.status == FUTURE_READY);
-
-  method = method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
-
-  call_interpreter_synchronous(thread, method, args); // void, no result
-
-  if (thread->current_exception) {
-    method =
-        method_lookup(thread->current_exception->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, false);
-    stack_value to_string_args[1] = {{.obj = thread->current_exception}};
-    thread->current_exception = nullptr;
-
-    stack_value to_string_invoke_args = call_interpreter_synchronous(thread, method, to_string_args);
-    heap_string read;
-    REQUIRE(!read_string_to_utf8(thread, &read, to_string_invoke_args.obj));
-
-    std::cout << "Exception thrown!\n" << read.chars << '\n' << '\n';
-    free_heap_str(read);
-
-    // Then call printStackTrace ()V
-    method = method_lookup(to_string_args[0].obj->descriptor, STR("printStackTrace"), STR("()V"), true, false);
-    call_interpreter_synchronous(thread, method, to_string_args);
-  }
-
-  // Iterate through all classes and methods and accumulate the signatures
-  hash_table_iterator it;
-  classdesc *value;
-  for (it = hash_table_get_iterator(&vm->classes); hash_table_iterator_has_next(it, nullptr, nullptr, (void **)&value);
-       hash_table_iterator_next(&it)) {
-    for (int i = 0; i < value->methods_count; i++) {
-      cp_method *method = value->methods + i;
-      std::string sig{(char)field_to_kind(&method->descriptor->return_type)};
-      if (!(method->access_flags & ACCESS_STATIC)) {
-        sig += "L";
-      }
-      for (int j = 0; j < method->descriptor->args_count; j++) {
-        sig.push_back(field_to_kind(&method->descriptor->args[j]));
-      }
-      method_sigs[sig]++;
-    }
-  }
-
-  free_thread(thread);
-  free_vm(vm);
-
-  return result;
+  return run_scheduled_test_case(std::move(classpath), capture_stdio, std::move(main_class), std::move(input));
 }
 
 #ifdef EMSCRIPTEN

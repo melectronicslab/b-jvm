@@ -38,6 +38,7 @@
 #include "util.h"
 #include "wasm_trampolines.h"
 
+#include <analysis.h>
 #include <debugger.h>
 #include <math.h>
 #include <tgmath.h>
@@ -57,11 +58,12 @@
 #if 0
 #undef DEBUG_CHECK
 #define DEBUG_CHECK()                                                                                                  \
-  if (cow++ > 25000000) { \
+  if (cow++ > 18500000) { \
   SPILL_VOID    \
+  printf("Frame method: %p\n", frame->method); \
   cp_method *m = frame->method;                                                                                        \
-  printf("Calling method %.*s, descriptor %.*s, on class %.*s; %d\n", fmt_slice(m->name),                              \
-         fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), __LINE__);                                   \
+  printf("Calling method %.*s, descriptor %.*s, on class %.*s; sp = %ld; %d\n", fmt_slice(m->name),                              \
+         fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp_ - frame->plain.stack, __LINE__);                                   \
   heap_string s = insn_to_string(insn, pc);                                                                            \
   printf("Insn kind: %.*s\n", fmt_slice(s));                                                                           \
   free_heap_str(s);                                                                                                    \
@@ -756,7 +758,7 @@ static s64 getstatic_L_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   DCHECK(insn->ic, "Static field location not found");
   sp++;
-  NEXT_INT(*(obj_header **)insn->ic)
+  NEXT_INT(*(obj_header **)insn->ic);
 }
 FORWARD_TO_NULLARY(getstatic_L)
 
@@ -1845,6 +1847,7 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
 
   resolve_methodref_t ctx = {};
   ctx.args.thread = thread;
+
   ctx.args.info = &insn->cp->methodref;
   thread->stack.synchronous_depth++; // TODO remove
   future_t fut = resolve_methodref(&ctx);
@@ -2840,20 +2843,17 @@ static s64 async_resume_impl_void(ARGS_VOID) {
 
   case CONT_INVOKE:
     result = interpret_2(&fut, thread, cont.ctx.interp_call.frame);
-    sp -= cont.ctx.interp_call.argc; // todo: wrong union member
     has_result = cont.ctx.interp_call.returns;
     advance_pc = true;
     break;
 
   case CONT_MONITOR_ENTER:
     fut = monitor_acquire(&cont.ctx.acquire_monitor);
-    sp--; // todo: why are we doing this unconditionally
     advance_pc = true;
     break;
 
   case CONT_INVOKESIGPOLY:
     fut = invokevirtual_signature_polymorphic(&cont.ctx.sigpoly);
-    sp -= cont.ctx.sigpoly.argc; // todo: wrong union member
     has_result = false;
     advance_pc = true;
     break;
@@ -2868,13 +2868,16 @@ static s64 async_resume_impl_void(ARGS_VOID) {
     return 0;
   }
 
+  // Now calculate sp correctly depending on whether we're advancing an instruction or not
+  sp = frame->plain.stack + frame->method->code_analysis->insn_index_to_sd[pc + advance_pc]; // correct sp
+
   frame->is_async_suspended = false;
   if (unlikely(thread->current_exception)) {
     return 0;
   }
 
   if (has_result) {
-    *sp++ = result;
+    *(sp - 1) = result;  // sp has the correct value above, don't move it
   }
 
   if (advance_pc) {
