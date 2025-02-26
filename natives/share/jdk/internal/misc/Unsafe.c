@@ -193,8 +193,27 @@ DECLARE_NATIVE_OVERLOADED("jdk/internal/misc", Unsafe, putLongVolatile, "(JJ)V",
 }
 
 DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeup_info wakeup_info), invoked_methods()) {
-  self->wakeup_info.kind = RR_WAKEUP_SLEEP;
-  self->wakeup_info.wakeup_us = get_unix_us() + 500000;
+  DCHECK(argc == 2);
+  bool isAbsolute = args[0].i;
+  s64 time = args[1].l; // elapsed nanos if !absolute, else epoch millis deadline
+
+  u64 start_us = get_unix_us();
+  u64 deadline_us;
+
+  if (isAbsolute) {
+    if (time < 0) ASYNC_RETURN_VOID(); // negative epoch time
+    deadline_us = (u64)time * 1000; // epoch millis to micros
+    if (deadline_us < start_us) ASYNC_RETURN_VOID(); // already happened
+  } else {
+    if (time < 0) ASYNC_RETURN_VOID(); // negative duration nanos, already elapsed
+    deadline_us = time == 0 ? 0 : start_us + (time / 1000); // 0 duration means no timeout
+  }
+
+  rr_scheduler *scheduler = thread->vm->scheduler;
+  assert(scheduler && "Cannot park thread without a scheduler!");
+
+  self->wakeup_info.kind = RR_THREAD_PARK;
+  self->wakeup_info.wakeup_us = deadline_us;
   ASYNC_YIELD((void *)&self->wakeup_info);
 
   ASYNC_END(value_null());

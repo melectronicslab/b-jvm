@@ -42,8 +42,9 @@ typedef struct {
 scheduler_status_t rr_scheduler_execute_immediately(execution_record *record);
 
 typedef enum {
-  RR_WAKEUP_YIELDING,       // timeslice yielded, continue immediately
+  RR_WAKEUP_YIELDING,       // timeslice yielded, resume soon
   RR_WAKEUP_SLEEP,          // Thread.sleep
+  RR_THREAD_PARK,           // Unsafe.park
   RR_MONITOR_ENTER_WAITING, // wants to acquire mutex, but it's contended
   RR_MONITOR_WAIT,          // isn't holding, but is waiting for notify
 } rr_wakeup_kind;
@@ -58,6 +59,10 @@ typedef struct {
 execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t call);
 void free_execution_record(execution_record *record);
 void rr_scheduler_enumerate_gc_roots(rr_scheduler *scheduler, object **stbds_vector);
+
+// park/unpark
+int set_unpark_permit(rr_scheduler *scheduler, vm_thread *thread); // returns -1 if thread not found (dead/unstarted)
+bool query_unpark_permit(rr_scheduler *scheduler, vm_thread *thread); // calling this from the thread itself, so it must be alive
 
 #ifdef __cplusplus
 }
