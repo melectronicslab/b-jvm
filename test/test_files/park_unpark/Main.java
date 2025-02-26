@@ -16,9 +16,11 @@ public class Main {
         ArrayList<Thread> threads = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             String name = "Worker " + i;
+            long startDelay = i * 50;
             Thread t = new Thread(() -> {
+                sleep(startDelay);
                 // first iteration, sleep longer to pile up waiters
-                int firstRes = collatz.stepAndSleep(250);
+                int firstRes = collatz.stepAndSleep(300);
                 System.out.println(name + " step: " + firstRes);
                 for (;;) {
                     int res = collatz.stepAndSleep(50);
@@ -34,7 +36,6 @@ public class Main {
 
         for (Thread t : threads) {
             t.start();
-            sleep(50);
         }
 
         for (Thread t : threads) {
