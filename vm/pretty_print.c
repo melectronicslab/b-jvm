@@ -4,6 +4,43 @@
 #include <inttypes.h>
 #include <stdint.h>
 
+const char *cp_kind_to_string(cp_kind kind) {
+  switch (kind) {
+  case CP_KIND_INVALID:
+    return "invalid";
+  case CP_KIND_UTF8:
+    return "utf8";
+  case CP_KIND_INTEGER:
+    return "integer";
+  case CP_KIND_FLOAT:
+    return "float";
+  case CP_KIND_LONG:
+    return "long";
+  case CP_KIND_DOUBLE:
+    return "double";
+  case CP_KIND_CLASS:
+    return "class";
+  case CP_KIND_STRING:
+    return "string";
+  case CP_KIND_FIELD_REF:
+    return "field";
+  case CP_KIND_METHOD_REF:
+    return "method";
+  case CP_KIND_INTERFACE_METHOD_REF:
+    return "interfacemethod";
+  case CP_KIND_NAME_AND_TYPE:
+    return "nameandtype";
+  case CP_KIND_METHOD_HANDLE:
+    return "methodhandle";
+  case CP_KIND_METHOD_TYPE:
+    return "methodtype";
+  case CP_KIND_INVOKE_DYNAMIC:
+    return "invokedynamic";
+  default:
+    UNREACHABLE();
+  }
+}
+
 #define CASE(K)                                                                                                        \
   case insn_##K:                                                                                                       \
     return #K;

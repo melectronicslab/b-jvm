@@ -273,18 +273,22 @@ typedef enum : u8 {
   TOS_FLOAT = 3,
 } reduced_tos_kind;
 
+// type_kind_to_char relies on the order here
 typedef enum : char {
-  TYPE_KIND_BOOLEAN = 'Z',
-  TYPE_KIND_CHAR = 'C',
-  TYPE_KIND_FLOAT = 'F',
-  TYPE_KIND_DOUBLE = 'D',
-  TYPE_KIND_BYTE = 'B',
-  TYPE_KIND_SHORT = 'S',
-  TYPE_KIND_INT = 'I',
-  TYPE_KIND_LONG = 'J',
-  TYPE_KIND_VOID = 'V',
-  TYPE_KIND_REFERENCE = 'L'
+  TYPE_KIND_BOOLEAN,
+  TYPE_KIND_CHAR,
+  TYPE_KIND_FLOAT,
+  TYPE_KIND_DOUBLE,
+  TYPE_KIND_BYTE,
+  TYPE_KIND_SHORT,
+  TYPE_KIND_INT,
+  TYPE_KIND_LONG,
+  TYPE_KIND_VOID,
+  TYPE_KIND_REFERENCE
 } type_kind;
+
+type_kind read_type_kind_char(char c);
+char type_kind_to_char(type_kind kind) ;
 
 type_kind field_to_kind(const field_descriptor *field);
 
@@ -861,6 +865,7 @@ typedef struct classdesc {
 } classdesc;
 
 heap_string insn_to_string(const bytecode_insn *insn, int insn_index);
+attribute *find_attribute_by_kind(classdesc *desc, attribute_kind kind) ;
 
 char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *result, arena *arena);
 char *parse_method_descriptor(slice entry, method_descriptor *result, arena *arena);
@@ -883,6 +888,7 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
 
 // Implemented in pretty_print.c
 
+const char *cp_kind_to_string(cp_kind kind);
 const char *insn_code_to_string(insn_code_kind code);
 const char *type_kind_to_string(type_kind kind);
 char *cp_class_info_to_string(cp_kind kind, const cp_class_info *ent);

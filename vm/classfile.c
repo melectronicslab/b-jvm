@@ -11,43 +11,6 @@
 #include "classfile.h"
 #include "util.h"
 
-static const char *cp_kind_to_string(cp_kind kind) {
-  switch (kind) {
-  case CP_KIND_INVALID:
-    return "invalid";
-  case CP_KIND_UTF8:
-    return "utf8";
-  case CP_KIND_INTEGER:
-    return "integer";
-  case CP_KIND_FLOAT:
-    return "float";
-  case CP_KIND_LONG:
-    return "long";
-  case CP_KIND_DOUBLE:
-    return "double";
-  case CP_KIND_CLASS:
-    return "class";
-  case CP_KIND_STRING:
-    return "string";
-  case CP_KIND_FIELD_REF:
-    return "field";
-  case CP_KIND_METHOD_REF:
-    return "method";
-  case CP_KIND_INTERFACE_METHOD_REF:
-    return "interfacemethod";
-  case CP_KIND_NAME_AND_TYPE:
-    return "nameandtype";
-  case CP_KIND_METHOD_HANDLE:
-    return "methodhandle";
-  case CP_KIND_METHOD_TYPE:
-    return "methodtype";
-  case CP_KIND_INVOKE_DYNAMIC:
-    return "invokedynamic";
-  default:
-    UNREACHABLE();
-  }
-}
-
 type_kind kind_to_representable_kind(type_kind kind) {
   switch (kind) {
   case TYPE_KIND_BOOLEAN:
@@ -59,6 +22,37 @@ type_kind kind_to_representable_kind(type_kind kind) {
   default:
     return kind;
   }
+}
+
+type_kind read_type_kind_char(char c) {
+  switch (c) {
+  case 'Z':
+    return TYPE_KIND_BOOLEAN;
+  case 'C':
+    return TYPE_KIND_CHAR;
+  case 'F':
+    return TYPE_KIND_FLOAT;
+  case 'D':
+    return TYPE_KIND_DOUBLE;
+  case 'B':
+    return TYPE_KIND_BYTE;
+  case 'S':
+    return TYPE_KIND_SHORT;
+  case 'I':
+    return TYPE_KIND_INT;
+  case 'J':
+    return TYPE_KIND_LONG;
+  case 'V':
+    return TYPE_KIND_VOID;
+  case 'L':
+    return TYPE_KIND_REFERENCE;
+  default:
+    CHECK(false);
+  }
+}
+
+char type_kind_to_char(type_kind kind){
+  return "ZCFDBSIJVL"[kind];
 }
 
 type_kind field_to_kind(const field_descriptor *field) {
@@ -1578,6 +1572,15 @@ void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *
   }
 }
 
+attribute *find_attribute_by_kind(classdesc *desc, attribute_kind kind){
+  for (int i = 0; i < desc->attributes_count; ++i) {
+    if (desc->attributes[i].kind == kind) {
+      return desc->attributes + i;
+    }
+  }
+  return nullptr;
+}
+
 /**
  * Parse a method in a classfile.
  */
@@ -1651,7 +1654,8 @@ char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *r
     case 'S':
     case 'Z':
     case 'V':
-      result->base_kind = (type_kind)c;
+      type_kind prim = read_type_kind_char(c);
+      result->base_kind = prim;
       result->unparsed = arena_make_str(arena, field_start, *chars - field_start);
       if (c == 'V' && dimensions > 0)
         return strdup("void cannot have dimensions");

@@ -6,15 +6,6 @@
 #include <natives-dsl.h>
 #include <reflection.h>
 
-static attribute *find_attribute_by_kind(classdesc *desc, attribute_kind kind) {
-  for (int i = 0; i < desc->attributes_count; ++i) {
-    if (desc->attributes[i].kind == kind) {
-      return desc->attributes + i;
-    }
-  }
-  return nullptr;
-}
-
 DECLARE_NATIVE("java/lang", Class, registerNatives, "()V") { return value_null(); }
 
 DECLARE_NATIVE("java/lang", Class, getPrimitiveClass, "(Ljava/lang/String;)Ljava/lang/Class;") {

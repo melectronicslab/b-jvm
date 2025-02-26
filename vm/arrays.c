@@ -51,7 +51,7 @@ static classdesc *primitive_array_classdesc(vm_thread *thread, classdesc *compon
   result->one_fewer_dim = component_type;
   result->primitive_component = component_type->primitive_component;
   INIT_STACK_STRING(name, 3);
-  name = bprintf(name, "[%c", (char)component_type->primitive_component);
+  name = bprintf(name, "[%c", type_kind_to_char(component_type->primitive_component));
   result->name = arena_make_str(&result->arena, name.chars, (int)name.len);
   setup_super_hierarchy(result);
   set_up_function_tables(result);

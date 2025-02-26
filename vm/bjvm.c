@@ -486,28 +486,7 @@ int read_string_to_utf8(vm_thread *thread, heap_string *result, obj_header *obj)
 }
 
 int primitive_order(type_kind kind) {
-  switch (kind) {
-  case TYPE_KIND_BOOLEAN:
-    return 0;
-  case TYPE_KIND_CHAR:
-    return 1;
-  case TYPE_KIND_FLOAT:
-    return 2;
-  case TYPE_KIND_DOUBLE:
-    return 3;
-  case TYPE_KIND_BYTE:
-    return 4;
-  case TYPE_KIND_SHORT:
-    return 5;
-  case TYPE_KIND_INT:
-    return 6;
-  case TYPE_KIND_LONG:
-    return 7;
-  case TYPE_KIND_VOID:
-    return 8;
-  default:
-    UNREACHABLE();
-  }
+  return kind;
 }
 
 classdesc *load_class_of_field_descriptor(vm_thread *thread, slice name) {
@@ -528,7 +507,7 @@ classdesc *load_class_of_field_descriptor(vm_thread *thread, slice name) {
   case 'F':
   case 'D':
   case 'V':
-    return primitive_classdesc(thread, chars[0]);
+    return primitive_classdesc(thread, read_type_kind_char(chars[0]));
   default:
     UNREACHABLE();
   }
@@ -1471,7 +1450,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
 
   if (dimensions && *chars.chars != 'L') {
     // Primitive array type
-    type_kind kind = (type_kind)*chars.chars;
+    type_kind kind = read_type_kind_char(*chars.chars);
     class = primitive_classdesc(thread, kind);
   } else {
     if (dimensions) {

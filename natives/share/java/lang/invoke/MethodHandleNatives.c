@@ -32,7 +32,7 @@ slice unparse_classdesc_to_field_descriptor(slice str, const classdesc *desc) {
   case CD_KIND_PRIMITIVE_ARRAY:
     return bprintf(str, "%.*s", fmt_slice(desc->name));
   case CD_KIND_PRIMITIVE:
-    return bprintf(str, "%c", desc->primitive_component);
+    return bprintf(str, "%c", type_kind_to_char(desc->primitive_component));
   default:
     UNREACHABLE();
   }
