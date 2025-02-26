@@ -155,6 +155,14 @@ std::optional<std::vector<u8>> ReadFile(const std::string &file) {
 #endif
 }
 
+std::string ReadFileAsString(const std::string &file) {
+  auto data = ReadFile(file);
+  if (!data) {
+    return { };
+  }
+  return {data->begin(), data->end()};
+}
+
 std::unordered_map<std::string, int> method_sigs;
 
 void print_method_sigs() {
@@ -254,7 +262,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
     u64 sleep_for = rr_scheduler_may_sleep_us(&scheduler);
     if (sleep_for) {
       result.sleep_count++;
-      result.ms_slept += sleep_for;
+      result.us_slept += sleep_for;
 #ifdef EMSCRIPTEN
       // long-term, we will use the JS scheduler instead of this hack
       busy_wait(sleep_for);
