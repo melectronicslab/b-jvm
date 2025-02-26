@@ -80,7 +80,7 @@ static bool is_sleeping(thread_info *info, s64 time) {
     return false;
   if (info->wakeup_info->kind == RR_WAKEUP_SLEEP ||
       (info->wakeup_info->kind == RR_THREAD_PARK && !info->unpark_permit)) {
-    return ((s64)info->wakeup_info->wakeup_us > time);
+    return !info->thread->thread_obj->interrupted && ((s64)info->wakeup_info->wakeup_us > time);
   } else {
     return false; // blocking on something else which presumably can resume soon
   }
