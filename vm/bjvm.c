@@ -2278,6 +2278,7 @@ doit:
     stack_value arg[] = {{.obj = (void *)str}};
     AWAIT(call_interpreter, thread, valueFromMethodName, arg);
     if (thread->current_exception) {
+      drop_handle(thread, self->vh);
       ASYNC_RETURN_VOID();
     }
 
@@ -2295,6 +2296,8 @@ doit:
     stack_value arg2[] = {{.obj = (void *)self->vh->obj}, {.obj = self->result->obj}};
     AWAIT(call_interpreter, thread, accessModeType, arg2);
     if (thread->current_exception) {
+      drop_handle(thread, self->result);
+      drop_handle(thread, self->vh);
       ASYNC_RETURN_VOID();
     }
 
@@ -2313,11 +2316,14 @@ doit:
     DCHECK(varHandleExactInvoker);
     AWAIT(call_interpreter, thread, varHandleExactInvoker, arg3);
     if (thread->current_exception) {
+      drop_handle(thread, self->result);
+      drop_handle(thread, self->vh);
       ASYNC_RETURN_VOID();
     }
 
     mh = (void *)get_async_result(call_interpreter).obj;
     drop_handle(thread, self->result);
+    drop_handle(thread, self->vh);
     doing_var_handle = true;
 
     goto doit;

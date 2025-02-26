@@ -405,6 +405,8 @@ DECLARE_NATIVE("java/lang", Class, getInterfaces0, "()[Ljava/lang/Class;") {
     *((obj_header **)ArrayData(array->obj) + i) = mirror;
   }
 
+  drop_handle(thread, array);
+
   return (stack_value){.obj = array->obj};
 }
 
