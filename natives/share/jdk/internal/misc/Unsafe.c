@@ -220,6 +220,13 @@ DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeu
 }
 
 DECLARE_NATIVE("jdk/internal/misc", Unsafe, unpark, "(Ljava/lang/Object;)V") {
+  // todo: add checks that this is actually a thread object
+
+  rr_scheduler *scheduler = thread->vm->scheduler;
+  assert(scheduler && "Cannot park thread without a scheduler!");
+  struct native_Thread *thr = (struct native_Thread *) args[0].handle->obj;
+
+  set_unpark_permit(scheduler, (vm_thread *) thr->eetop);
   return value_null();
 }
 
