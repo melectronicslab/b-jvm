@@ -788,6 +788,11 @@ typedef struct cp_field {
 
 typedef struct module module;
 
+typedef struct {
+  u32 count;
+  u16 slots_unscaled[];  // must be scaled up by 4
+} reference_list;
+
 // Class descriptor. (Roughly equivalent to HotSpot's InstanceKlass)
 typedef struct classdesc {
   classdesc_kind kind;
@@ -824,10 +829,10 @@ typedef struct classdesc {
   struct native_Class *mirror;
   struct native_ConstantPool *cp_mirror;
 
-  // Non-array classes: which 4- (32-bit system) or 8-byte aligned offsets
-  // correspond to references that need to be followed
-  compressed_bitset static_references;
-  compressed_bitset instance_references;
+  // Non-array classes: which 4- (32-bit system) or 8-byte aligned offsets correspond to references that need to be
+  // followed. Only defined at linkage time.
+  reference_list *static_references;
+  reference_list *instance_references;  // duplicates all superclass fields for convenience/locality
 
   classdesc *one_fewer_dim; // NULL for non-array types
   classdesc *base_component;

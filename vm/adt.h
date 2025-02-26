@@ -32,28 +32,6 @@ __attribute__((malloc, alloc_size(2, 3))) void *arena_alloc(arena *a, size_t cou
 slice arena_make_str(arena *a, const char *bytes, int len);
 void arena_uninit(arena *a);
 
-typedef struct {
-  u64 *bits;
-  u32 size_words;
-} heap_bitset;
-
-typedef struct {
-  union {
-    // Used if the # of bits is less than 63, and the lowest bit = 1
-    u64 bits_inl;
-    heap_bitset ptr;
-  };
-} compressed_bitset;
-
-void init_compressed_bitset(compressed_bitset *bs, int bits_capacity);
-void free_compressed_bitset(compressed_bitset bits);
-bool is_bitset_compressed(compressed_bitset bits);
-compressed_bitset empty_bitset();
-void list_compressed_bitset_bits(compressed_bitset bits, int **stbds_vector);
-bool test_compressed_bitset(compressed_bitset bits, size_t bit_index);
-bool test_reset_compressed_bitset(compressed_bitset *bits, size_t bit_index);
-bool test_set_compressed_bitset(compressed_bitset *bits, size_t bit_index);
-
 typedef struct hash_table_entry {
   struct hash_table_entry *next;
   char *key;

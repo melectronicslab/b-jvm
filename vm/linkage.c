@@ -173,7 +173,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
   int padding = (int)(uintptr_t)hash_table_lookup(&thread->vm->class_padding, cd->name.chars, cd->name.len);
 
   // Assign memory locations to all static/non-static fields
-  classdesc *super = cd->super_class ? cd->super_class->classdesc : NULL;
+  classdesc *super = cd->super_class ? cd->super_class->classdesc : nullptr;
   size_t static_offset = 0, nonstatic_offset = super ? super->instance_bytes : sizeof(obj_header);
   nonstatic_offset += padding;
 
@@ -181,42 +181,49 @@ int link_class(vm_thread *thread, classdesc *cd) {
   int *order = nullptr;
   if (!must_have_C_layout)
     order = reorder_fields_for_compactness(cd->fields, cd->fields_count);
-
+  u32 static_refs_c = 0, nonstatic_refs_c = super ? super->instance_references->count : 0;
+  u32 super_refs_c = nonstatic_refs_c;
   for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
     cp_field *field = cd->fields + (must_have_C_layout ? field_i : order[field_i]);
     type_kind kind = field_to_kind(&field->parsed_descriptor);
     field->byte_offset = field->access_flags & ACCESS_STATIC ? allocate_field(&static_offset, kind)
-                                                             : allocate_field(&nonstatic_offset, kind);
-
-#if AGGRESSIVE_DEBUG
-    printf("Allocating field %.*s for class %.*s at %zu\n", fmt_slice(field->name), fmt_slice(cd->name),
-           field->byte_offset);
-#endif
+      : allocate_field(&nonstatic_offset, kind);
+    // printf("Allocating field %.*s for class %.*s at %zu\n", fmt_slice(field->name), fmt_slice(cd->name),
+    //         field->byte_offset);
+    if (kind == TYPE_KIND_REFERENCE) {
+      bool is_static = field->access_flags & ACCESS_STATIC;
+      static_refs_c += is_static;
+      nonstatic_refs_c += !is_static;
+    }
   }
   free(order);
+  cd->static_references = arena_alloc(&cd->arena, 1, sizeof(reference_list) + static_refs_c * sizeof(u16));
+  cd->instance_references = arena_alloc(&cd->arena, 1, sizeof(reference_list) + nonstatic_refs_c * sizeof(u16));
 
-  init_compressed_bitset(&cd->static_references, static_offset / sizeof(void *));
-  init_compressed_bitset(&cd->instance_references, nonstatic_offset / sizeof(void *));
+  cd->static_references->count = static_refs_c;
+  cd->instance_references->count = nonstatic_refs_c;
 
   // Add superclass instance references
   if (super) {
-    compressed_bitset bs = super->instance_references;
-    for (size_t i = 0; i < super->instance_bytes / sizeof(void *); ++i) {
-      if (test_compressed_bitset(bs, i)) {
-        test_set_compressed_bitset(&cd->instance_references, i);
-      }
-    }
+    reference_list *super_refs = super->instance_references;
+    memcpy(cd->instance_references->slots_unscaled, super_refs->slots_unscaled, super_refs->count * sizeof(u16));
   }
+
+  static_refs_c = 0;
+  nonstatic_refs_c = super_refs_c;
   for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
     cp_field *field = cd->fields + field_i;
     if (field_to_kind(&field->parsed_descriptor) == TYPE_KIND_REFERENCE) {
-      compressed_bitset *bs = field->access_flags & ACCESS_STATIC ? &cd->static_references : &cd->instance_references;
-      test_set_compressed_bitset(bs, field->byte_offset / sizeof(void *));
+      bool is_static = field->access_flags & ACCESS_STATIC;
+      u16 *slots = is_static ? cd->static_references->slots_unscaled : cd->instance_references->slots_unscaled;
+      slots[is_static ? static_refs_c : nonstatic_refs_c] = field->byte_offset / sizeof(void *);
+      nonstatic_refs_c += !is_static;
+      static_refs_c += is_static;
     }
   }
 
   // Create static field memory, initializing all to 0
-  cd->static_fields = calloc(static_offset, 1);
+  cd->static_fields = arena_alloc(&cd->arena, static_offset, sizeof(u8));
   cd->instance_bytes = nonstatic_offset;
 
   // Set up vtable and itables

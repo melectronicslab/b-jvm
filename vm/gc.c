@@ -168,12 +168,13 @@ static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
   char *key;
   size_t key_len;
   classdesc *desc;
-  int *bitset_list = NULL;
   while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
-    list_compressed_bitset_bits(desc->static_references, &bitset_list);
-    for (int i = 0; i < arrlen(bitset_list); ++i) {
-      object *root = ((object *)desc->static_fields) + bitset_list[i];
-      PUSH_ROOT(root);
+    if (desc->static_references) {
+      for (size_t i = 0; i < desc->static_references->count; ++i) {
+        u16 offs = desc->static_references->slots_unscaled[i];
+        object *root = ((object *)desc->static_fields) + offs;
+        PUSH_ROOT(root);
+      }
     }
 
     // Also, push things like Class, Method and Constructors
@@ -198,8 +199,6 @@ static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
     push_thread_roots(ctx, thr);
   }
 
-  arrfree(bitset_list);
-
   // Interned strings (TODO remove)
   it = hash_table_get_iterator(&vm->interned_strings);
   object str;
@@ -219,7 +218,7 @@ static u32 *get_flags(vm *vm, object o) {
   return &get_mark_word(vm, &o->header_word)->data[0];
 }
 
-static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
+static void mark_reachable(gc_ctx *ctx, object obj) {
   arrput(ctx->objs, obj);
   if (has_expanded_data(&obj->header_word)) {
     arrput(ctx->objs, (void*)((uintptr_t)obj->header_word.expanded_data | 1));
@@ -228,10 +227,9 @@ static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
   // Visit all instance fields
   classdesc *desc = obj->descriptor;
   if (desc->kind == CD_KIND_ORDINARY) {
-    compressed_bitset bits = desc->instance_references;
-    list_compressed_bitset_bits(bits, bitset);
-    for (int i = 0; i < arrlen(*bitset); ++i) {
-      object field_obj = *((object *)obj + (*bitset)[i]);
+    reference_list *refs = desc->instance_references;
+    for (size_t i = 0; i < refs->count; ++i) {
+      object field_obj = *((object *)obj + refs->slots_unscaled[i]);
       if (field_obj && in_heap(ctx->vm, field_obj) && !(*get_flags(ctx->vm, field_obj) & IS_REACHABLE)) {
         *get_flags(ctx->vm,field_obj) |= IS_REACHABLE;
         arrput(ctx->worklist, field_obj);
@@ -240,7 +238,7 @@ static void mark_reachable(gc_ctx *ctx, object obj, int **bitset) {
   } else if (desc->kind == CD_KIND_ORDINARY_ARRAY || (desc->kind == CD_KIND_PRIMITIVE_ARRAY && desc->dimensions > 1)) {
     // Visit all components
     int arr_len = ArrayLength(obj);
-    for (int i = 0; i < arr_len; ++i) {
+    for (size_t i = 0; i < (size_t)arr_len; ++i) {
       object arr_element = ReferenceArrayLoad(obj, i);
       if (arr_element && in_heap(ctx->vm, arr_element) && !(*get_flags(ctx->vm,arr_element) & IS_REACHABLE)) {
         *get_flags(ctx->vm,arr_element) |= IS_REACHABLE;
@@ -295,7 +293,6 @@ static void relocate_object(gc_ctx *ctx, object *obj) {
 }
 
 void relocate_instance_fields(gc_ctx *ctx) {
-  int *bitset = nullptr;
   for (int i = 0; i < arrlen(ctx->objs); ++i) {
     if ((uintptr_t) ctx->objs[i] & 1) {  // monitor
       continue;
@@ -316,10 +313,9 @@ void relocate_instance_fields(gc_ctx *ctx) {
 
     if (obj->descriptor->kind == CD_KIND_ORDINARY) {
       classdesc *desc = obj->descriptor;
-      compressed_bitset bits = desc->instance_references;
-      list_compressed_bitset_bits(bits, &bitset);
-      for (int j = 0; j < arrlen(bitset); ++j) {
-        object *field = (object *)obj + bitset[j];
+      reference_list *refs = desc->instance_references;
+      for (size_t j = 0; j < refs->count; ++j) {
+        object *field = (object *)obj + refs->slots_unscaled[j];
         relocate_object(ctx, field);
       }
     } else if (obj->descriptor->kind == CD_KIND_ORDINARY_ARRAY ||
@@ -331,7 +327,6 @@ void relocate_instance_fields(gc_ctx *ctx) {
       }
     }
   }
-  arrfree(bitset);
 }
 
 #if DCHECKS_ENABLED
@@ -359,7 +354,7 @@ void major_gc(vm *vm) {
   while (arrlen(ctx.worklist) > 0) {
     object obj = arrpop(ctx.worklist);
     *get_flags(vm,obj) |= IS_REACHABLE;
-    mark_reachable(&ctx, obj, bitset);
+    mark_reachable(&ctx, obj);
   }
   arrfree(ctx.worklist);
   arrfree(bitset[0]);

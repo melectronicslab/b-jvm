@@ -9,45 +9,6 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
-compressed_bitset empty_bitset() { return (compressed_bitset){.bits_inl = 1}; }
-
-bool is_bitset_compressed(compressed_bitset bits) {
-  return (bits.bits_inl & 1) != 0; // pointer is aligned
-}
-
-void free_compressed_bitset(compressed_bitset bits) {
-  if (!is_bitset_compressed(bits))
-    free(bits.ptr.bits);
-}
-
-static void push_set_bits(u64 bits, int offset, int **existing_buf) {
-  while (bits) {
-    int shift = __builtin_ctzll(bits);
-    bits >>= shift;
-    offset += shift;
-    arrput(*existing_buf, offset);
-    bits >>= 1;
-    offset += 1;
-  }
-}
-
-/**
- * List all set bits, starting from 0, in the given bitset. Stores the list into
- * the given buffer, which must have the existing length in words (or
- * existing_buf = nullptr, length = 0). Returns a (possibly reallocated) buffer.
- *
- * Used to follow references during garbage collection.
- */
-void list_compressed_bitset_bits(compressed_bitset bits, int **stbds_vector) {
-  arrsetlen(*stbds_vector, 0);
-  if (is_bitset_compressed(bits)) {
-    push_set_bits(bits.bits_inl >> 1, 0, stbds_vector);
-  } else {
-    for (u32 i = 0; i < bits.ptr.size_words; ++i)
-      push_set_bits(bits.ptr.bits[i], (int)i << 6, stbds_vector);
-  }
-}
-
 void arena_init(arena *a) { a->begin = nullptr; }
 
 constexpr size_t ARENA_REGION_BYTES = 1 << 12;
@@ -93,55 +54,6 @@ void arena_uninit(arena *a) {
     region = next;
   }
   a->begin = nullptr;
-}
-
-void init_compressed_bitset(compressed_bitset *bs, int bits_capacity) {
-  if (bits_capacity > 63) {
-    u32 size_words = (bits_capacity + 63) / 64;
-    u64 *buffer = calloc(size_words, sizeof(u64));
-    *bs = (compressed_bitset){.ptr.bits = buffer, .ptr.size_words = size_words};
-  } else {
-    *bs = (compressed_bitset){
-        .bits_inl = 1 // lowest bit = 1
-    };
-  }
-}
-
-void get_compressed_bitset_word_and_offset(compressed_bitset *bits, size_t bit_index, u64 **word, u8 *offset) {
-  if (is_bitset_compressed(*bits)) {
-    DCHECK(bit_index < 63);
-    *word = &bits->bits_inl;
-    *offset = bit_index + 1;
-  } else {
-    DCHECK(bit_index < 64 * bits->ptr.size_words);
-    *word = &bits->ptr.bits[bit_index >> 6];
-    *offset = bit_index & 0x3f;
-  }
-}
-
-bool test_compressed_bitset(const compressed_bitset bits, size_t bit_index) {
-  u64 *word;
-  u8 offset;
-  get_compressed_bitset_word_and_offset((compressed_bitset *)&bits, bit_index, &word, &offset);
-  return *word & (1ULL << offset);
-}
-
-bool test_reset_compressed_bitset(compressed_bitset *bits, size_t bit_index) {
-  u64 *word;
-  u8 offset;
-  get_compressed_bitset_word_and_offset(bits, bit_index, &word, &offset);
-  bool test = *word & (1ULL << offset);
-  *word &= ~(1ULL << offset);
-  return test;
-}
-
-bool test_set_compressed_bitset(compressed_bitset *bits, size_t bit_index) {
-  u64 *word;
-  u8 offset;
-  get_compressed_bitset_word_and_offset(bits, bit_index, &word, &offset);
-  bool test = *word & (1ULL << offset);
-  *word |= 1ULL << offset;
-  return test;
 }
 
 void string_builder_init(string_builder *builder) {

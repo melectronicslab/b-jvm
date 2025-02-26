@@ -40,52 +40,6 @@ TEST_CASE("Test STR() macro") {
   REQUIRE(utf.len == 3);
 }
 
-TEST_CASE("Compressed bitset") {
-  for (int size = 1; size < 256; ++size) {
-    std::vector<u8> reference(size);
-    compressed_bitset bitset;
-    init_compressed_bitset(&bitset, size);
-
-    for (int i = 0; i < 1000; ++i) {
-      int index = rand() % size;
-      switch (rand() % 4) {
-      case 0: {
-        int *set_bits = nullptr;
-        list_compressed_bitset_bits(bitset, &set_bits);
-        for (int i = 0; i < arrlen(set_bits); ++i) {
-          if (!reference[set_bits[i]])
-            REQUIRE(false);
-        }
-        arrfree(set_bits);
-        break;
-      }
-      case 1: {
-        bool test = test_set_compressed_bitset(&bitset, index);
-        if (test != reference[index])
-          REQUIRE(test == reference[index]);
-        reference[index] = true;
-        break;
-      }
-      case 2: {
-        bool test = test_reset_compressed_bitset(&bitset, index);
-        if (test != reference[index])
-          REQUIRE(test == reference[index]);
-        reference[index] = false;
-        break;
-      }
-      case 3: {
-        bool test = test_compressed_bitset(bitset, index);
-        if (test != reference[index])
-          REQUIRE(test == reference[index]);
-        break;
-      }
-      }
-    }
-
-    free_compressed_bitset(bitset);
-  }
-}
-
 TEST_CASE("parse_field_descriptor valid cases") {
   const char *fields = "Lcom/example/Example;[I[[[JLjava/lang/String;[[Ljava/lang/Object;BVCZ";
   field_descriptor com_example_Example, Iaaa, Jaa, java_lang_String, java_lang_Object, B, V, C, Z;

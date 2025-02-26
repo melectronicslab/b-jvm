@@ -46,15 +46,6 @@ static bool is_kind_wide(type_kind kind) { return kind == TYPE_KIND_LONG || kind
 // Whether the field takes up two formal slots.
 static bool is_field_wide(field_descriptor desc) { return is_kind_wide(desc.base_kind) && !desc.dimensions; }
 
-// Write matching stack entries into the compressed bitset.
-void write_kinds_to_bitset(const analy_stack_state *inferred_stack, int offset, compressed_bitset *compressed_bitset,
-                           type_kind test) {
-  for (int i = 0; i < inferred_stack->count; ++i) {
-    if (inferred_stack->entries[i].type == test)
-      test_set_compressed_bitset(compressed_bitset, offset + i);
-  }
-}
-
 /** Possible value "sources" for NPE analysis */
 static analy_stack_entry parameter_source(type_kind type, int j) {
   return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_PARAMETER, .index = j}};

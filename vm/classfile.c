@@ -72,11 +72,8 @@ void free_method(cp_method *method) { free_code_analysis(method->code_analysis);
 void free_classfile(classdesc cf) {
   for (int i = 0; i < cf.methods_count; ++i)
     free_method(&cf.methods[i]);
-  free(cf.static_fields);
   arrfree(cf.indy_insns);
   arrfree(cf.sigpoly_insns);
-  free_compressed_bitset(cf.static_references);
-  free_compressed_bitset(cf.instance_references);
   arena_uninit(&cf.arena);
 }
 
@@ -1816,8 +1813,8 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
     cf->fields[i].my_class = result;
   }
   cf->static_fields = nullptr;
-  cf->static_references = empty_bitset();
-  cf->instance_references = empty_bitset();
+  cf->static_references = nullptr;
+  cf->instance_references = nullptr;
 
   // Parse methods
   cf->methods_count = reader_next_u16(&reader, "methods count");
