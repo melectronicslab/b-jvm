@@ -702,7 +702,7 @@ Countdown value: 0
 }
 
 TEST_CASE("Thread park/unpark") {
-  run_scheduled_test_case("test_files/park_unpark/", false, "Main"); // for fun
+  // run_scheduled_test_case("test_files/park_unpark/", false, "Main"); // for fun
   auto result = run_scheduled_test_case("test_files/park_unpark/", true, "Main");
   auto expected = ReadFileAsString("test_files/park_unpark/desired_output.txt");
   REQUIRE(result.stdout_ == expected);

@@ -13,11 +13,10 @@ public class FIFOMutex {
         waiters.add(current);
 
         // Block while not first in queue or cannot acquire lock
-        while (waiters.peek() != current ||
-            !locked.compareAndSet(false, true)) {
-        LockSupport.park(this);
-        if (Thread.interrupted()) // ignore interrupts while waiting
-            wasInterrupted = true;
+        while (waiters.peek() != current || !locked.compareAndSet(false, true)) {
+            LockSupport.park(this);
+            if (Thread.interrupted()) // ignore interrupts while waiting
+                wasInterrupted = true;
         }
 
         waiters.remove();
