@@ -421,12 +421,7 @@ typedef struct {
 
   u32 fn_index;
 
-  /** Allocation stuffs */
-
-  // Vector of immovable arena regions, all collectively freed when the module
-  // is destroyed
-  char **arenas;
-  size_t last_arena_used;
+  arena arena;
 } wasm_module;
 
 // Used when writing out the WASM to a series of bytes.

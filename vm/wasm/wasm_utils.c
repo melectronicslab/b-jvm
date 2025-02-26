@@ -18,42 +18,12 @@ enum {
 #include <emscripten/emscripten.h>
 #endif
 
-static void *module_malloc(wasm_module *module, size_t size) {
-  if (size > MODULE_ALLOCATION_SIZE_BYTES) {
-    // Too big for an arena allocation, just make a new mf
-    if (module->arenas) {
-      char *last_arena = arrlast(module->arenas);
-      arrput(module->arenas, last_arena);
-      return module->arenas[arrlen(module->arenas) - 2] = malloc(size);
-    }
-    void *res = malloc(size);
-    arrput(module->arenas, res);
-    return res;
-  }
-  void *result;
-  if (module->last_arena_used + size < MODULE_ALLOCATION_SIZE_BYTES) {
-    char *last_arena = arrlast(module->arenas);
-    result = last_arena + module->last_arena_used;
-    module->last_arena_used += size;
-  } else {
-    result = malloc(MODULE_ALLOCATION_SIZE_BYTES);
-    arrput(module->arenas, result);
-    module->last_arena_used = size;
-  }
-  // align to 8 bytes
-  if (size % 8)
-    module->last_arena_used += 8 - (size % 8);
-  return result;
-}
-
-static void *module_calloc(wasm_module *module, int size) {
-  char *result = module_malloc(module, size);
-  memset(result, 0, size);
-  return result;
+static void *module_calloc(wasm_module *module, size_t size) {
+  return arena_alloc(&module->arena, 1, size);
 }
 
 static void *module_copy(wasm_module *module, const void *src, int size) {
-  void *dest = module_malloc(module, size);
+  void *dest = module_calloc(module, size);
   memcpy(dest, src, size);
   return dest;
 }
@@ -136,7 +106,7 @@ void wasm_writeint(bytevector *ctx, s64 value) {
 
 wasm_module *wasm_module_create() {
   wasm_module *module = calloc(1, sizeof(wasm_module));
-  module->last_arena_used = INT_MAX / 2;
+  arena_init(&module->arena);
   return module;
 }
 
@@ -522,10 +492,7 @@ bytevector wasm_module_serialize(wasm_module *module) {
 }
 
 void wasm_module_free(wasm_module *module) {
-  for (int i = 0; i < arrlen(module->arenas); ++i) {
-    free(module->arenas[i]);
-  }
-  arrfree(module->arenas);
+  arena_uninit(&module->arena);
   arrfree(module->imports);
   arrfree(module->interned_result_types);
   arrfree(module->functions);
@@ -542,7 +509,7 @@ wasm_type wasm_make_tuple(wasm_module *module, wasm_value_type *components, int 
     if (memcmp(tuple->types, components, length * sizeof(wasm_value_type)) == 0)
       return (wasm_type){.val = (uintptr_t)tuple};
   }
-  wasm_tuple_type *tuple = module_malloc(module, sizeof(wasm_tuple_type) + length * sizeof(wasm_value_type));
+  wasm_tuple_type *tuple = module_calloc(module, sizeof(wasm_tuple_type) + length * sizeof(wasm_value_type));
   tuple->types_len = length;
   memcpy(tuple->types, components, length * sizeof(wasm_value_type));
   arrput(module->interned_result_types, tuple);
@@ -563,7 +530,7 @@ wasm_value_type wasm_get_basic_type(wasm_type type) {
 void wasm_export_function(wasm_module *module, wasm_function *fn) { fn->exported = true; }
 
 const char *wasm_copy_string(wasm_module *module, const char *str) {
-  char *result = module_malloc(module, strlen(str) + 1);
+  char *result = module_calloc(module, strlen(str) + 1);
   strcpy(result, str);
   return result;
 }
