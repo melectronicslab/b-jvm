@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.concurrent.Phaser;
 
 public class Main {
     private static void sleep(long millis) {
@@ -10,14 +11,17 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        int numThreads = 5;
+        Phaser phaser = new Phaser(numThreads + 1);
         CollatzConjecture collatz = new CollatzConjecture(27);
         System.out.println("Initial count: " + collatz.getN());
 
         ArrayList<Thread> threads = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < numThreads; i++) {
             String name = "Worker " + i;
             long startDelay = i * 50;
             Thread t = new Thread(() -> {
+                phaser.arriveAndAwaitAdvance();
                 sleep(startDelay);
                 // first iteration, sleep longer to pile up waiters
                 int firstRes = collatz.stepAndSleep(300);
@@ -37,6 +41,8 @@ public class Main {
         for (Thread t : threads) {
             t.start();
         }
+
+        phaser.arriveAndAwaitAdvance();
 
         for (Thread t : threads) {
             try {
