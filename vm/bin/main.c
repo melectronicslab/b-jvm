@@ -62,7 +62,7 @@ bool check_casts(vm_thread *thread, cp_method *method, stack_value *args) {
       arg = i != 0 ? method->descriptor->args + (i - 1) : nullptr;
     }
 
-    if (arg && field_to_kind(arg) != TYPE_KIND_REFERENCE)
+    if (arg && arg->repr_kind != TYPE_KIND_REFERENCE)
       continue;
     if (!args[i].obj) // null
       continue;
@@ -328,7 +328,7 @@ char *ffi_get_class_json(classdesc *desc) {
     if (i > 0)
       string_builder_append(&out, ",");
     string_builder_append(&out, R"({"name":"%s","type":"%s","accessFlags":%d,"byteOffset":%d,"index":%d})",
-                          f->name.chars, field_to_kind(&f->parsed_descriptor), f->access_flags, f->byte_offset,
+                          f->name.chars, f->parsed_descriptor.repr_kind, f->access_flags, f->byte_offset,
                           field_index++);
   }
 

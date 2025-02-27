@@ -226,7 +226,7 @@ static void make_handles_array(vm_thread *thread, const method_descriptor *descr
     ++j;
   }
   for (int i = 0; i < argc; ++i, ++j) {
-    if (field_to_kind(descriptor->args + i) == TYPE_KIND_REFERENCE) {
+    if (descriptor->args[i].repr_kind == TYPE_KIND_REFERENCE) {
       args[j].handle = make_handle(thread, stack_args[j].obj);
     } else {
       memcpy(args + j, stack_args + j, sizeof(stack_value));
@@ -239,7 +239,7 @@ static void drop_handles_array(vm_thread *thread, const cp_method *method, const
   if (!is_static)
     drop_handle(thread, args[0].handle);
   for (int i = 0; i < desc->args_count; ++i)
-    if (field_to_kind(desc->args + i) == TYPE_KIND_REFERENCE)
+    if (desc->args[i].repr_kind == TYPE_KIND_REFERENCE)
       drop_handle(thread, args[i + !is_static].handle);
 }
 
@@ -775,16 +775,16 @@ __attribute__((noinline)) cp_field *field_lookup(classdesc *classdesc, slice con
 obj_header *get_main_thread_group(vm_thread *thread);
 
 void set_field(obj_header *obj, cp_field *field, stack_value stack_value) {
-  store_stack_value((void *)obj + field->byte_offset, stack_value, field_to_kind(&field->parsed_descriptor));
+  store_stack_value((void *)obj + field->byte_offset, stack_value, field->parsed_descriptor.repr_kind);
 }
 
 void set_static_field(cp_field *field, stack_value stack_value) {
   store_stack_value((void *)field->my_class->static_fields + field->byte_offset, stack_value,
-                    field_to_kind(&field->parsed_descriptor));
+                    field->parsed_descriptor.repr_kind);
 }
 
 stack_value get_field(obj_header *obj, cp_field *field) {
-  return load_stack_value((void *)obj + field->byte_offset, field_to_kind(&field->parsed_descriptor));
+  return load_stack_value((void *)obj + field->byte_offset, field->parsed_descriptor.repr_kind);
 }
 
 // UnsafeConstants contains some important low-level data used by Unsafe:

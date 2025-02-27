@@ -92,7 +92,7 @@ static int locals_on_method_entry(const cp_method *method, analy_stack_state *lo
   for (; i < desc->args_count && j < max_locals; ++i, ++j) {
     field_descriptor arg = desc->args[i];
     int swizzled = i + !is_static;
-    locals->entries[swizzled] = parameter_source(field_to_kind(&arg), i + 1 /* 1-indexed */);
+    locals->entries[swizzled] = parameter_source(arg.repr_kind, i + 1 /* 1-indexed */);
     // map nth local to nth argument if static, n+1th if nonstatic
     (*locals_swizzle)[j] = swizzled;
     if (is_field_wide(arg)) {
@@ -570,7 +570,6 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     analy_stack_entry kind1 = POP_VAL, kind2 = POP_VAL;
     if (is_kind_wide(kind1.type) || is_kind_wide(kind2.type))
       goto stack_type_mismatch;
-    ;
     PUSH_ENTRY(kind1) PUSH_ENTRY(kind2) break;
   }
   case insn_anewarray: {
@@ -585,7 +584,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   case insn_getstatic: {
     field_descriptor *field =
         check_cp_entry(insn->cp, CP_KIND_FIELD_REF, "getstatic/getfield argument")->field.parsed_descriptor;
-    PUSH_ENTRY(insn_source(field_to_kind(field), insn_index));
+    PUSH_ENTRY(insn_source(field->repr_kind, insn_index));
     break;
   }
   case insn_instanceof: {
@@ -596,10 +595,10 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
         check_cp_entry(insn->cp, CP_KIND_INVOKE_DYNAMIC, "invokedynamic argument")->indy_info.method_descriptor;
     for (int j = descriptor->args_count - 1; j >= 0; --j) {
       field_descriptor *field = descriptor->args + j;
-      POP_KIND(field_to_kind(field));
+      POP_KIND(field->repr_kind);
     }
     if (descriptor->return_type.base_kind != TYPE_KIND_VOID)
-      PUSH_ENTRY(insn_source(field_to_kind(&descriptor->return_type), insn_index))
+      PUSH_ENTRY(insn_source(descriptor->return_type.repr_kind, insn_index))
     break;
   }
   case insn_new: {
@@ -625,13 +624,13 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
             ->methodref.descriptor;
     for (int j = descriptor->args_count - 1; j >= 0; --j) {
       field_descriptor *field = descriptor->args + j;
-      POP_KIND(field_to_kind(field))
+      POP_KIND(field->repr_kind)
     }
     if (insn->kind != insn_invokestatic) {
       POP(REFERENCE)
     }
     if (descriptor->return_type.base_kind != TYPE_KIND_VOID)
-      PUSH_ENTRY(insn_source(field_to_kind(&descriptor->return_type), insn_index));
+      PUSH_ENTRY(insn_source(descriptor->return_type.repr_kind, insn_index));
     break;
   }
   case insn_ldc: {

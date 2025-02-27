@@ -290,8 +290,6 @@ typedef enum : char {
 type_kind read_type_kind_char(char c);
 char type_kind_to_char(type_kind kind);
 
-type_kind field_to_kind(const field_descriptor *field);
-
 typedef enum {
   CD_KIND_ORDINARY,
   // e.g. classdesc corresponding to int.class. No objects mapping to this
@@ -326,7 +324,10 @@ typedef struct cp_name_and_type {
 } cp_name_and_type;
 
 struct field_descriptor {
+  // Base kind (e.g. B for [B, I for [[I, Ljava/lang/String; for Ljava/lang/String;)
   type_kind base_kind;
+  // Representable kind (e.g. REFERENCE for [B
+  type_kind repr_kind;
   // Can be nonzero for any kind
   int dimensions;
   slice class_name; // For reference and array types only

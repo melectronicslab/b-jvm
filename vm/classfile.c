@@ -53,12 +53,6 @@ type_kind read_type_kind_char(char c) {
 
 char type_kind_to_char(type_kind kind) { return "ZCFDBSIJVL"[kind]; }
 
-type_kind field_to_kind(const field_descriptor *field) {
-  if (field->dimensions)
-    return TYPE_KIND_REFERENCE;
-  return kind_to_representable_kind(field->base_kind);
-}
-
 void free_method(cp_method *method) { free_code_analysis(method->code_analysis); }
 
 void free_classfile(classdesc cf) {
@@ -1654,6 +1648,7 @@ char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *r
     case 'V':
       type_kind prim = read_type_kind_char(c);
       result->base_kind = prim;
+      result->repr_kind = result->dimensions ? TYPE_KIND_REFERENCE : kind_to_representable_kind(prim);
       result->unparsed = arena_make_str(arena, field_start, *chars - field_start);
       if (c == 'V' && dimensions > 0)
         return strdup("void cannot have dimensions");
@@ -1672,7 +1667,7 @@ char *parse_field_descriptor(const char **chars, size_t len, field_descriptor *r
         return strdup("missing reference type name");
       }
       ++*chars;
-      result->base_kind = TYPE_KIND_REFERENCE;
+      result->base_kind = result->repr_kind = TYPE_KIND_REFERENCE;
       result->unparsed = arena_make_str(arena, field_start, *chars - field_start);
       DCHECK(class_start > field_start);
       DCHECK(*chars > field_start + 1);

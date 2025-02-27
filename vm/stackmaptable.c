@@ -49,7 +49,7 @@ static int init_locals(iterator *iter, const cp_method *method) {
   method_descriptor *d = method->descriptor;
   DCHECK(d, "Method has no descriptor");
   for (int arg_i = 0; arg_i < d->args_count; ++local_i, ++arg_i) {
-    type_kind kind = field_to_kind(d->args + arg_i);
+    type_kind kind = d->args[arg_i].repr_kind;
     iter->locals[local_i].kind = type_to_validation_type[kind];
     if (kind == TYPE_KIND_REFERENCE) {
       iter->locals[local_i].name = nullptr; // TODO

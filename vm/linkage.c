@@ -105,7 +105,7 @@ static int *reorder_fields_for_compactness(cp_field *fields, int fields_count) {
   int *buckets[4] = {nullptr};
   for (int i = 0; i < fields_count; ++i) {
     cp_field *field = fields + i;
-    int size = sizeof_type_kind(field_to_kind(&field->parsed_descriptor));
+    int size = sizeof_type_kind(field->parsed_descriptor.repr_kind);
     DCHECK(size == 1 || size == 2 || size == 4 || size == 8);
     arrput(buckets[__builtin_ctz(size)], i);
   }
@@ -187,7 +187,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
   u32 super_refs_c = nonstatic_refs_c;
   for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
     cp_field *field = cd->fields + (must_have_C_layout ? field_i : order[field_i]);
-    type_kind kind = field_to_kind(&field->parsed_descriptor);
+    type_kind kind = field->parsed_descriptor.repr_kind;
     field->byte_offset = field->access_flags & ACCESS_STATIC ? allocate_field(&static_offset, kind)
                                                              : allocate_field(&nonstatic_offset, kind);
     // printf("Allocating field %.*s for class %.*s at %zu\n", fmt_slice(field->name), fmt_slice(cd->name),
@@ -215,7 +215,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
   nonstatic_refs_c = super_refs_c;
   for (int field_i = 0; field_i < cd->fields_count; ++field_i) {
     cp_field *field = cd->fields + field_i;
-    if (field_to_kind(&field->parsed_descriptor) == TYPE_KIND_REFERENCE) {
+    if (field->parsed_descriptor.repr_kind == TYPE_KIND_REFERENCE) {
       bool is_static = field->access_flags & ACCESS_STATIC;
       u16 *slots = is_static ? cd->static_references->slots_unscaled : cd->instance_references->slots_unscaled;
       slots[is_static ? static_refs_c : nonstatic_refs_c] = field->byte_offset / sizeof(void *);

@@ -708,7 +708,7 @@ DEFINE_ASYNC(resolve_getstatic_putstatic) {
 
   // Select the appropriate resolved instruction kind.
   bool putstatic = inst->kind == insn_putstatic;
-  inst->kind = getstatic_putstatic_resolved_kind(putstatic, field_to_kind(self->field_info->parsed_descriptor));
+  inst->kind = getstatic_putstatic_resolved_kind(putstatic, self->field_info->parsed_descriptor->repr_kind);
 
   // Store the static address of the field in the instruction.
   inst->ic = (void *)field->my_class->static_fields + field->byte_offset;
@@ -959,7 +959,7 @@ DEFINE_ASYNC(resolve_getfield_putfield) {
     ASYNC_RETURN(-1);
   }
 
-  inst->kind = getfield_putfield_resolved_kind(putfield, field_to_kind(field_info->parsed_descriptor));
+  inst->kind = getfield_putfield_resolved_kind(putfield, field_info->parsed_descriptor->repr_kind);
   inst->ic = field_info->field;
   inst->ic2 = (void *)field_info->field->byte_offset;
 

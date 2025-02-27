@@ -393,7 +393,7 @@ static void lower_monomorphic_call(const bytecode_insn *insn) {
 
   expression do_call = wasm_call_indirect(ctx->module, 0, load_jit_entry(method_const), args, argc + 2, functype);
 
-  type_kind result = field_to_kind(&method->descriptor->return_type);
+  type_kind result = method->descriptor->return_type.repr_kind;
   if (result != TYPE_KIND_VOID) {
     do_call = set_stack(ctx->curr_sd - argc, do_call, to_wasm_type(result));
   }
@@ -415,7 +415,7 @@ static void lower_vtable_call(const bytecode_insn *insn) {
 
   int argc = insn->args;
   expression receiver = get_stack(ctx->curr_sd - argc);
-  type_kind returns = field_to_kind(&insn->cp->methodref.descriptor->return_type);
+  type_kind returns = insn->cp->methodref.descriptor->return_type.repr_kind;
   size_t vtable_i = (size_t)insn->ic2;
 
   // Look in classdesc->vtable.methods[vtable_i] for the method
@@ -463,7 +463,7 @@ static void lower_itable_call(const bytecode_insn *insn) {
   DCHECK(insn->kind == insn_invokeitable_polymorphic);
   // The logic here is painful so for now do an upcall to itable_lookup
   expression receiver = get_stack(ctx->curr_sd - insn->args);
-  type_kind returns = field_to_kind(&insn->cp->methodref.descriptor->return_type);
+  type_kind returns = insn->cp->methodref.descriptor->return_type.repr_kind;
   size_t itable_i = (size_t)insn->ic2;
   int argc = insn->args;
 
@@ -531,7 +531,7 @@ static void lower_invokecallsite(const bytecode_insn *insn) {
     expression do_call = wasm_call_indirect(ctx->module, 0, load_jit_entry(method_const), args, insn->args + 3,
                                             get_method_func_type(invoke));
     if (returns) {
-      wasm_value_type tk = to_wasm_type(field_to_kind(&invoke->descriptor->return_type));
+      wasm_value_type tk = to_wasm_type(invoke->descriptor->return_type.repr_kind);
       set_stack(ctx->curr_sd - insn->args, do_call, tk);
     }
     emit(do_call);
@@ -1739,7 +1739,7 @@ dumb_jit_result *dumb_jit_compile(cp_method *method, dumb_jit_options options) {
   ctx->local_to_local = calloc(4 * code->max_locals, sizeof(int));
   memset(ctx->local_to_local, -1, 16 * code->max_locals);
 
-  wasm_value_type returns = to_wasm_type(field_to_kind(&method->descriptor->return_type));
+  wasm_value_type returns = to_wasm_type(method->descriptor->return_type.repr_kind);
 
   wasm_value_type *params_list = nullptr;
   arrput(params_list, WASM_TYPE_KIND_INT32);
@@ -1748,7 +1748,7 @@ dumb_jit_result *dumb_jit_compile(cp_method *method, dumb_jit_options options) {
     arrput(params_list, WASM_TYPE_KIND_INT32);
   }
   for (int i = 0; i < method->descriptor->args_count; ++i) {
-    arrput(params_list, to_wasm_type(field_to_kind(&method->descriptor->args[i])));
+    arrput(params_list, to_wasm_type(method->descriptor->args[i].repr_kind));
   }
   CHECK(arrlen(params_list) == method_argc(method) + 2 /* thread, method */);
   init_function_builder(ctx->module, &ctx->fb, params_list, (wasm_type){.val = returns});
