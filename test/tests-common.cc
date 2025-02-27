@@ -224,6 +224,11 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
     fprintf(stderr, "Failed to create VM");
     return result;
   }
+
+  rr_scheduler scheduler;
+  rr_scheduler_init(&scheduler, vm);
+  vm->scheduler = &scheduler;
+
   vm_thread *thread = create_main_thread(vm, default_thread_options());
 
   slice m{.chars = (char *)main_class.c_str(), .len = static_cast<u16>(main_class.size())};
@@ -241,10 +246,6 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
   CHECK(f.status == FUTURE_READY);
 
   method = method_lookup(desc, STR("main"), STR("([Ljava/lang/String;)V"), false, false);
-
-  rr_scheduler scheduler;
-  rr_scheduler_init(&scheduler, vm);
-  vm->scheduler = &scheduler;
 
   stack_value args[1] = {{.obj = nullptr}};
 

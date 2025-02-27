@@ -143,7 +143,8 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
 
     if (arrlen(info->call_queue) > 0) {
       if (is_sleeping(info, time)) {
-        if ((s64)info->wakeup_info->wakeup_us < min) {
+        s64 wakeup_time = (s64)info->wakeup_info->wakeup_us;
+        if (wakeup_time != 0 && wakeup_time < min) {
           min = (s64)info->wakeup_info->wakeup_us;
         }
       } else {
@@ -193,6 +194,9 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
       return SCHEDULER_RESULT_MORE;
     }
   }
+
+  // else, we start calling it
+  info->wakeup_info = nullptr;
 
   thread->yield_at_time = time + MICROSECONDS_TO_RUN;
 
