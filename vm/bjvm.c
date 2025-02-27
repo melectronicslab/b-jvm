@@ -77,6 +77,17 @@ DEFINE_ASYNC(init_cached_classdescs) {
   ASYNC_END(0);
 }
 
+inline int set_unpark_permit(vm_thread *thread) {
+  if (unlikely(!thread))
+    return -1;
+  thread->unpark_permit = true;
+  return 0;
+}
+
+inline bool query_unpark_permit(vm_thread *thread) {
+  return thread->unpark_permit;
+}
+
 bool has_expanded_data(header_word *data) { return !((uintptr_t)data->expanded_data & IS_MARK_WORD); }
 
 mark_word_t *get_mark_word(vm *vm, header_word *data) {

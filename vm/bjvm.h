@@ -574,6 +574,8 @@ typedef struct vm_thread {
 
   bool js_jit_enabled;
 
+  bool unpark_permit; // set by unpark, queried by park
+
   // Instance of java.lang.Thread
   struct native_Thread *thread_obj;
 
@@ -602,6 +604,10 @@ typedef struct vm_thread {
 
   void *profiler;  // active profiler, if any. Before thread exit, the profiler is terminated.
 } vm_thread;
+
+// park/unpark
+int set_unpark_permit(vm_thread *thread); // returns -1 if thread not existent somehow (dead reference)
+bool query_unpark_permit(vm_thread *thread); // calling this from the thread itself, so it must be alive
 
 handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file, int line_no);
 // Create a handle to the given object. Should always be paired with drop_handle.

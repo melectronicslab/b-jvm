@@ -60,10 +60,6 @@ execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t c
 void free_execution_record(execution_record *record);
 void rr_scheduler_enumerate_gc_roots(rr_scheduler *scheduler, object **stbds_vector);
 
-// park/unpark
-int set_unpark_permit(rr_scheduler *scheduler, vm_thread *thread); // returns -1 if thread not found (dead/unstarted)
-bool query_unpark_permit(rr_scheduler *scheduler, vm_thread *thread); // calling this from the thread itself, so it must be alive
-
 #ifdef __cplusplus
 }
 #endif

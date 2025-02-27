@@ -13,7 +13,6 @@ typedef struct {
   vm_thread *thread;
   // pending calls for this thread (processed in order)
   pending_call *call_queue;
-  bool unpark_permit; // set by unpark, queried by park
   rr_wakeup_info *wakeup_info;
 } thread_info;
 
@@ -28,33 +27,6 @@ void free_thread_info(thread_info *info) {
 
   arrfree(info->call_queue);
   free(info);
-}
-
-int set_unpark_permit(rr_scheduler *scheduler, vm_thread *thread) {
-  impl *I = scheduler->_impl;
-
-  // find the thread info for the thread
-  for (int i = 0; i < arrlen(I->round_robin); i++) {
-    thread_info *info = I->round_robin[i];
-    if (info->thread == thread) {
-      info->unpark_permit = true;
-      return 0;
-    }
-  }
-  return -1;
-}
-
-bool query_unpark_permit(rr_scheduler *scheduler, vm_thread *thread) {
-  impl *I = scheduler->_impl;
-
-  // find the thread info for the thread
-  for (int i = 0; i < arrlen(I->round_robin); i++) {
-    thread_info *info = I->round_robin[i];
-    if (info->thread == thread) {
-      return info->unpark_permit;
-    }
-  }
-  return false; // todo: is this ok? should this be unreachable?
 }
 
 void rr_scheduler_init(rr_scheduler *scheduler, vm *vm) {
@@ -79,7 +51,7 @@ static bool is_sleeping(thread_info *info, s64 time) {
   if (!info->wakeup_info)
     return false;
   if (info->wakeup_info->kind == RR_WAKEUP_SLEEP ||
-      (info->wakeup_info->kind == RR_THREAD_PARK && !info->unpark_permit)) {
+      (info->wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread))) {
     return !info->thread->thread_obj->interrupted && ((s64)info->wakeup_info->wakeup_us > time);
   } else {
     return false; // blocking on something else which presumably can resume soon

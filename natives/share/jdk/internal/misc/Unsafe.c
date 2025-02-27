@@ -226,7 +226,8 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, unpark, "(Ljava/lang/Object;)V") {
   assert(scheduler && "Cannot park thread without a scheduler!");
   struct native_Thread *thr = (struct native_Thread *) args[0].handle->obj;
 
-  set_unpark_permit(scheduler, (vm_thread *) thr->eetop);
+  [[maybe_unused]] int err = set_unpark_permit((vm_thread *) thr->eetop);
+  assert(!err && "Tried to unpark a non-alive thread");
   return value_null();
 }
 
