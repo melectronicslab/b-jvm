@@ -51,14 +51,22 @@ typedef enum {
 
 typedef struct {
   rr_wakeup_kind kind;
+  u64 wakeup_us; // At this time, the thread should be rescheduled (0 if indefinitely)
   union {
-    u64 wakeup_us; // At this time, the thread should be rescheduled
+    struct {
+      handle *monitor; // for monitor enter and waiting
+      bool ready;      // set by monitorexit and notify
+    } monitor_wakeup;
   };
 } rr_wakeup_info;
 
 execution_record *rr_scheduler_run(rr_scheduler *scheduler, call_interpreter_t call);
 void free_execution_record(execution_record *record);
 void rr_scheduler_enumerate_gc_roots(rr_scheduler *scheduler, object **stbds_vector);
+
+void monitor_notify_one(rr_scheduler *scheduler, obj_header *monitor);
+void monitor_notify_all(rr_scheduler *scheduler, obj_header *monitor);
+void monitor_exit_handler(rr_scheduler *scheduler, obj_header *monitor);
 
 #ifdef __cplusplus
 }

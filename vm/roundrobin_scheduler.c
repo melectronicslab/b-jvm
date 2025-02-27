@@ -21,9 +21,51 @@ typedef struct {
   execution_record **executions;
 } impl;
 
-void free_thread_info(thread_info *info) {
-  // todo: should acquire thread_obj monitor and run notifyAll
+void monitor_notify_one(rr_scheduler *scheduler, obj_header *monitor) {
+  // iterate through the threads and find one that is waiting on the monitor
+  impl *I = scheduler->_impl;
+  for (int i = 0; i < arrlen(I->round_robin); i++) {
+    rr_wakeup_info *wakeup_info = I->round_robin[i]->wakeup_info;
+    if (!wakeup_info)
+      continue;
+    if (wakeup_info->kind == RR_MONITOR_WAIT && wakeup_info->monitor_wakeup.monitor->obj == monitor) {
+      wakeup_info->monitor_wakeup.ready = true;
+      return;
+    }
+  }
+}
+
+void monitor_notify_all(rr_scheduler *scheduler, obj_header *monitor) {
+  // iterate through the threads and find all that are waiting on the monitor
+  impl *I = scheduler->_impl;
+  for (int i = 0; i < arrlen(I->round_robin); i++) {
+    rr_wakeup_info *wakeup_info = I->round_robin[i]->wakeup_info;
+    if (!wakeup_info)
+      continue;
+    if (wakeup_info->kind == RR_MONITOR_WAIT && wakeup_info->monitor_wakeup.monitor->obj == monitor) {
+      wakeup_info->monitor_wakeup.ready = true;
+    }
+  }
+}
+
+void monitor_exit_handler(rr_scheduler *scheduler, obj_header *monitor) {
+  // iterate through the threads and find all that are waiting to enter
+  impl *I = scheduler->_impl;
+  for (int i = 0; i < arrlen(I->round_robin); i++) {
+    rr_wakeup_info *wakeup_info = I->round_robin[i]->wakeup_info;
+    if (!wakeup_info)
+      continue;
+    if (wakeup_info->kind == RR_MONITOR_ENTER_WAITING && wakeup_info->monitor_wakeup.monitor->obj == monitor) {
+      wakeup_info->monitor_wakeup.ready = true;
+      return; // we only need to notify one waiter at most (but it probably wouldn't hurt either way)
+    }
+  }
+}
+
+void free_thread_info(rr_scheduler *scheduler, thread_info *info) {
+  // technically doesn't need to acquire the monitor to notify, since scheduler is god
   info->thread->thread_obj->eetop = 0; // set the eetop to nullptr
+  monitor_notify_all(scheduler, (obj_header *) info->thread->thread_obj);
 
   arrfree(info->call_queue);
   free(info);
@@ -37,7 +79,7 @@ void rr_scheduler_init(rr_scheduler *scheduler, vm *vm) {
 void rr_scheduler_uninit(rr_scheduler *scheduler) {
   impl *I = scheduler->_impl;
   for (int i = 0; i < arrlen(I->round_robin); i++) {
-    free_thread_info(I->round_robin[i]);
+    free_thread_info(scheduler, I->round_robin[i]);
   }
   for (int i = 0; i < arrlen(I->executions); i++) {
     free(I->executions[i]);
@@ -113,7 +155,7 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
   return min >= 0 ? min : 0;
 }
 
-void unshift(impl *I, thread_info *info) {
+void unshift(rr_scheduler *scheduler, impl *I, thread_info *info) {
   if (arrlen(info->call_queue) > 0) {
     arrdel(info->call_queue, 0);
   }
@@ -125,7 +167,7 @@ void unshift(impl *I, thread_info *info) {
         break;
       }
     }
-    free_thread_info(info);
+    free_thread_info(scheduler, info);
   }
 }
 
@@ -175,7 +217,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     }
 
     free(call->call.args.args); // free the copied arguments
-    unshift(impl, info);
+    unshift(scheduler, impl, info);
   } else {
     info->wakeup_info = (void *)fut.wakeup;
   }

@@ -3,6 +3,7 @@
 //
 
 #include "monitors.h"
+#include <roundrobin_scheduler.h>
 
 #define NOT_HELD_TID (-1)
 
@@ -67,7 +68,9 @@ DEFINE_ASYNC(monitor_acquire) {
     }
 
     // since the strong CAS failed, we need to wait on the read_tid
-    self->wakeup_info.kind = RR_WAKEUP_YIELDING;
+    self->wakeup_info.kind = RR_MONITOR_ENTER_WAITING;
+    self->wakeup_info.wakeup_us = 0;
+    self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
   }
 
@@ -110,7 +113,9 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
     }
 
     // since the strong CAS failed, we need to wait on the read_tid
-    self->wakeup_info.kind = RR_WAKEUP_YIELDING;
+    self->wakeup_info.kind = RR_MONITOR_ENTER_WAITING;
+    self->wakeup_info.wakeup_us = 0;
+    self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
   }
 
@@ -135,6 +140,11 @@ u32 current_thread_hold_count(vm_thread *thread, obj_header *obj) {
 }
 
 u32 monitor_release_all_hold_count(vm_thread *thread, obj_header *obj) {
+  // todo: this only works if the scheduler is synchronized/single-threaded
+  rr_scheduler *scheduler = thread->vm->scheduler;
+  assert(scheduler && "Cannot synchronize without a scheduler!");
+  monitor_exit_handler(scheduler, obj);
+
   // no handles necessary because no GC (i hope)
   header_word fetched_header;
   __atomic_load(&obj->header_word, &fetched_header, __ATOMIC_ACQUIRE);
@@ -156,6 +166,11 @@ u32 monitor_release_all_hold_count(vm_thread *thread, obj_header *obj) {
 }
 
 int monitor_release(vm_thread *thread, obj_header *obj) {
+  // todo: this only works if the scheduler is synchronized/single-threaded
+  rr_scheduler *scheduler = thread->vm->scheduler;
+  assert(scheduler && "Cannot synchronize without a scheduler!");
+  monitor_exit_handler(scheduler, obj);
+
   // since this is a single-threaded vm, we don't need atomic operations
   // no handles necessary because no GC (i hope)
   header_word fetched_header;

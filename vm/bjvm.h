@@ -535,7 +535,7 @@ void drop_js_handle(vm *vm, int index);
 struct async_stack;
 typedef struct async_stack async_stack_t;
 
-#define MONITOR_ACQUIRE_CONTINUATION_SIZE 56
+#define MONITOR_ACQUIRE_CONTINUATION_SIZE 64 // just to be safe
 typedef struct vm_thread {
   // Global VM corresponding to this thread
   vm *vm;
