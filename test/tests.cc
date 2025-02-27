@@ -771,8 +771,7 @@ helloworldfoobarbazCaught ArrayIndexOutOfBoundsException
 
 TEST_CASE("Kotlin says hi") {
   auto result = run_test_case("test_files/share/kotlin-stdlib-2.1.10.jar:test_files/kotlin_says_hi/", true, "HelloKt");
-  REQUIRE(result.stdout_ == R"(First 10 terms: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34,
-Hello from Kotlin!)");
+  REQUIRE(result.stdout_ == "First 10 terms: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, \nHello from Kotlin!");
 }
 
 #if 0
