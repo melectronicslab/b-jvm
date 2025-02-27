@@ -262,6 +262,8 @@ static void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind
   if (do_rewrite)                                                                                                      \
     insn->kind = kind_;
 
+// Done like this because we still need to use the post-swizzled index in no-SMT mode, but we don't want to commit
+// the rewrite until filtration is complete.
 #define LOCAL_INDEX do_rewrite ? (s32)insn->index : ctx->locals_swizzle[insn->index]
 
 /**

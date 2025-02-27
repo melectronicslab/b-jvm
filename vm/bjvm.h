@@ -62,7 +62,7 @@ typedef union {
 // objects.
 typedef struct {
   obj_header *obj;
-#ifndef NDEBUG
+#if DCHECKS_ENABLED
   int line;
   const char *filename;
 #endif

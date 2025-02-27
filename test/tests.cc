@@ -755,6 +755,20 @@ Pfannkuchen(10) = 38
 )");
 }
 
+TEST_CASE("Array.get native") {
+  auto result = run_test_case("test_files/array_get_native/", true, "ArrayGetNative");
+  REQUIRE(result.stdout_ == R"(12345Caught ArrayIndexOutOfBoundsException
+12345Caught ArrayIndexOutOfBoundsException
+12345Caught ArrayIndexOutOfBoundsException
+Caught IllegalArgumentException
+Caught ArrayIndexOutOfBoundsException
+12345Caught ArrayIndexOutOfBoundsException
+abcdeCaught ArrayIndexOutOfBoundsException
+truefalsetruefalsetrueCaught ArrayIndexOutOfBoundsException
+helloworldfoobarbazCaught ArrayIndexOutOfBoundsException
+)");
+}
+
 #if 0
 TEST_CASE("Print useful trampolines") { print_method_sigs(); }
 #endif

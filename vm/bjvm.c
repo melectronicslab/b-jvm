@@ -186,7 +186,7 @@ handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_na
     handle *h = &thread->handles[i];
     if (!h->obj) {
       h->obj = obj;
-#ifndef NDEBUG
+#if DCHECKS_ENABLED
       h->line = line_no;
       h->filename = file_name;
 #endif
