@@ -150,7 +150,6 @@ DECLARE_NATIVE("java/lang", Class, forName0,
                "Class;)Ljava/lang/Class;") {
   // Read args[0] as a string
   obj_header *name_obj = args[0].handle->obj;
-
   obj_header *classloader = args[2].handle->obj;
 
   heap_string name_str = AsHeapString(name_obj, oom);
@@ -172,6 +171,9 @@ DECLARE_NATIVE("java/lang", Class, forName0,
     }
     c = unmirror_class(result.obj);
   }
+
+  if (thread->current_exception)
+    return value_null();
 
   int error = link_class(thread, c);
   CHECK(!error);

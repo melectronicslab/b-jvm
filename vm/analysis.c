@@ -47,21 +47,28 @@ static bool is_kind_wide(type_kind kind) { return kind == TYPE_KIND_LONG || kind
 static bool is_field_wide(field_descriptor desc) { return is_kind_wide(desc.base_kind) && !desc.dimensions; }
 
 /** Possible value "sources" for NPE analysis */
+
+// Source is parameter 'j', indexed from 1.
 static analy_stack_entry parameter_source(type_kind type, int j) {
   return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_PARAMETER, .index = j}};
 }
 
+// Source is 'this'.
 static analy_stack_entry this_source() { return parameter_source(TYPE_KIND_REFERENCE, 0); }
 
-static analy_stack_entry insn_source(type_kind type, int j) {
-  return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_INSN, .index = j}};
+// Source is the instruction at program counter 'pc'.
+static analy_stack_entry insn_source(type_kind type, int pc) {
+  return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_INSN, .index = pc}};
 }
 
+// Source is the local load instruction occurring at program counter 'pc'.
 static analy_stack_entry local_source(type_kind type, int pc) {
   return (analy_stack_entry){type, {.kind = VARIABLE_SRC_KIND_LOCAL, .index = pc}};
 }
 
-int locals_on_method_entry(const cp_method *method, analy_stack_state *locals, int **locals_swizzle) {
+// Compute the locals on method entry, as well as a mapping from old local index -> new local index, wherein doubles
+// and longs only take up one slot.
+static int locals_on_method_entry(const cp_method *method, analy_stack_state *locals, int **locals_swizzle) {
   const attribute_code *code = method->code;
   const method_descriptor *desc = method->descriptor;
   DCHECK(code);
@@ -115,70 +122,72 @@ struct edge {
 struct method_analysis_ctx {
   const attribute_code *code;
   analy_stack_state stack, locals;
-  bool stack_terminated;
   int *locals_swizzle;
   char *insn_error;
   heap_string *error;
   struct edge *edges;
+
+  analy_stack_state **known_stacks;
+  analy_stack_state **known_locals;
+  bool changed;
 };
 
-// Pop a value from the analysis stack and return it.
-#define POP_VAL                                                                                                        \
-  ({                                                                                                                   \
-    if (ctx->stack.count == 0)                                                                                 \
-      goto stack_underflow;                                                                                            \
-    ctx->stack.entries[--ctx->stack.count];                                                                    \
-  })
-// Pop a value from the analysis stack and assert its kind.
-#define POP_KIND(kind)                                                                                                 \
-  {                                                                                                                    \
-    analy_stack_entry popped_kind = POP_VAL;                                                                           \
-    if (kind != popped_kind.type)                                                                                      \
-      goto stack_type_mismatch;                                                                                        \
+// Copy the stack/locals state from src to dst.
+static void copy_analy_stack_state(analy_stack_state *dst, const analy_stack_state *src) {
+  if (dst->entries_cap < src->count) {
+    void *reallocated = realloc(dst->entries, src->count * sizeof(analy_stack_entry));
+    CHECK(reallocated);
+    dst->entries = reallocated;
   }
-#define POP(kind) POP_KIND(TYPE_KIND_##kind)
-// Push a kind to the analysis stack.
-#define PUSH_ENTRY(kind)                                                                                               \
-  {                                                                                                                    \
-    if (ctx->stack.count == ctx->stack.entries_cap)                                                            \
-      goto stack_overflow;                                                                                             \
-    if (kind.type != TYPE_KIND_VOID) {                                                                                 \
-      ctx->stack.entries[ctx->stack.count++] = kind;                                                           \
-      if (kind.type == 0)                                                                                              \
-        UNREACHABLE();                                                                                                 \
-    }                                                                                                                  \
+  dst->count = src->count;
+  for (int i = 0; i < src->count; ++i) {
+    dst->entries[i] = src->entries[i];
   }
-#define PUSH(kind) PUSH_ENTRY(insn_source(TYPE_KIND_##kind, insn_index))
+}
 
-// Set the kind of the local variable, in pre-swizzled indices.
-#define SET_LOCAL(index, kind)                                                                                         \
-  {                                                                                                                    \
-    if (index >= ctx->code->max_locals)                                                                                \
-      goto local_overflow;                                                                                             \
-    ctx->locals.entries[index] = local_source(TYPE_KIND_##kind, insn_index);                                           \
+// Intersect the src stack state with the dst stack state, keeping track if anything changed. If dst is nullptr, then
+// the source is copied to the destination, and the changed flag is set. If two types disagree, then the result is TOP
+// (which is represented by VOID in our system).
+//
+// This function is used during local refinement only if the StackMapTable is not present.
+static void intersect_analy_stack_state(struct method_analysis_ctx *ctx, analy_stack_state **dst,
+                                        const analy_stack_state *src) {
+  if (!*dst) {
+    *dst = calloc(1, sizeof(analy_stack_state));
+    copy_analy_stack_state(*dst, src);
+    ctx->changed = true;
+  } else {
+    // Take the minimum of the entries, then compare each type. For any differing type, set the dst type to VOID.
+    int min_entries = (*dst)->count < src->count ? (*dst)->count : src->count;
+    (*dst)->count = min_entries;
+    for (int i = 0; i < min_entries; ++i) {
+      type_kind *dst_type = &(*dst)->entries[i].type;
+      if (*dst_type != src->entries[i].type && *dst_type != TYPE_KIND_VOID) {
+        *dst_type = TYPE_KIND_VOID;
+        ctx->changed = true;
+      }
+    }
   }
-// Remap the index to the new local variable index after unwidening.
-#define SWIZZLE_LOCAL(index)                                                                                           \
-  {                                                                                                                    \
-    if (index >= ctx->code->max_locals)                                                                                \
-      goto local_overflow;                                                                                             \
-    index = ctx->locals_swizzle[index];                                                                                \
-  }
+}
 
-#define CHECK_LOCAL(index, kind)                                                                                       \
-  {                                                                                                                    \
-    if (ctx->locals.entries[index].type != TYPE_KIND_##kind)                                                           \
-      goto local_type_mismatch;                                                                                        \
-  }
-
-int push_branch_target(struct method_analysis_ctx *ctx, u32 curr, u32 target) {
+// Push a branch target from program counter 'curr' to 'target'. If no-SMT analysis is enabled, additionally intersect
+// stack and locals at the branch (since they must be consistent).
+static int push_branch_target(struct method_analysis_ctx *ctx, u32 curr, u32 target) {
   DCHECK((int)target < ctx->code->insn_count);
   struct edge e = (struct edge){.start = curr, .end = target};
   arrput(ctx->edges, e);
+  if (ctx->known_stacks /* in no-smt mode */) {
+    intersect_analy_stack_state(ctx, &ctx->known_stacks[target], &ctx->stack);
+    intersect_analy_stack_state(ctx, &ctx->known_locals[target], &ctx->locals);
+  }
   return 0;
 }
 
-void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind *reduced) {
+// Compute the "reduced" TOS type from the given stack state. The TOS type is used by the interpreter to cache the
+// top-of-stack value in a register. For example, if there is currently a LONG at the top of the stack, then the
+// "reduced" TOS type is TOS_INT (since the interpreter treats all integral-like types as INT). If the stack is empty,
+// then TOS_VOID is used.
+static void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind *reduced) {
   if (ctx->stack.count == 0) {
     *reduced = TOS_VOID;
   } else {
@@ -198,7 +207,73 @@ void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind *reduc
   }
 }
 
-int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analysis_ctx *ctx) {
+/** Helper macros for analyze_instruction */
+
+// Pop a value from the analysis stack and return it.
+#define POP_VAL                                                                                                        \
+  ({                                                                                                                   \
+    if (ctx->stack.count == 0)                                                                                         \
+      goto stack_underflow;                                                                                            \
+    ctx->stack.entries[--ctx->stack.count];                                                                            \
+  })
+// Pop a value from the analysis stack and assert its kind.
+#define POP_KIND(kind)                                                                                                 \
+  {                                                                                                                    \
+    analy_stack_entry popped_kind = POP_VAL;                                                                           \
+    if (kind != popped_kind.type)                                                                                      \
+      goto stack_type_mismatch;                                                                                        \
+  }
+#define POP(kind) POP_KIND(TYPE_KIND_##kind)
+// Push a kind to the analysis stack.
+#define PUSH_ENTRY(kind)                                                                                               \
+  {                                                                                                                    \
+    if (ctx->stack.count == ctx->stack.entries_cap)                                                                    \
+      goto stack_overflow;                                                                                             \
+    if (kind.type != TYPE_KIND_VOID) {                                                                                 \
+      ctx->stack.entries[ctx->stack.count++] = kind;                                                                   \
+      if (kind.type == 0)                                                                                              \
+        UNREACHABLE();                                                                                                 \
+    }                                                                                                                  \
+  }
+#define PUSH(kind) PUSH_ENTRY(insn_source(TYPE_KIND_##kind, insn_index))
+
+// Set the kind of the local variable, in pre-swizzled indices.
+#define SET_LOCAL(index, kind)                                                                                         \
+  {                                                                                                                    \
+    if (index >= ctx->code->max_locals)                                                                                \
+      goto local_overflow;                                                                                             \
+    ctx->locals.entries[index] = local_source(TYPE_KIND_##kind, insn_index);                                           \
+  }
+// Remap the index to the new local variable index after unwidening.
+#define SWIZZLE_LOCAL(index)                                                                                           \
+  {                                                                                                                    \
+    if (index >= ctx->code->max_locals)                                                                                \
+      goto local_overflow;                                                                                             \
+    if (do_rewrite)                                                                                                    \
+      index = ctx->locals_swizzle[index];                                                                              \
+  }
+// Assert that the local at the given index has the appropriate kind.
+#define CHECK_LOCAL(index, kind)                                                                                       \
+  {                                                                                                                    \
+    if (ctx->locals.entries[index].type != TYPE_KIND_##kind)                                                           \
+      goto local_type_mismatch;                                                                                        \
+  }
+#define REWRITE(kind_)                                                                                                 \
+  if (do_rewrite)                                                                                                      \
+    insn->kind = kind_;
+
+/**
+ * Analyze the instruction.
+ * @param insn the instruction to analyze
+ * @param insn_index the index of the instruction in the code array
+ * @param ctx the analysis context
+ * @param state_terminated Set to true if the instruction does not fallthrough, i.e., the stack and locals need to be
+ *  recomputed.
+ * @param do_rewrite whether to rewrite the instruction in place (convert ldcs, swizzle locals, etc.)
+ */
+int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analysis_ctx *ctx, bool *state_terminated,
+                        bool do_rewrite) {
+
   // Add top of stack type before the instruction executes
   calculate_tos_type(ctx, &insn->tos_before);
 
@@ -214,13 +289,13 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     PUSH(REFERENCE) break;
   case insn_areturn:
     POP(REFERENCE)
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   case insn_arraylength:
     POP(REFERENCE) PUSH(INT) break;
   case insn_athrow:
     POP(REFERENCE)
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   case insn_baload:
   case insn_caload:
@@ -255,7 +330,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     POP(DOUBLE) PUSH(DOUBLE) break;
   case insn_dreturn:
     POP(DOUBLE)
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   case insn_dup: {
     if (ctx->stack.count == 0)
@@ -277,7 +352,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     if (is_kind_wide(to_dup.type))
       goto stack_type_mismatch;
     if (is_kind_wide(kind2.type)) {
-      PUSH_ENTRY(to_dup) PUSH_ENTRY(kind2) insn->kind = insn_dup_x1;
+      PUSH_ENTRY(to_dup) PUSH_ENTRY(kind2) REWRITE(insn_dup_x1);
     } else {
       kind3 = POP_VAL;
       PUSH_ENTRY(to_dup) PUSH_ENTRY(kind3) PUSH_ENTRY(kind2)
@@ -288,7 +363,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   case insn_dup2: {
     analy_stack_entry to_dup = POP_VAL, kind2;
     if (is_kind_wide(to_dup.type)) {
-      PUSH_ENTRY(to_dup) PUSH_ENTRY(to_dup) insn->kind = insn_dup;
+      PUSH_ENTRY(to_dup) PUSH_ENTRY(to_dup) REWRITE(insn_dup);
     } else {
       kind2 = POP_VAL;
       if (is_kind_wide(kind2.type))
@@ -301,7 +376,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     analy_stack_entry to_dup = POP_VAL, kind2 = POP_VAL, kind3;
     if (is_kind_wide(to_dup.type)) {
       PUSH_ENTRY(to_dup)
-      PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) insn->kind = insn_dup_x1;
+      PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) REWRITE(insn_dup_x1);
     } else {
       kind3 = POP_VAL;
       if (is_kind_wide(kind3.type))
@@ -316,14 +391,14 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     if (is_kind_wide(to_dup.type)) {
       if (is_kind_wide(kind2.type)) {
         PUSH_ENTRY(to_dup)
-        PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) insn->kind = insn_dup_x1;
+        PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) REWRITE(insn_dup_x1);
       } else {
         kind3 = POP_VAL;
         if (is_kind_wide(kind3.type))
           goto stack_type_mismatch;
         PUSH_ENTRY(to_dup)
         PUSH_ENTRY(kind3)
-        PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) insn->kind = insn_dup_x2;
+        PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) REWRITE(insn_dup_x2);
       }
     } else {
       kind3 = POP_VAL;
@@ -331,7 +406,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
         PUSH_ENTRY(kind2)
         PUSH_ENTRY(to_dup)
         PUSH_ENTRY(kind3)
-        PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) insn->kind = insn_dup2_x1;
+        PUSH_ENTRY(kind2) PUSH_ENTRY(to_dup) REWRITE(insn_dup2_x1);
       } else {
         kind4 = POP_VAL;
         if (is_kind_wide(kind4.type))
@@ -377,7 +452,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   }
   case insn_freturn: {
     POP(FLOAT)
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   }
   case insn_i2b:
@@ -413,6 +488,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     POP(INT) PUSH(INT) break;
   }
   case insn_ireturn: {
+    *state_terminated = true;
     POP(INT);
     break;
   }
@@ -454,7 +530,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   }
   case insn_lreturn: {
     POP(LONG)
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   }
   case insn_monitorenter: {
@@ -478,12 +554,12 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
       if (is_kind_wide(kind2.type))
         goto stack_type_mismatch;
     } else {
-      insn->kind = insn_pop;
+      REWRITE(insn_pop);
     }
     break;
   }
   case insn_return: {
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   }
   case insn_swap: {
@@ -562,10 +638,10 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
                      : ent->kind == CP_KIND_FLOAT ? TYPE_KIND_FLOAT
                                                   : TYPE_KIND_REFERENCE;
     PUSH_ENTRY(insn_source(kind, insn_index))
-    if (ent->kind == CP_KIND_INTEGER) { // rewrite to iconst or lconst
+    if (ent->kind == CP_KIND_INTEGER && do_rewrite) { // rewrite to iconst or lconst
       insn->kind = insn_iconst;
       insn->integer_imm = (s32)ent->integral.value;
-    } else if (ent->kind == CP_KIND_FLOAT) {
+    } else if (ent->kind == CP_KIND_FLOAT && do_rewrite) {
       insn->kind = insn_fconst;
       insn->f_imm = (float)ent->floating.value;
     }
@@ -575,10 +651,10 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     cp_entry *ent = check_cp_entry(insn->cp, CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w argument");
     type_kind kind = ent->kind == CP_KIND_DOUBLE ? TYPE_KIND_DOUBLE : TYPE_KIND_LONG;
     PUSH_ENTRY(insn_source(kind, insn_index))
-    if (ent->kind == CP_KIND_LONG) {
+    if (ent->kind == CP_KIND_LONG && do_rewrite) {
       insn->kind = insn_lconst;
       insn->integer_imm = ent->integral.value;
-    } else {
+    } else if (do_rewrite) {
       insn->kind = insn_dconst;
       insn->d_imm = ent->floating.value;
     }
@@ -647,7 +723,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
   case insn_goto: {
     if (push_branch_target(ctx, insn_index, insn->index))
       goto error;
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   }
   case insn_jsr: {
@@ -717,7 +793,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     for (int i = 0; i < insn->tableswitch->targets_count; ++i)
       if (push_branch_target(ctx, insn_index, insn->tableswitch->targets[i]))
         goto error;
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   }
   case insn_lookupswitch: {
@@ -727,10 +803,10 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     for (int i = 0; i < insn->lookupswitch->targets_count; ++i)
       if (push_branch_target(ctx, insn_index, insn->lookupswitch->targets[i]))
         goto error;
-    ctx->stack_terminated = true;
+    *state_terminated = true;
     break;
   }
-  default: // instruction shouldn't come out of the parser
+  default: // any other instruction (e.g. getfield_L) shouldn't come out of the parser
     UNREACHABLE();
   }
 
@@ -773,6 +849,8 @@ error:;
   return -1;
 }
 
+// Find the type kind corresponding to the given validation type kind. Long-term, the verifier should probably use
+// validation type kinds instead of type kinds, but we don't really care about that for now.
 static type_kind validation_type_kind_to_representation(stack_map_frame_validation_type_kind kind) {
   switch (kind) {
   case STACK_MAP_FRAME_VALIDATION_TYPE_INTEGER:
@@ -794,7 +872,8 @@ static type_kind validation_type_kind_to_representation(stack_map_frame_validati
   UNREACHABLE();
 }
 
-void use_stack_map_frame(struct method_analysis_ctx *ctx, const stack_map_frame_iterator *iter) {
+// Use the current stack map frame given by the iterator, setting stack and locals as appropriate.
+static void use_stack_map_frame(struct method_analysis_ctx *ctx, const stack_map_frame_iterator *iter) {
   ctx->stack.count = iter->stack_size;
   for (int i = 0; i < iter->stack_size; ++i) {
     ctx->stack.entries[i].type = validation_type_kind_to_representation(iter->stack[i].kind);
@@ -809,7 +888,9 @@ void use_stack_map_frame(struct method_analysis_ctx *ctx, const stack_map_frame_
   }
 }
 
-void write_npe_sources(bytecode_insn *insn, const analy_stack_state *stack, stack_variable_source *a, stack_variable_source *b) {
+// Write the necessary information so that the cause of an NPE can be reconstructed.
+static void write_npe_sources(bytecode_insn *insn, const analy_stack_state *stack, stack_variable_source *a,
+                              stack_variable_source *b) {
   int sd = stack->count;
   switch (insn->kind) {
   case insn_putfield:
@@ -821,7 +902,7 @@ void write_npe_sources(bytecode_insn *insn, const analy_stack_state *stack, stac
   case insn_daload:
   case insn_laload:
   case insn_saload: {
-    *a = stack->entries[sd - 2].source;
+    *a = stack->entries[sd - 2].source; // two sources: array and index
     *b = stack->entries[sd - 1].source;
     break;
   }
@@ -833,7 +914,7 @@ void write_npe_sources(bytecode_insn *insn, const analy_stack_state *stack, stac
   case insn_iastore:
   case insn_lastore:
   case insn_sastore: {
-    *a = stack->entries[sd - 3].source; // trying to store into a null array
+    *a = stack->entries[sd - 3].source; // two sources: array and index  (sd - 1 = value)
     *b = stack->entries[sd - 2].source;
     break;
   }
@@ -841,7 +922,8 @@ void write_npe_sources(bytecode_insn *insn, const analy_stack_state *stack, stac
   case insn_invokeinterface:
   case insn_invokespecial: { // Trying to invoke on an object
     int argc = insn->cp->methodref.descriptor->args_count;
-    *a = stack->entries[sd - argc].source;
+    DCHECK(argc + 1 <= sd);
+    *a = stack->entries[sd - argc - 1].source; // just the one source, which is the object
     break;
   }
   case insn_arraylength:
@@ -849,28 +931,67 @@ void write_npe_sources(bytecode_insn *insn, const analy_stack_state *stack, stac
   case insn_monitorenter:
   case insn_monitorexit:
   case insn_getfield: {
-    *a = stack->entries[sd - 1].source;
+    *a = stack->entries[sd - 1].source; // just the one source, which is the object
     break;
   }
   default:
     break;
   }
 }
-/**
- * Analyze the method's code attribute if it exists, rewriting instructions in
- * place to make longs/doubles one stack value wide, writing the analysis into
- * analysis, and returning an error string upon some sort of error.
- */
+
+// Free a heap-allocated, nullable analy_stack_state.
+static void free_analy_stack_state(analy_stack_state *st) {
+  if (!st)
+    return;
+  free(st->entries);
+  free(st);
+}
+
+// At each exception handler, the stack state is a single Throwable.
+static void fill_exception_handlers(struct method_analysis_ctx *ctx) {
+  attribute_exception_table *et = ctx->code->exception_table;
+  if (et) {
+    analy_stack_state state;
+    analy_stack_entry one_ref[1] = {{.type = TYPE_KIND_REFERENCE}};
+    state.entries = one_ref;
+    state.count = 1;
+    state.entries_cap = 1;
+    for (int i = 0; i < et->entries_count; ++i) {
+      exception_table_entry *entry = &et->entries[i];
+      intersect_analy_stack_state(ctx, &ctx->known_stacks[entry->handler_insn], &state);
+    }
+  }
+}
+
+// Intersect, between each instruction and all of its potential exception handlers, its locals. This is because the
+// only valid locals at an exception handler are those for which each jump from a try block to the handler has the same
+// local type.
+static void intersect_exception_handlers(struct method_analysis_ctx *ctx, int insn_i) {
+  attribute_exception_table *et = ctx->code->exception_table;
+  if (!et)
+    return;
+  for (int i = 0; i < et->entries_count; ++i) {
+    exception_table_entry *entry = &et->entries[i];
+    if (entry->start_insn <= insn_i && insn_i < entry->end_insn) {
+      intersect_analy_stack_state(ctx, &ctx->known_locals[entry->handler_insn], &ctx->locals);
+    }
+  }
+}
+
 int analyze_method_code(cp_method *method, heap_string *error) {
   attribute_code *code = method->code;
   arena *arena = &method->my_class->arena;
-  if (!code || method->code_analysis) {
+  // For files compiled before the Great Flood, i.e. Java 5, use a compatibility mode without the StackMapTable.
+  // This mode requires us to infer all types from the structure of the code, and is not very well tested -- it only
+  // exists because occasional test cases have old classfiles.
+  bool missing_smt = method->missing_smt;
+  if (!code || method->code_analysis) { // no code, or already analyzed
     return 0;
   }
   struct method_analysis_ctx ctx = {code};
 
-  // Swizzle local entries so that the first n arguments correspond to the first
-  // n locals (i.e., we should remap aload #1 to aload swizzle[#1])
+  // Swizzle local entries so that the first n arguments correspond to the first n locals (i.e., we should remap all
+  // instructions for the form aload #1 to aload swizzle[#1])
   if (locals_on_method_entry(method, &ctx.locals, &ctx.locals_swizzle)) {
     return -1;
   }
@@ -878,6 +999,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
   int result = 0;
   ctx.stack.entries = calloc(code->max_stack + 1, sizeof(analy_stack_entry));
   ctx.stack.entries_cap = code->max_stack + 1;
+  ctx.error = error;
 
   // After jumps, we can infer the stack and locals at these points
   u16 *insn_index_to_stack_depth = arena_alloc(arena, code->insn_count, sizeof(u16));
@@ -886,7 +1008,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
   if (lvt) {
     for (int i = 0; i < lvt->entries_count; ++i) {
       attribute_lvt_entry *ent = &lvt->entries[i];
-      if (ent->index >= code->max_locals) {
+      if (ent->index >= code->max_locals) { // Invalid LocalVariableTable index
         result = -1;
         goto inval;
       }
@@ -894,12 +1016,7 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     }
   }
 
-  ctx.error = error;
-
   code_analysis *analy = method->code_analysis = malloc(sizeof(code_analysis));
-
-  stack_map_frame_iterator iter;
-  stack_map_frame_iterator_init(&iter, method);
 
   analy->insn_count = code->insn_count;
   analy->dominator_tree_computed = false;
@@ -908,6 +1025,26 @@ int analyze_method_code(cp_method *method, heap_string *error) {
   analy->sources = arena_alloc(arena, code->insn_count, sizeof(*analy->sources));
   analy->stack_states = arena_alloc(arena, code->insn_count, sizeof(stack_summary *));
 
+  // This is set to true when we are ready to record analysis information, i.e., after filtration of locals and stack
+  // types has occurred. This is already true if we have an SMT (and can do the whole analysis in one pass)
+  bool finished_refinement = !missing_smt;
+
+  // Only used if missing_smt is true
+  ctx.known_stacks = nullptr;
+  ctx.known_locals = nullptr;
+  if (missing_smt) {
+    ctx.known_stacks = calloc(code->insn_count, sizeof(analy_stack_state *));
+    ctx.known_locals = calloc(code->insn_count, sizeof(analy_stack_state *));
+    // Fill in known_stacks with Throwable exception handlers
+    fill_exception_handlers(&ctx);
+  }
+
+  stack_map_frame_iterator iter;
+
+analyze:
+  stack_map_frame_iterator_init(&iter, method);
+
+  bool state_terminated = true; // we don't know the state of the stack or locals
   for (int i = 0; i < code->insn_count; ++i) {
     bytecode_insn *insn = &code->code[i];
     if (insn->original_pc == iter.pc) {
@@ -921,6 +1058,19 @@ int analyze_method_code(cp_method *method, heap_string *error) {
           goto inval;
         }
       }
+    } else if (missing_smt) {
+      if (state_terminated) { // should be able to recover
+        CHECK(ctx.known_stacks[i]);
+        CHECK(ctx.known_locals[i]);
+        copy_analy_stack_state(&ctx.stack, ctx.known_stacks[i]);
+        copy_analy_stack_state(&ctx.locals, ctx.known_locals[i]);
+      } else {
+        // Intersect the current stack state with the known state
+        intersect_analy_stack_state(&ctx, &ctx.known_stacks[i], &ctx.stack);
+        intersect_analy_stack_state(&ctx, &ctx.known_locals[i], &ctx.locals);
+      }
+      // at each possibly relevant exception handler, also intersect the locals state
+      intersect_exception_handlers(&ctx, i);
     }
 
     analy_stack_state *stack = &ctx.stack;
@@ -929,28 +1079,51 @@ int analyze_method_code(cp_method *method, heap_string *error) {
     write_npe_sources(insn, stack, &analy->sources[i].a, &analy->sources[i].b);
 
     insn_index_to_stack_depth[i] = stack->count;
-    size_t summary_size = sizeof(stack_summary) + (stack->count + ctx.locals.count) * sizeof(type_kind);
-    stack_summary *summary = arena_alloc(arena, 1, summary_size);
-    analy->stack_states[i] = summary;
-    
-    summary->locals = ctx.locals.count;
-    summary->stack = stack->count;
-    for (int summary_i = 0; summary_i < stack->count; ++summary_i)
-      summary->entries[summary_i] = stack->entries[summary_i].type;
-    for (int j = 0; j < ctx.locals.count; ++j)
-      summary->entries[stack->count + j] = ctx.locals.entries[j].type;
+    if (finished_refinement) {
+      size_t summary_size = sizeof(stack_summary) + (stack->count + ctx.locals.count) * sizeof(type_kind);
+      stack_summary *summary = arena_alloc(arena, 1, summary_size);
+      analy->stack_states[i] = summary;
 
-    if (analyze_instruction(insn, i, &ctx)) {
+      summary->locals = ctx.locals.count;
+      summary->stack = stack->count;
+      for (int summary_i = 0; summary_i < stack->count; ++summary_i)
+        summary->entries[summary_i] = stack->entries[summary_i].type;
+      for (int j = 0; j < ctx.locals.count; ++j)
+        summary->entries[stack->count + j] = ctx.locals.entries[j].type;
+    }
+
+    state_terminated = false;
+    if (analyze_instruction(insn, i, &ctx, &state_terminated, /*do_rewrite=*/finished_refinement)) {
       result = -1;
       goto inval;
     }
   }
+
+  if (ctx.changed) {
+    ctx.changed = false; // re-start analysis from the beginning, allowing us to filter locals/stack
+    stack_map_frame_iterator_uninit(&iter);
+    goto analyze;
+  }
+  if (!finished_refinement) {
+    finished_refinement = true; // Now that we haven't refined anything, we can record the analysis
+    stack_map_frame_iterator_uninit(&iter);
+    goto analyze;
+  }
+  DCHECK(!ctx.changed);
 
 inval:
   stack_map_frame_iterator_uninit(&iter);
   free(ctx.stack.entries);
   free(ctx.locals.entries);
   free(ctx.locals_swizzle);
+
+  if (missing_smt) {
+    for (int i = 0; i < code->insn_count; ++i) {
+      free_analy_stack_state(ctx.known_stacks[i]);
+      free_analy_stack_state(ctx.known_locals[i]);
+    }
+  }
+
   arrfree(ctx.edges);
 
   return result;
@@ -1265,7 +1438,7 @@ void dump_cfg_to_graphviz(FILE *out, const code_analysis *analysis) {
   fprintf(out, "}\n");
 }
 
-void replace_slashes(char *str, int len) {
+static void replace_slashes(char *str, int len) {
   for (int i = 0; i < len; ++i) {
     if (str[i] == '/') {
       str[i] = '.';
@@ -1273,7 +1446,7 @@ void replace_slashes(char *str, int len) {
   }
 }
 
-void stringify_type(string_builder *B, const field_descriptor *F) {
+static void npe_stringify_type(string_builder *B, const field_descriptor *F) {
   switch (F->base_kind) {
   case TYPE_KIND_REFERENCE:
     string_builder_append(B, "%.*s", fmt_slice(F->class_name));
@@ -1287,14 +1460,14 @@ void stringify_type(string_builder *B, const field_descriptor *F) {
   }
 }
 
-void stringify_method(string_builder *B, const cp_method_info *M) {
+static void npe_stringify_method(string_builder *B, const cp_method_info *M) {
   INIT_STACK_STRING(no_slashes, 1024);
   exchange_slashes_and_dots(&no_slashes, M->class_info->name);
   string_builder_append(B, "%.*s.%.*s(", fmt_slice(no_slashes), fmt_slice(M->nat->name));
   for (int i = 0; i < M->descriptor->args_count; ++i) {
     if (i > 0)
       string_builder_append(B, ", ");
-    stringify_type(B, M->descriptor->args + i);
+    npe_stringify_type(B, M->descriptor->args + i);
   }
   string_builder_append(B, ")");
 }
@@ -1376,7 +1549,7 @@ static int extended_npe_phase2(const cp_method *method, stack_variable_source *s
       if (is_first) {
         string_builder_append(builder, "the return value of ");
       }
-      stringify_method(builder, &insn->cp->methodref);
+      npe_stringify_method(builder, &insn->cp->methodref);
       break;
     }
     case insn_iconst: {
@@ -1460,7 +1633,7 @@ int get_extended_npe_message(cp_method *method, u16 pc, heap_string *result) {
   case insn_invokevtable_polymorphic: {
     cp_method_info *invoked = &faulting_insn->cp->methodref;
     string_builder_append(&builder, "Cannot invoke \"");
-    stringify_method(&builder, invoked);
+    npe_stringify_method(&builder, invoked);
     string_builder_append(&builder, "\"");
     break;
   }

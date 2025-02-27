@@ -67,7 +67,7 @@ DEFINE_ASYNC(init_cached_classdescs) {
     AWAIT(initialize_class, args->thread, self->cached_classdescs[self->i]);
     int result = get_async_result(initialize_class);
     if (result != 0) {
-      free(self->cached_classdescs);  // TODO this is not at all safe
+      free(self->cached_classdescs); // TODO this is not at all safe
       ASYNC_RETURN(result);
     }
   }
@@ -82,7 +82,7 @@ bool has_expanded_data(header_word *data) { return !((uintptr_t)data->expanded_d
 mark_word_t *get_mark_word(vm *vm, header_word *data) {
   mark_word_t *word = has_expanded_data(data) ? &data->expanded_data->mark_word : &data->mark_word;
 #if DCHECKS_ENABLED
-  if (!in_heap(vm, (void*) word)) {
+  if (!in_heap(vm, (void *)word)) {
     // Data got corrupted. Print out information
     fprintf(stderr, "Corrupted mark word: %p at %p (expanded data: %d)\n", word, data, has_expanded_data(data));
     fprintf(stderr, "Surrounding bytes (-16 to +16): ");
@@ -194,15 +194,15 @@ handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_na
     }
   }
 
-#ifndef NDEBUG
+#if DCHECKS_ENABLED
   // Print where the handles were allocated
-  fprintf(stderr, "Handle exhaustion: Lines ");
+  printf("Handle exhaustion: Locations ");
   for (int i = 0; i < thread->handles_capacity; ++i) {
     if (thread->handles[i].obj) {
-      fprintf(stderr, "%d ", thread->handles[i].line);
+      printf("%d (%s)", thread->handles[i].line, thread->handles[i].filename);
     }
   }
-  fprintf(stderr, "\n");
+  printf("\n");
 #endif
   UNREACHABLE(); // When we need more handles, rewrite to use a LL impl
 }
@@ -294,25 +294,25 @@ stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value 
   size_t values_bytes = code->max_stack * sizeof(stack_value);
   size_t total = header_bytes + values_bytes;
 
-  if (total + thread->stack.frame_buffer_used > thread->stack.frame_buffer_capacity) {
+  if (unlikely(total + thread->stack.frame_buffer_used > thread->stack.frame_buffer_capacity)) {
     raise_exception_object(thread, thread->stack_overflow_error);
     return nullptr;
   }
 
-  //  stack_frame *frame = (stack_frame *)(thread->stack.frame_buffer + thread->stack.frame_buffer_used);
   stack_frame *frame = (stack_frame *)(args + code->max_locals);
 
   thread->stack.frame_buffer_used = (char *)(frame->plain.stack + code->max_stack) - thread->stack.frame_buffer;
   arrput(thread->stack.frames, frame);
   frame->is_native = FRAME_KIND_INTERPRETER;
+  frame->is_async_suspended = false;
+  frame->synchronized_state = SYNCHRONIZE_NONE;
   frame->num_locals = code->max_locals;
   frame->plain.program_counter = 0;
   frame->plain.max_stack = code->max_stack;
   frame->method = method;
-  frame->is_async_suspended = false;
-  frame->synchronized_state = SYNCHRONIZE_NONE;
 
-  memset(frame_stack(frame), 0x0, code->max_stack * sizeof(stack_value));
+  // Not necessary, but possibly helpful when looking at debug dumps
+  // memset(frame_stack(frame), 0x0, code->max_stack * sizeof(stack_value));
 
   return frame;
 }
@@ -363,8 +363,7 @@ void dump_frame(FILE *stream, const stack_frame *frame) {
 
   for (int i = 0; i < frame->num_locals; ++i) {
     stack_value value = frame_locals(frame)[i];
-    const char *is_ref =
-        infer_type(frame->method->code_analysis, frame->plain.program_counter, i, true);
+    const char *is_ref = infer_type(frame->method->code_analysis, frame->plain.program_counter, i, true);
     write += snprintf(write, end - write, "locals[%d] = [ ref = %p, int = %d ] %s\n", i, value.obj, value.i, is_ref);
   }
 
@@ -485,9 +484,7 @@ int read_string_to_utf8(vm_thread *thread, heap_string *result, obj_header *obj)
   return 0;
 }
 
-int primitive_order(type_kind kind) {
-  return kind;
-}
+int primitive_order(type_kind kind) { return kind; }
 
 classdesc *load_class_of_field_descriptor(vm_thread *thread, slice name) {
   const char *chars = name.chars;
@@ -526,6 +523,7 @@ classdesc *make_primitive_classdesc(type_kind kind, const slice name) {
   classdesc *desc = calloc(1, sizeof(classdesc));
 
   desc->kind = CD_KIND_PRIMITIVE;
+  desc->state = CD_STATE_INITIALIZED;
   desc->super_class = nullptr;
   desc->name = arena_make_str(&desc->arena, name.chars, (int)name.len);
   desc->access_flags = ACCESS_PUBLIC | ACCESS_FINAL | ACCESS_ABSTRACT;
@@ -580,7 +578,7 @@ static slice get_default_boot_cp() {
 
 vm_options default_vm_options() {
   vm_options options = {nullptr};
-  options.heap_size = 1 << 21;
+  options.heap_size = 1 << 26;
   options.runtime_classpath = get_default_boot_cp();
 
   return options;
@@ -753,7 +751,7 @@ stack_value call_interpreter_synchronous(vm_thread *thread, cp_method *method, s
 
 // NOLINTNEXTLINE(misc-no-recursion)
 __attribute__((noinline)) cp_field *field_lookup(classdesc *classdesc, slice const name, slice const descriptor) {
-  if (!classdesc->super_class)  // java/lang/Object has no fields (this is commonly called due to (*) below)
+  if (!classdesc->super_class) // java/lang/Object has no fields (this is commonly called due to (*) below)
     return nullptr;
 
   for (int i = 0; i < classdesc->fields_count; ++i) {
@@ -811,7 +809,7 @@ static void init_unsafe_constants(vm_thread *thread) {
   set_static_field(unaligned_access, (stack_value){.i = 1});
 }
 
-#define PROFILE_STARTUP 0  // if 1, prints out profiler data for startup
+#define PROFILE_STARTUP 0 // if 1, prints out profiler data for startup
 
 vm_thread *create_main_thread(vm *vm, thread_options options) {
   vm_thread *thr = calloc(1, sizeof(vm_thread));
@@ -1356,6 +1354,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   parse_result_t error = parse_classfile(classfile_bytes, classfile_len, class, &format_error);
   if (error != PARSE_SUCCESS) {
     raise_vm_exception(thread, STR("java/lang/ClassFormatError"), hslc(format_error));
+    class->linkage_error = thread->current_exception;
     free_heap_str(format_error);
 
     goto error_1;
@@ -1434,6 +1433,21 @@ error_1:
   return nullptr;
 }
 
+void dump_trace(vm_thread *thread) {
+  // Walk frames and print the method/line number
+  for (int i = arrlen(thread->stack.frames) - 1; i >= 0; --i) {
+    stack_frame *frame = thread->stack.frames[i];
+    cp_method *method = get_frame_method(frame);
+    if (is_frame_native(frame)) {
+      printf("  at %.*s.%.*s(Native Method)\n", fmt_slice(method->my_class->name), fmt_slice(method->name));
+    } else {
+      int line = get_line_number(method->code, frame->plain.program_counter);
+      printf("  at %.*s.%.*s(%.*s:%d)\n", fmt_slice(method->my_class->name), fmt_slice(method->name),
+             fmt_slice(method->my_class->source_file->name), line);
+    }
+  }
+}
+
 // NOLINTNEXTLINE(misc-no-recursion)
 classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool raise_class_not_found) {
   vm *vm = thread->vm;
@@ -1497,11 +1511,9 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
         abort();
       }
 
-      u32 i = 0;
       exchange_slashes_and_dots(&chars, chars);
       // ClassNotFoundException: com.google.DontBeEvil
-      filename = subslice_to(filename, 0, i);
-      raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), filename);
+      raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), chars);
       return nullptr;
     }
 
@@ -1585,6 +1597,7 @@ attribute *find_attribute(attribute *attrs, int attrc, attribute_kind kind) {
 //
 // Returns true if an OOM occurred when initializing string fields.
 bool initialize_constant_value_fields(vm_thread *thread, classdesc *classdesc) {
+  CHECK(classdesc->state >= CD_STATE_LINKED, "Class must be linked");
   for (int i = 0; i < classdesc->fields_count; ++i) {
     cp_field *field = classdesc->fields + i;
     if (field->access_flags & ACCESS_STATIC && field->access_flags & ACCESS_FINAL) {
@@ -1644,11 +1657,16 @@ DEFINE_ASYNC(initialize_class) {
 #define thread (args->thread)
 
   classdesc *cd = args->classdesc; // must be reloaded after await()
-  bool error;                      // this is a local, but it's ok because we don't use it between
-                                   // awaits
+  if (cd->kind == CD_KIND_ORDINARY_ARRAY) {
+    // Initialize
+    ASYNC_RETURN(0);
+  }
+
+  bool error; // this is a local, but it's ok because we don't use it between
+              // awaits
 
   DCHECK(cd);
-  if (likely(cd->state == CD_STATE_INITIALIZED)) {
+  if (likely(cd->state == CD_STATE_INITIALIZED || cd->state == CD_STATE_LINKAGE_ERROR)) {
     // Class is already initialized
     ASYNC_RETURN(0);
   }
@@ -1681,6 +1699,11 @@ DEFINE_ASYNC(initialize_class) {
   }
 
   // TODO handle linkage error
+  if (cd->state == CD_STATE_LINKAGE_ERROR) {
+    thread->current_exception = nullptr;
+    raise_exception_object(thread, cd->linkage_error);
+    ASYNC_RETURN(-1);
+  }
 
   cd->state = CD_STATE_INITIALIZING;
   cd->initializing_thread = thread->tid; // mark this thread as initializing the class
@@ -1727,6 +1750,7 @@ DEFINE_ASYNC(initialize_class) {
 done:
   free(self->recursive_call_space);
   args->classdesc->state = error ? CD_STATE_LINKAGE_ERROR : CD_STATE_INITIALIZED;
+  args->classdesc->linkage_error = thread->current_exception;
   // Mark all array classes with the same state
   classdesc *arr = args->classdesc;
   while ((arr = arr->array_type)) {
@@ -2627,4 +2651,13 @@ obj_header *get_main_thread_group(vm_thread *thread) {
     call_interpreter_synchronous(thread, init, args); // ThreadGroup constructor doesn't do much
   }
   return vm->main_thread_group;
+}
+
+bool thread_is_daemon(vm_thread *thread) {
+  struct native_Thread *thread_obj = thread->thread_obj;
+  DCHECK(thread_obj);
+
+  // The daemon field is stored in the "holder" of the Java Thread object.
+  object holder = thread_obj->holder;
+  return LoadFieldBoolean(holder, "daemon");
 }

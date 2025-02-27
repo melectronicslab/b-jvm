@@ -1,6 +1,5 @@
 #include "exceptions.h"
 
-
 #include <linkage.h>
 
 #include <analysis.h>
@@ -131,6 +130,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
     int status = link_class(thread, super);
     if (status) {
       cd->state = CD_STATE_LINKAGE_ERROR;
+      cd->linkage_error = thread->current_exception;
       return status;
     }
   }
@@ -142,6 +142,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
     int status = link_class(thread, cd->interfaces[i]->classdesc);
     if (status) {
       cd->state = CD_STATE_LINKAGE_ERROR;
+      cd->linkage_error = thread->current_exception;
       return status;
     }
   }
@@ -163,6 +164,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
       if (result != 0) {
         cd->state = CD_STATE_LINKAGE_ERROR;
         raise_verify_error(thread, hslc(error_str));
+        cd->linkage_error = thread->current_exception;
         free_heap_str(error_str);
         return -1;
       }
@@ -187,7 +189,7 @@ int link_class(vm_thread *thread, classdesc *cd) {
     cp_field *field = cd->fields + (must_have_C_layout ? field_i : order[field_i]);
     type_kind kind = field_to_kind(&field->parsed_descriptor);
     field->byte_offset = field->access_flags & ACCESS_STATIC ? allocate_field(&static_offset, kind)
-      : allocate_field(&nonstatic_offset, kind);
+                                                             : allocate_field(&nonstatic_offset, kind);
     // printf("Allocating field %.*s for class %.*s at %zu\n", fmt_slice(field->name), fmt_slice(cd->name),
     //         field->byte_offset);
     if (kind == TYPE_KIND_REFERENCE) {

@@ -456,7 +456,6 @@ typedef struct {
 // The stack depth should be inferred from the program counter: In particular,
 // the method contains an analysis of the stack depth at each instruction.
 typedef struct plain_frame {
-  u16 values_count;
   u16 program_counter; // in instruction indices
   u16 max_stack;
 
@@ -565,6 +564,8 @@ typedef struct vm_thread {
     char synchronize_acquire_continuation[MONITOR_ACQUIRE_CONTINUATION_SIZE];
   } stack;
 
+  int no_smt_depth;
+
   // Pre-allocated out-of-memory and stack overflow errors
   obj_header *out_of_mem_error;
   obj_header *stack_overflow_error;
@@ -600,7 +601,7 @@ typedef struct vm_thread {
   // Whether this thread is currently paused in the debugger
   bool paused_in_debugger;
 
-  void *profiler;  // active profiler, if any. Before thread exit, the profiler is terminated.
+  void *profiler; // active profiler, if any. Before thread exit, the profiler is terminated.
 } vm_thread;
 
 handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file, int line_no);
@@ -609,6 +610,8 @@ handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file, i
 
 void drop_handle(vm_thread *thread, handle *handle);
 bool is_builtin_class(slice chars);
+void dump_trace(vm_thread *thread);
+bool thread_is_daemon(vm_thread *thread);
 
 /**
  * Create an uninitialized frame with space sufficient for the given method.
