@@ -33,7 +33,7 @@ DECLARE_NATIVE("java/lang/reflect", Array, get, "(Ljava/lang/Object;I)Ljava/lang
     raise_vm_exception(thread, STR("java/lang/IllegalArgumentException"), STR("Argument is not an array"));
     return value_null();
   }
-  
+
   if (args[1].i < 0 || args[1].i >= ArrayLength(array)) {
     raise_vm_exception(thread, STR("java/lang/ArrayIndexOutOfBoundsException"), STR(""));
     return value_null();
