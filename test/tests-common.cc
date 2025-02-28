@@ -33,9 +33,21 @@ using std::string_view;
 using std::vector;
 
 namespace Bjvm::Tests {
+// todo: use actual c++ RAII class instead of this scuff
+static void tear_down_vm(vm *vm) {
+  auto *scheduler = (rr_scheduler *) vm->scheduler;
+  if (scheduler) rr_scheduler_uninsit(scheduler);
+  free_vm(vm);
+  delete scheduler; // scuff scuff scuff
+}
+
+// todo: use actual c++ RAII class instead of this scuff
 std::unique_ptr<vm, void (*)(vm *)> CreateTestVM(vm_options options) {
   vm *vm = create_vm(options);
-  return {vm, free_vm};
+  auto *scheduler = new rr_scheduler {};
+  rr_scheduler_init(scheduler, vm);
+  vm->scheduler = scheduler;
+    return { vm, tear_down_vm };
 }
 
 std::vector<std::string> ListDirectory(const std::string &path, bool recursive) {
