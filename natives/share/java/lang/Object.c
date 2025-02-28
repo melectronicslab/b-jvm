@@ -86,8 +86,6 @@ DECLARE_ASYNC_NATIVE("java/lang", Object, wait0, "(J)V", locals(u32 hold_count; 
   s64 timeoutMillis = args[0].l;
   assert(timeoutMillis >= 0); // this is always checked before calling this private method
 
-  (void)timeoutMillis; // cope with unused var
-
   if (thread->thread_obj->interrupted) {
     thread->thread_obj->interrupted = false; // throw and reset flag
     raise_vm_exception(thread, STR("java/lang/InterruptedException"), STR("Thread interrupted before monitor waiting"));
