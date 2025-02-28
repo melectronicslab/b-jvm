@@ -77,6 +77,17 @@ DEFINE_ASYNC(init_cached_classdescs) {
   ASYNC_END(0);
 }
 
+inline int set_unpark_permit(vm_thread *thread) {
+  if (unlikely(!thread))
+    return -1;
+  thread->unpark_permit = true;
+  return 0;
+}
+
+inline bool query_unpark_permit(vm_thread *thread) {
+  return thread->unpark_permit;
+}
+
 bool has_expanded_data(header_word *data) { return !((uintptr_t)data->expanded_data & IS_MARK_WORD); }
 
 mark_word_t *get_mark_word(vm *vm, header_word *data) {
@@ -242,6 +253,12 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
                                stack_value *args, u8 argc) {
   native_callback *native = method->native_handle;
   if (!native) {
+    printf("Class state (before pushing native frame of it): %d\n", method->my_class->state);
+    printf("Neighborhood bytes around native_handle ( %p ): ", &method->native_handle);
+    for (int i = -16; i < 16; i++) {
+      printf("%02x ", ((u8 *)&method->native_handle)[i]);
+    }
+    printf("\n");
     raise_unsatisfied_link_error(thread, method);
     return nullptr;
   }
@@ -404,6 +421,8 @@ void register_native(vm *vm, slice class, const slice method_name, const slice m
                      native_callback callback) {
   if (class.chars[0] == '/')
     class = subslice(class, 1);
+
+//  printf("Registering native: %.*s on class %.*s\n", fmt_slice(method_name), fmt_slice(class));
 
   heap_string heap_class = make_heap_str_from(class);
   for (size_t i = 0; i < class.len; i++) { // hacky way to avoid emscripten from complaining about symbol names
@@ -866,7 +885,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
         if (obj.obj) {
           CHECK(read_string_to_utf8(thr, &message, obj.obj) == 0);
         }
-        fprintf(stderr, "Error in init phase %.*s: %.*s, %s\n", fmt_slice(thr->current_exception->descriptor->name),
+        printf("Error in init phase %.*s: %.*s, %s\n", fmt_slice(thr->current_exception->descriptor->name),
                 fmt_slice(phases[i]), obj.obj ? message.chars : "no message");
         abort();
       }
@@ -1372,16 +1391,21 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   if (entries) {
     for (int i = 0; i < arrlen(entries->entries); i++) {
       native_entry *entry = entries->entries + i;
+//      printf("Trying to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
 
       for (int j = 0; j < class->methods_count; ++j) {
         cp_method *method = class->methods + j;
 
         if (utf8_equals_utf8(method->name, entry->name) &&
             utf8_equals_utf8(method->unparsed_descriptor, entry->descriptor)) {
+//          printf("Successfully bound method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
           method->native_handle = &entry->callback;
-          break;
+          goto done;
         }
       }
+
+//      printf("Failed to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
+      done:
     }
   }
 
@@ -2298,7 +2322,6 @@ doit:
     AWAIT(call_interpreter, thread, valueFromMethodName, arg);
     if (thread->current_exception) {
       drop_handle(thread, self->vh);
-      drop_handle(thread, self->result);
       ASYNC_RETURN_VOID();
     }
 

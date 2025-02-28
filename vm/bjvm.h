@@ -514,7 +514,7 @@ void drop_js_handle(vm *vm, int index);
 struct async_stack;
 typedef struct async_stack async_stack_t;
 
-#define MONITOR_ACQUIRE_CONTINUATION_SIZE 56
+#define MONITOR_ACQUIRE_CONTINUATION_SIZE 64 // just to be safe
 typedef struct vm_thread {
   // Global VM corresponding to this thread
   vm *vm;
@@ -553,6 +553,8 @@ typedef struct vm_thread {
 
   bool js_jit_enabled;
 
+  bool unpark_permit; // set by unpark, queried by park
+
   // Instance of java.lang.Thread
   struct native_Thread *thread_obj;
   object putative_system_cl;
@@ -582,6 +584,10 @@ typedef struct vm_thread {
 
   void *profiler; // active profiler, if any. Before thread exit, the profiler is terminated.
 } vm_thread;
+
+// park/unpark
+int set_unpark_permit(vm_thread *thread); // returns -1 if thread not existent somehow (dead reference)
+bool query_unpark_permit(vm_thread *thread); // calling this from the thread itself, so it must be alive
 
 handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file, int line_no);
 // Create a handle to the given object. Should always be paired with drop_handle.
