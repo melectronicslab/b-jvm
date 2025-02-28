@@ -267,6 +267,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
   while (true) {
     auto status = rr_scheduler_step(&scheduler);
+    printf("status: %d\n", status);
     if (status == SCHEDULER_RESULT_DONE) {
       break;
     }
