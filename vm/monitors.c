@@ -73,7 +73,6 @@ DEFINE_ASYNC(monitor_acquire) {
     self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
   }
-  printf("acquired monitor from tid %d %p\n", args->thread->tid, self->handle->obj);
 
   // done acquiring the monitor
 #undef shared_header
@@ -119,7 +118,6 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
     self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
   }
-  printf("reacquired monitor from tid %d %p\n", args->thread->tid, self->handle->obj);
 
   // done acquiring the monitor
 #undef shared_header

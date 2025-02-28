@@ -22,7 +22,6 @@ typedef struct {
 } impl;
 
 void monitor_notify_one(rr_scheduler *scheduler, obj_header *monitor) {
-  printf("monitor notify one on obj %p\n", monitor);
   // iterate through the threads and find one that is waiting on the monitor
   impl *I = scheduler->_impl;
   for (int i = 0; i < arrlen(I->round_robin); i++) {
@@ -37,7 +36,6 @@ void monitor_notify_one(rr_scheduler *scheduler, obj_header *monitor) {
 }
 
 void monitor_notify_all(rr_scheduler *scheduler, obj_header *monitor) {
-  printf("monitor notify all on obj %p\n", monitor);
   // iterate through the threads and find all that are waiting on the monitor
   impl *I = scheduler->_impl;
   for (int i = 0; i < arrlen(I->round_robin); i++) {
@@ -45,14 +43,12 @@ void monitor_notify_all(rr_scheduler *scheduler, obj_header *monitor) {
     if (!wakeup_info)
       continue;
     if (wakeup_info->kind == RR_MONITOR_WAIT && wakeup_info->monitor_wakeup.monitor->obj == monitor) {
-      printf("awaking tid to allow monitor wait to retry %d\n", I->round_robin[i]->thread->tid);
       wakeup_info->monitor_wakeup.ready = true;
     }
   }
 }
 
 void monitor_exit_handler(rr_scheduler *scheduler, obj_header *monitor) {
-  printf("monitor exit on obj %p\n", monitor);
   // iterate through the threads and find all that are waiting to enter
   impl *I = scheduler->_impl;
   for (int i = 0; i < arrlen(I->round_robin); i++) {
@@ -60,7 +56,6 @@ void monitor_exit_handler(rr_scheduler *scheduler, obj_header *monitor) {
     if (!wakeup_info)
       continue;
     if (wakeup_info->kind == RR_MONITOR_ENTER_WAITING && wakeup_info->monitor_wakeup.monitor->obj == monitor) {
-      printf("awaking tid to allow monitor enter %d\n", I->round_robin[i]->thread->tid);
       wakeup_info->monitor_wakeup.ready = true;
       return; // we only need to notify one waiter at most (but it probably wouldn't hurt either way)
     }
@@ -69,7 +64,6 @@ void monitor_exit_handler(rr_scheduler *scheduler, obj_header *monitor) {
 
 void free_thread_info(rr_scheduler *scheduler, thread_info *info) {
   // technically doesn't need to acquire the monitor to notify, since scheduler is god
-  printf("DONE thread tid %d, notifying Thread obj %p\n", info->thread->tid, info->thread->thread_obj);
   info->thread->thread_obj->eetop = 0; // set the eetop to nullptr
   monitor_notify_all(scheduler, (obj_header *) info->thread->thread_obj);
 
@@ -79,7 +73,6 @@ void free_thread_info(rr_scheduler *scheduler, thread_info *info) {
 
 /// does not reättempt the notifyAll on the thread; assume the scheduler is dead
 static void free_thread_info_shutdown(thread_info *info) {
-  printf("DONE SHUTDOWN thread tid %d, notifying Thread obj %p\n", info->thread->tid, info->thread->thread_obj);
   info->thread->thread_obj->eetop = 0; // set the eetop to nullptr
 
   arrfree(info->call_queue);
@@ -163,21 +156,14 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
     if (arrlen(info->call_queue) > 0) {
       if (is_sleeping(info, time)) {
         u64 wakeup_time = info->wakeup_info->wakeup_us;
-        printf("Thread %d is sleeping with wakeup %llu ms remaining\n", info->thread->tid, ((s64)wakeup_time - (s64)time)/1000);
-        printf(" - from wakeup info of type %d\n", info->wakeup_info->kind);
         if (wakeup_time == 0) {
-          printf("Wakeup time is 0 (tid %d)\n", info->thread->tid);
           wakeup_time = time + 1000000; // 1 second
-          if (info->wakeup_info->kind == RR_MONITOR_WAIT) {
-            printf("Monitor wait on obj %p\n", info->wakeup_info->monitor_wakeup.monitor->obj);
-          }
         }
 
         if (wakeup_time != 0 && wakeup_time < min) {
           min = wakeup_time;
         }
       } else {
-        printf("Thread %d is awake\n", info->thread->tid);
         return 0; // at least one thing is waiting, and not sleeping
       }
     }

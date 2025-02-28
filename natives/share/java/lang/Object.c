@@ -60,9 +60,6 @@ DECLARE_NATIVE("java/lang", Object, notifyAll, "()V") {
     return value_null();
   }
 
-  printf("NOTIFY-ALL attempting to notify monitor from tid %d %p\n", thread->tid, obj->obj);
-  printf("current hold count: %d\n", hold_count);
-
   rr_scheduler *scheduler = thread->vm->scheduler;
   assert(scheduler && "Cannot synchronize without a scheduler!");
   monitor_notify_all(scheduler, obj->obj);
@@ -77,9 +74,6 @@ DECLARE_NATIVE("java/lang", Object, notify, "()V") {
                        STR("Thread does not hold monitor before waiting"));
     return value_null();
   }
-
-  printf("NOTIFY-ONE attempting to notify monitor from tid %d %p\n", thread->tid, obj->obj);
-  printf("current hold count: %d\n", hold_count);
 
   rr_scheduler *scheduler = thread->vm->scheduler;
   assert(scheduler && "Cannot synchronize without a scheduler!");
@@ -101,9 +95,6 @@ DECLARE_ASYNC_NATIVE("java/lang", Object, wait0, "(J)V", locals(u32 hold_count; 
     raise_vm_exception(thread, STR("java/lang/InterruptedException"), STR("Thread interrupted before monitor waiting"));
     ASYNC_RETURN_VOID();
   }
-
-  printf("WAIT attempting to wait on monitor from tid %d %p\n", thread->tid, obj->obj);
-  printf("WAIT's current hold count: %d\n", current_thread_hold_count(thread, obj->obj));
 
   self->hold_count = monitor_release_all_hold_count(thread, obj->obj);
   if (self->hold_count == 0) {
