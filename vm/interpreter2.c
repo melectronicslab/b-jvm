@@ -59,13 +59,13 @@
 #if 0
 #undef DEBUG_CHECK
 #define DEBUG_CHECK()                                                                                                  \
-  if (tick % 10000000LL == 0) printf("Tick: %lld\n", tick); \
-  if (tick++ > 4001584000LL) {                                                  \
+  if (tick++ > 17795295LL && tick < 17797295LL) {                                                  \
     SPILL_VOID                                                                                                         \
     printf("Frame method: %p\n", frame->method);                                                                       \
     cp_method *m = frame->method;                                                                                      \
-    printf("Calling method %.*s, descriptor %.*s, on class %.*s; sp = %ld; %d, %lld\n", fmt_slice(m->name),              \
-           fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp - frame->plain.stack, __LINE__, tick);  \
+    printf("Calling method %.*s, descriptor %.*s, on class %.*s; sp = %ld; %d, %lld, %d\n", fmt_slice(m->name),              \
+           fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp - frame->plain.stack, __LINE__, tick, pc);  \
+    printf("arg_1: %llx, arg_2: %f, arg_3: %lf, tos: %llx\n", *arg_1, *arg_2, *arg_3, (s64)tos);                                                \
     heap_string s = insn_to_string(insn, pc);                                                                          \
     printf("Insn kind: %.*s\n", fmt_slice(s));                                                                         \
     free_heap_str(s);                                                                                                  \
@@ -203,12 +203,12 @@
 
 #define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
   stack_value __tos = (tos);                                                                                           \
-  MUSTTAIL return bytecode_tables[insn->tos_after][insns[1].kind](thread, frame, insns + 1, pc + 1, sp, __tos.l,       \
+  MUSTTAIL return bytecode_tables[insns[1].tos_before][insns[1].kind](thread, frame, insns + 1, pc + 1, sp, __tos.l,       \
                                                                   __tos.f, __tos.d);
 
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
   stack_value __tos = (tos);                                                                                           \
-  MUSTTAIL return bytecode_tables[insn->tos_before][insns[0].kind](thread, frame, insns, pc, sp, __tos.l, __tos.f,     \
+  MUSTTAIL return bytecode_tables[insns[0].tos_before][insns[0].kind](thread, frame, insns, pc, sp, __tos.l, __tos.f,     \
                                                                    __tos.d);
 #endif // ifdef EMSCRIPTEN
 #else  // !DO_TAILS
@@ -275,7 +275,7 @@ double *arg_3;
   SET_INT((tos).l);                                                                                                    \
   SET_DOUBLE((tos).d);                                                                                                 \
   pc++;                                                                                                                \
-  return 4 * (insn + 1)->kind + insn->tos_after;
+  return 4 * (insn + 1)->kind + (insn + 1)->tos_before;
 
 #endif // DO_TAILS
 
@@ -1517,10 +1517,9 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
     s32 old_pc = pc;                                                                                                   \
-    s32 one_before_next = ((s32)tos op 0) ? ((s32)insn->index - 1) : (s32)pc;                                          \
-    insns += one_before_next - (s32)old_pc;                                                                            \
+    pc = ((s32)tos op 0) ? ((s32)insn->index - 1) : (s32)pc;                                          \
+    insns += pc - (s32)old_pc;                                                                            \
     sp--;                                                                                                              \
-    pc = one_before_next;                                                                                              \
     STACK_POLYMORPHIC_NEXT(*(sp - 1));                                                                                 \
   }
 
@@ -1833,8 +1832,7 @@ static s64 invokestatic_resolved_impl_void(ARGS_VOID) {
     invoked_frame = push_native_frame(thread, method, insn->cp->methodref.descriptor, sp - insn->args, insn->args);
   } else {
     ConsiderJitEntry(thread, method, sp - insn->args)
-
-        invoked_frame = push_frame(thread, method, sp - insn->args, insn->args);
+    invoked_frame = push_frame(thread, method, sp - insn->args, insn->args);
   }
   if (unlikely(!invoked_frame)) {
     return 0;

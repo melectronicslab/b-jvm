@@ -1860,22 +1860,11 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
   // TODO this is rly dumb, review the spec for how this should really work (need to ignore stack frames associated
   // with reflection n' shit)
   object loader = nullptr;
-  if (thread->thread_obj && thread->thread_obj->contextClassLoader) {
-    if (!thread->putative_system_cl) {
-      // Temporarily until we switch over to system class loader
-      thread->putative_system_cl = thread->thread_obj->contextClassLoader;
-    } else {
-      if (thread->thread_obj->contextClassLoader != thread->putative_system_cl) {
-        loader = thread->thread_obj->contextClassLoader;
-      }
-    }
-  } else {
-    for (int i = arrlen(thread->stack.frames) - 1; i >= 0; --i) {
-      void *candidate = thread->stack.frames[i]->method->my_class->classloader;
-      if (candidate) {
-        loader = candidate;
-        break;
-      }
+  for (int i = arrlen(thread->stack.frames) - 1; i >= 0; --i) {
+    void *candidate = thread->stack.frames[i]->method->my_class->classloader;
+    if (candidate) {
+      loader = candidate;
+      break;
     }
   }
 
@@ -2135,14 +2124,27 @@ bool instanceof(const classdesc *o, const classdesc *target) {
     if (o->kind == CD_KIND_ORDINARY)
       return false;
     if (o->kind == CD_KIND_ORDINARY_ARRAY) {
-      return target->dimensions == o->dimensions && o->primitive_component == target->primitive_component &&
-             (!o->base_component || !target->base_component || instanceof(o->base_component, target->base_component));
+      // First remove target_dims from o. If we run out of dimensions, then it's not compatible. Then we perform a
+      // normal check.
+      int target_dims = target->dimensions;
+      while (target_dims--) {
+        o = o->one_fewer_dim;
+        target = target->one_fewer_dim;
+        DCHECK(target);
+        if (!o) {
+          return false;
+        }
+      }
+      if (o->kind == CD_KIND_PRIMITIVE || target->kind == CD_KIND_PRIMITIVE) {
+        return false;  // handled earlier
+      }
+    } else {
+      // o is 1D primitive array, equality check suffices
+      return target->dimensions == o->dimensions && target->primitive_component == o->primitive_component;
     }
-    // o is 1D primitive array, equality check suffices
-    return target->dimensions == o->dimensions && target->primitive_component == o->primitive_component;
   }
 
-  // o is normal object
+  // o can be compared as a normal object
   const classdesc *desc = o;
   return target->access_flags & ACCESS_INTERFACE ? instanceof_interface(desc, target) : instanceof_super(desc, target);
 }
