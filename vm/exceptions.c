@@ -2,7 +2,6 @@
 #include <objects.h>
 
 void raise_exception_object(vm_thread *thread, object obj) {
-  dump_trace(thread);
   DCHECK(!thread->current_exception && "Exception is already raised");
   DCHECK(obj && "Exception object must be non-null");
   // this check isn't possible early into vm setup
@@ -66,7 +65,6 @@ void raise_div0_arithmetic_exception(vm_thread *thread) {
 }
 
 void raise_unsatisfied_link_error(vm_thread *thread, const cp_method *method) {
-  dump_trace(thread); // todo: fix this bug here
   // Useful for now as we have a ton of natives to implement. We'll remove it long term.
   printf("Unsatisfied link error %.*s on %.*s\n", fmt_slice(method->name), fmt_slice(method->my_class->name));
 
