@@ -36,7 +36,7 @@ namespace Bjvm::Tests {
 // todo: use actual c++ RAII class instead of this scuff
 static void tear_down_vm(vm *vm) {
   auto *scheduler = (rr_scheduler *) vm->scheduler;
-  if (scheduler) rr_scheduler_uninsit(scheduler);
+  if (scheduler) rr_scheduler_uninit(scheduler);
   free_vm(vm);
   delete scheduler; // scuff scuff scuff
 }
