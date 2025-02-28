@@ -89,13 +89,17 @@ void rr_scheduler_uninit(rr_scheduler *scheduler) {
   free(I);
 }
 
-static bool is_sleeping(thread_info *info, s64 time) {
+static bool is_sleeping(thread_info *info, u64 time) {
   if (!info->wakeup_info)
     return false;
-  if (info->wakeup_info->kind == RR_WAKEUP_SLEEP ||
-      (info->wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread))) {
-    s64 wakeup = (s64)info->wakeup_info->wakeup_us;
-    return !info->thread->thread_obj->interrupted && (wakeup == 0 || wakeup >= time);
+  if (info->wakeup_info->kind == RR_WAKEUP_SLEEP
+      || (info->wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread))
+      || (info->wakeup_info->kind == RR_MONITOR_WAIT && !info->wakeup_info->monitor_wakeup.ready)
+      || (info->wakeup_info->kind == RR_MONITOR_ENTER_WAITING && !info->wakeup_info->monitor_wakeup.ready)) {
+    u64 wakeup = info->wakeup_info->wakeup_us;
+    // montitor enter is non-interruptible by Java language spec
+    bool interrupted = info->thread->thread_obj->interrupted && info->wakeup_info->kind != RR_MONITOR_ENTER_WAITING;
+    return !interrupted && (wakeup == 0 || wakeup >= time);
   } else {
     return false; // blocking on something else which presumably can resume soon
   }
@@ -104,7 +108,7 @@ static bool is_sleeping(thread_info *info, s64 time) {
 static thread_info *get_next_thr(impl *impl) {
   assert(impl->round_robin && "No threads to run");
   thread_info *info = nullptr;
-  s64 time = (s64)get_unix_us();
+  u64 time = get_unix_us();
   for (int i = 0; i < arrlen(impl->round_robin); ++i) {
     info = impl->round_robin[0];
     arrdel(impl->round_robin, 0);
@@ -133,9 +137,9 @@ static thread_info *get_next_thr(impl *impl) {
 }
 
 u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
-  s64 min = INT64_MAX;
+  u64 min = UINT64_MAX;
   impl *I = scheduler->_impl;
-  s64 time = (s64)get_unix_us();
+  u64 time = get_unix_us();
 
   // Check all infos for wakeup times
   for (int i = 0; i < arrlen(I->round_robin); i++) {
@@ -143,17 +147,17 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
 
     if (arrlen(info->call_queue) > 0) {
       if (is_sleeping(info, time)) {
-        s64 wakeup_time = (s64)info->wakeup_info->wakeup_us;
+        u64 wakeup_time = info->wakeup_info->wakeup_us;
         if (wakeup_time != 0 && wakeup_time < min) {
-          min = (s64)info->wakeup_info->wakeup_us;
+          min = wakeup_time;
         }
       } else {
         return 0; // at least one thing is waiting, and not sleeping
       }
     }
   }
-  min -= time;
-  return min >= 0 ? min : 0;
+
+  return min > time ? min - time : 0;
 }
 
 void unshift(rr_scheduler *scheduler, impl *I, thread_info *info) {
@@ -189,7 +193,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   thread->fuel = 50000;
 
   // If the thread is sleeping, check if it's time to wake up
-  if (is_sleeping(info, (s64)time)) {
+  if (is_sleeping(info, time)) {
     if (time < info->wakeup_info->wakeup_us) {
       return SCHEDULER_RESULT_MORE;
     }
