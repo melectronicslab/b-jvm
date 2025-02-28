@@ -73,6 +73,7 @@ DEFINE_ASYNC(monitor_acquire) {
     self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
   }
+  printf("acquired monitor from tid %d %p\n", args->thread->tid, self->handle->obj);
 
   // done acquiring the monitor
 #undef shared_header
@@ -118,6 +119,7 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
     self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
   }
+  printf("reacquired monitor from tid %d %p\n", args->thread->tid, self->handle->obj);
 
   // done acquiring the monitor
 #undef shared_header
@@ -140,11 +142,6 @@ u32 current_thread_hold_count(vm_thread *thread, obj_header *obj) {
 }
 
 u32 monitor_release_all_hold_count(vm_thread *thread, obj_header *obj) {
-  // todo: this only works if the scheduler is synchronized/single-threaded
-  rr_scheduler *scheduler = thread->vm->scheduler;
-  assert(scheduler && "Cannot synchronize without a scheduler!");
-  monitor_exit_handler(scheduler, obj);
-
   // no handles necessary because no GC (i hope)
   header_word fetched_header;
   __atomic_load(&obj->header_word, &fetched_header, __ATOMIC_ACQUIRE);
@@ -162,6 +159,11 @@ u32 monitor_release_all_hold_count(vm_thread *thread, obj_header *obj) {
   u32 hold_count = lock->hold_count;
   lock->hold_count = 0;
   __atomic_store_n(&lock->tid, NOT_HELD_TID, __ATOMIC_RELEASE);
+
+  // todo: this only works if the scheduler is synchronized/single-threaded
+  rr_scheduler *scheduler = thread->vm->scheduler;
+  assert(scheduler && "Cannot synchronize without a scheduler!");
+  monitor_exit_handler(scheduler, obj);
   return hold_count;
 }
 

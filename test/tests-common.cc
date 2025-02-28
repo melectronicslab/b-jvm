@@ -262,6 +262,7 @@ ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capt
 
     u64 sleep_for = rr_scheduler_may_sleep_us(&scheduler);
     if (sleep_for) {
+      printf("sleeping for %llu us\n", sleep_for);
       result.sleep_count++;
       result.us_slept += sleep_for;
 #ifdef EMSCRIPTEN
