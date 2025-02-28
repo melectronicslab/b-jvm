@@ -93,8 +93,7 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
 
   // a monitor should be guaranteed to exist
   for (;;) {
-    monitor_data *lock =
-        __atomic_load_n((monitor_data **)&self->handle->obj->header_word, __ATOMIC_ACQUIRE); // must refetch
+    monitor_data *lock = __atomic_load_n(shared_header.expanded_data, __ATOMIC_ACQUIRE); // must refetch
     assert(lock);
     s32 read_tid = NOT_HELD_TID;
 
@@ -166,11 +165,6 @@ u32 monitor_release_all_hold_count(vm_thread *thread, obj_header *obj) {
 }
 
 int monitor_release(vm_thread *thread, obj_header *obj) {
-  // todo: this only works if the scheduler is synchronized/single-threaded
-  rr_scheduler *scheduler = thread->vm->scheduler;
-  assert(scheduler && "Cannot synchronize without a scheduler!");
-  monitor_exit_handler(scheduler, obj);
-
   // since this is a single-threaded vm, we don't need atomic operations
   // no handles necessary because no GC (i hope)
   header_word fetched_header;
@@ -189,6 +183,12 @@ int monitor_release(vm_thread *thread, obj_header *obj) {
 
   if (new_hold_count == 0) {
     __atomic_store_n(&lock->tid, NOT_HELD_TID, __ATOMIC_RELEASE);
+
+    // todo: this only works if the scheduler is synchronized/single-threaded
+    rr_scheduler *scheduler = thread->vm->scheduler;
+    assert(scheduler && "Cannot synchronize without a scheduler!");
+    monitor_exit_handler(scheduler, obj);
   }
+
   return 0;
 }
