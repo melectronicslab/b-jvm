@@ -156,9 +156,9 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
     if (arrlen(info->call_queue) > 0) {
       if (is_sleeping(info, time)) {
         u64 wakeup_time = info->wakeup_info->wakeup_us;
-        if (wakeup_time == 0) {
-          wakeup_time = time + 1000000; // 1 second
-        }
+//        if (wakeup_time == 0) {
+//          wakeup_time = time + 10 * 1000000; // 10 seconds instead of infinite sleep just to be safe
+//        }
 
         if (wakeup_time != 0 && wakeup_time < min) {
           min = wakeup_time;
