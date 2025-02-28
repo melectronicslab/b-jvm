@@ -76,6 +76,7 @@ static inline void ByteArrayStoreBlock(object array, s32 offset, s32 length, u8 
   }
 
 MAKE_PRIMITIVE_LOAD_STORE(Byte, s8)
+MAKE_PRIMITIVE_LOAD_STORE(Boolean, bool)
 MAKE_PRIMITIVE_LOAD_STORE(Short, s16)
 MAKE_PRIMITIVE_LOAD_STORE(Char, u16)
 MAKE_PRIMITIVE_LOAD_STORE(Int, s32)

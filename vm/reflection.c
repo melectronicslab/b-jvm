@@ -30,14 +30,17 @@ void reflect_initialize_field(vm_thread *thread, classdesc *cd, cp_field *field)
   F->type = mirror;
   F->modifiers = field->access_flags;
 
-  // Find runtimevisibleannotations attribute
+  // Find runtimevisibleannotations attribute and signature attribute
   for (int i = 0; i < field->attributes_count; ++i) {
     if (field->attributes[i].kind == ATTRIBUTE_KIND_RUNTIME_VISIBLE_ANNOTATIONS) {
       const attribute_runtime_visible_annotations a = field->attributes[i].annotations;
       object annotations = CreatePrimitiveArray1D(thread, TYPE_KIND_BYTE, a.length);
       F->annotations = annotations;
       memcpy(ArrayData(F->annotations), a.data, field->attributes[i].length);
-      break;
+    } else if (field->attributes[i].kind == ATTRIBUTE_KIND_SIGNATURE) {
+      const attribute_signature a = field->attributes[i].signature;
+      object signature = MakeJStringFromModifiedUTF8(thread, a.utf8, true);
+      F->signature = signature;
     }
   }
 #undef F
@@ -61,6 +64,10 @@ void reflect_initialize_constructor(vm_thread *thread, classdesc *cd, cp_method 
   object parameterTypes =
       CreateObjectArray1D(thread, cached_classes(thread->vm)->klass, method->descriptor->args_count);
   C->parameterTypes = parameterTypes;
+  object exceptionTypes = CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Class")), 0);
+  C->exceptionTypes = exceptionTypes;
+  C->slot = (s32)method->my_index;
+  // TODO parse these ^^
 
   for (int i = 0; i < method->descriptor->args_count; ++i) {
     slice desc = method->descriptor->args[i].unparsed;
@@ -91,10 +98,6 @@ void reflect_initialize_method(vm_thread *thread, classdesc *cd, cp_method *meth
   if (!mirror)
     goto oom;
   M->clazz = mirror;
-  object signature = MakeJStringFromModifiedUTF8(thread, method->unparsed_descriptor, false);
-  if (!signature)
-    goto oom;
-  M->signature = signature;
 
   for (int i = 0; i < method->attributes_count; ++i) {
     const attribute *attr = method->attributes + i;
@@ -111,6 +114,10 @@ void reflect_initialize_method(vm_thread *thread, classdesc *cd, cp_method *meth
     case ATTRIBUTE_KIND_ANNOTATION_DEFAULT:
       obj = CreateByteArray(thread, attr->annotation_default.data, attr->annotation_default.length);
       M->annotationDefault = obj;
+      break;
+    case ATTRIBUTE_KIND_SIGNATURE:
+      obj = MakeJStringFromModifiedUTF8(thread, attr->signature.utf8, true);
+      M->signature = obj;
       break;
     default:
       break;
@@ -133,6 +140,7 @@ void reflect_initialize_method(vm_thread *thread, classdesc *cd, cp_method *meth
   M->returnType = mirror;
   object exceptionTypes = CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Class")), 0);
   M->exceptionTypes = exceptionTypes;
+  M->slot = (s32)method->my_index;
   // TODO parse these ^^
 
   method->reflection_method = (void *)M;

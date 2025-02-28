@@ -16,7 +16,7 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandle, linkToVirtual, "([Ljava/l
   }
 
   for (int i = 0, j = 0; i < argc - 1; ++i, ++j) {
-    type_kind kind = (i == 0) ? TYPE_KIND_REFERENCE : field_to_kind(&method->descriptor->args[i - 1]);
+    type_kind kind = (i == 0) ? TYPE_KIND_REFERENCE : method->descriptor->args[i - 1].repr_kind;
     self->unhandled[j] =
         kind == TYPE_KIND_REFERENCE ? (stack_value){.obj = args[i].handle->obj} : load_stack_value(&args[i], kind);
   }
@@ -45,7 +45,7 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandle, linkToInterface, "([Ljava
   }
 
   for (int i = 0, j = 0; i < argc - 1; ++i, ++j) {
-    type_kind kind = (i == 0) ? TYPE_KIND_REFERENCE : field_to_kind(&method->descriptor->args[i - 1]);
+    type_kind kind = (i == 0) ? TYPE_KIND_REFERENCE : method->descriptor->args[i - 1].repr_kind;
     self->unhandled[j] =
         kind == TYPE_KIND_REFERENCE ? (stack_value){.obj = args[i].handle->obj} : load_stack_value(&args[i], kind);
   }
@@ -73,7 +73,7 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandle, linkToSpecial, "([Ljava/l
   }
 
   for (int i = 0, j = 0; i < argc - 1; ++i, ++j) {
-    type_kind kind = (i == 0) ? TYPE_KIND_REFERENCE : field_to_kind(&method->descriptor->args[i - 1]);
+    type_kind kind = (i == 0) ? TYPE_KIND_REFERENCE : method->descriptor->args[i - 1].repr_kind;
     self->unhandled[j] =
         kind == TYPE_KIND_REFERENCE ? (stack_value){.obj = args[i].handle->obj} : load_stack_value(&args[i], kind);
   }
@@ -96,7 +96,7 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandle, linkToStatic, "([Ljava/la
   }
 
   for (int i = 0, j = 0; i < argc - 1; ++i, ++j) {
-    type_kind kind = field_to_kind(&method->descriptor->args[i]);
+    type_kind kind = method->descriptor->args[i].repr_kind;
     self->unhandled[j] =
         kind == TYPE_KIND_REFERENCE ? (stack_value){.obj = args[i].handle->obj} : load_stack_value(&args[i], kind);
   }

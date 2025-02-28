@@ -191,6 +191,16 @@ void unshift(rr_scheduler *scheduler, impl *I, thread_info *info) {
   }
 }
 
+bool only_daemons_running(thread_info **thread_info) {
+  // Use thread_is_daemon to check
+  for (int i = 0; i < arrlen(thread_info); i++) {
+    if (!thread_is_daemon(thread_info[i]->thread)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   impl *impl = scheduler->_impl;
 
@@ -201,6 +211,10 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   thread_info *info = get_next_thr(impl);
   if (!info)
     return SCHEDULER_RESULT_DONE;
+
+  if (only_daemons_running(impl->round_robin)) {
+    return SCHEDULER_RESULT_DONE;
+  }
 
   vm_thread *thread = info->thread;
   const int MICROSECONDS_TO_RUN = 30000;
@@ -232,7 +246,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     rec->status = SCHEDULER_RESULT_DONE;
     rec->returned = call->call._result;
 
-    if (field_to_kind(&call->call.args.method->descriptor->return_type) == TYPE_KIND_REFERENCE && rec->returned.obj) {
+    if (call->call.args.method->descriptor->return_type.repr_kind == TYPE_KIND_REFERENCE && rec->returned.obj) {
       // Create a handle
       rec->js_handle = make_js_handle(scheduler->vm, rec->returned.obj);
     } else {
@@ -295,11 +309,11 @@ scheduler_status_t rr_scheduler_execute_immediately(execution_record *record) {
   return SCHEDULER_RESULT_DONE;
 }
 
-bool is_nth_arg_reference(cp_method * method, int i) {
+bool is_nth_arg_reference(cp_method *method, int i) {
   if (method->access_flags & ACCESS_STATIC) {
-    return field_to_kind(&method->descriptor->args[i]) == TYPE_KIND_REFERENCE;
+    return method->descriptor->args[i].repr_kind == TYPE_KIND_REFERENCE;
   }
-  return i == 0 || field_to_kind(&method->descriptor->args[i - 1]) == TYPE_KIND_REFERENCE;
+  return i == 0 || method->descriptor->args[i - 1].repr_kind == TYPE_KIND_REFERENCE;
 }
 
 void rr_scheduler_enumerate_gc_roots(rr_scheduler *scheduler, object **stbds_vector) {

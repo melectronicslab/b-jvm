@@ -4,6 +4,7 @@
 
 #include "arrays.h"
 #include "exceptions.h"
+#include "objects.h"
 #include "reflection.h"
 
 #include "../bjvm.h"
@@ -61,7 +62,7 @@ bool check_casts(vm_thread *thread, cp_method *method, stack_value *args) {
       arg = i != 0 ? method->descriptor->args + (i - 1) : nullptr;
     }
 
-    if (arg && field_to_kind(arg) != TYPE_KIND_REFERENCE)
+    if (arg && arg->repr_kind != TYPE_KIND_REFERENCE)
       continue;
     if (!args[i].obj) // null
       continue;
@@ -326,8 +327,8 @@ char *ffi_get_class_json(classdesc *desc) {
     cp_field *f = fields[i];
     if (i > 0)
       string_builder_append(&out, ",");
-    string_builder_append(&out, R"({"name":"%s","type":"%s","accessFlags":%d,"byteOffset":%d,"index":%d})",
-                          f->name.chars, field_to_kind(&f->parsed_descriptor), f->access_flags, f->byte_offset,
+    string_builder_append(&out, R"({"name":"%s","type":"%.*s","accessFlags":%d,"byteOffset":%d,"index":%d})",
+                          f->name.chars, fmt_slice(f->parsed_descriptor.unparsed), f->access_flags, f->byte_offset,
                           field_index++);
   }
 

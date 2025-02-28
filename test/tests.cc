@@ -159,7 +159,7 @@ pi * pi is 9.8696044010893586188344909998761511351995377040468477720717813373783
 
   for (int i = 0; i < 10; ++i)
     expected += expected; // repeat 1024 times
-  auto result = run_test_case("test_files/bench_big_decimal/");
+  auto result = run_test_case("test_files/bench_big_decimal/", true, "Main", "", {"1024"});
   REQUIRE(result.stdout_ == expected);
 }
 
@@ -722,9 +722,36 @@ Test
 )");
 }
 
+TEST_CASE("The algorithms") {
+  auto result = run_test_case("test_files/share/assertj-core-3.26.3.jar:"
+                              "test_files/share/commons-collections4-4.4.jar:"
+                              "test_files/share/commons-lang3-3.17.0.jar:"
+                              "test_files/share/junit-platform-console-standalone-1.12.0.jar:"
+                              "test_files/the_algorithms/Java-1.0-SNAPSHOT.jar:"
+                              "test_files/the_algorithms/Java-1.0-SNAPSHOT-tests.jar",
+                              false, "org/junit/platform/console/ConsoleLauncher", "",
+                              {"--scan-classpath=./test_files/the_algorithms"});
+}
+
+TEST_CASE("Simple sea of nodes") {
+  auto result = run_test_case("test_files/share/assertj-core-3.26.3.jar:"
+                              "test_files/share/commons-collections4-4.4.jar:"
+                              "test_files/share/commons-lang3-3.17.0.jar:"
+                              "test_files/share/junit-platform-console-standalone-1.12.0.jar:"
+                              "test_files/simple/simple.jar:"
+                              "test_files/simple",
+                              false, "org/junit/platform/console/ConsoleLauncher", "",
+                              {"--scan-classpath=./test_files/simple"});
+}
+
 TEST_CASE("URLClassLoader") {
   auto result = run_test_case("test_files/url-classloader/", true, "LoaderTest");
   REQUIRE(result.stdout_ == "Hello, world!\n");
+}
+
+TEST_CASE("Name of array class") {
+  auto result = run_test_case("test_files/name_of_array_class/", true, "NameOfArrayClass");
+  REQUIRE(result.stdout_ == "[Ljava.lang.String;\n");
 }
 
 TEST_CASE("frem and drem") {
@@ -739,6 +766,32 @@ TEST_CASE("Manually thrown exception") {
   auto result = run_test_case("test_files/manually_thrown", true, "ManuallyThrown");
   REQUIRE(result.stderr_ == "java.lang.NullPointerException\n\tat ManuallyThrown.cow(ManuallyThrown.java:11)\n\tat "
                             "ManuallyThrown.main(ManuallyThrown.java:4)\n");
+}
+
+TEST_CASE("Fannkuch redux multithreaded") {
+  auto result = run_scheduled_test_case("test_files/fannkuch_multithreaded/", true, "fannkuchredux");
+  REQUIRE(result.stdout_ == R"(73196
+Pfannkuchen(10) = 38
+)");
+}
+
+TEST_CASE("Array.get native") {
+  auto result = run_test_case("test_files/array_get_native/", true, "ArrayGetNative");
+  REQUIRE(result.stdout_ == R"(12345Caught ArrayIndexOutOfBoundsException
+12345Caught ArrayIndexOutOfBoundsException
+12345Caught ArrayIndexOutOfBoundsException
+Caught IllegalArgumentException
+Caught ArrayIndexOutOfBoundsException
+12345Caught ArrayIndexOutOfBoundsException
+abcdeCaught ArrayIndexOutOfBoundsException
+truefalsetruefalsetrueCaught ArrayIndexOutOfBoundsException
+helloworldfoobarbazCaught ArrayIndexOutOfBoundsException
+)");
+}
+
+TEST_CASE("Kotlin says hi") {
+  auto result = run_test_case("test_files/share/kotlin-stdlib-2.1.10.jar:test_files/kotlin_says_hi/", true, "HelloKt");
+  REQUIRE(result.stdout_ == "First 10 terms: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, \nHello from Kotlin!");
 }
 
 #if 0

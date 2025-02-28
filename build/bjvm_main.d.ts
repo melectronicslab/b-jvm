@@ -173,6 +173,8 @@ interface WasmModule {
   _launch_profiler(_0: number): number;
   _read_profiler(_0: number): number;
   _wasm_push_export(_0: number, _1: number, _2: number): void;
+  _Console_istty_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Console_encoding_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileDescriptor_initIDs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileDescriptor_set_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileDescriptor_getHandle_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -187,6 +189,7 @@ interface WasmModule {
   _FileOutputStream_initIDs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileOutputStream_writeBytes_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileOutputStream_close0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ObjectStreamClass_initNative_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _RandomAccessFile_initIDs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _RandomAccessFile_open0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _RandomAccessFile_read0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -250,8 +253,18 @@ interface WasmModule {
   _Object_getClass_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Object_notifyAll_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Object_notify_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessEnvironment_environ_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessImpl_init_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessImpl_forkAndExec_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessHandleImpl_initNative_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessHandleImpl_getCurrentPid0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessHandleImpl_isAlive0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessHandleImpl_destroy0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ProcessHandleImpl_waitForProcessExit0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Runtime_availableProcessors_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Runtime_maxMemory_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Shutdown_beforeHalt_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Shutdown_halt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _String_intern_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _StringUTF16_isBigEndian_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _System_mapLibraryName_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -273,6 +286,7 @@ interface WasmModule {
   _Thread_currentCarrierThread_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Thread_interrupt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Thread_clearInterruptEvent_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Thread_setNativeName_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Throwable_fillInStackTrace_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Throwable_getStackTraceDepth_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Throwable_getStackTraceElement_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -292,10 +306,12 @@ interface WasmModule {
   _Reference_getAndClearReferencePendingList_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Array_newArray_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Array_getLength_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Array_get_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Executable_getParameters0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Proxy_defineClass0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _AccessController_getStackAccessControlContext_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _AccessController_ensureMaterializedForStackWalk_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _AccessController_getProtectionDomain_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _TimeZone_getSystemTimeZoneID_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _AtomicLong_VMSupportsCS8_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Inflater_initIDs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -306,6 +322,7 @@ interface WasmModule {
   _CRC32_updateBytes0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _NativeImageBuffer_getNativeMap_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _BootLoader_setBootLoaderUnnamedModule0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _BootLoader_getSystemPackageLocation_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _NativeLibraries_findBuiltinLib_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _NativeLibraries_load_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _CDS_isDumpingClassList0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -334,6 +351,7 @@ interface WasmModule {
   _Unsafe_compareAndSetInt_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_compareAndSetLong_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_compareAndSetReference_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Unsafe_compareAndExchangeReference_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_addressSize_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_allocateMemory0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_allocateInstance_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -351,10 +369,12 @@ interface WasmModule {
   _Unsafe_putDouble_cb2(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getDouble_cb1(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_putByte_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Unsafe_putBoolean_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getReference_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getInt_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getShort_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getByte_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Unsafe_getBoolean_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getLong_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getByte_cb1(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Unsafe_getReferenceVolatile_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -369,6 +389,8 @@ interface WasmModule {
   _Perf_createLong_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _ConstantPool_getUTF8At0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _ConstantPool_getIntAt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ConstantPool_getDoubleAt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ConstantPool_getLongAt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reflection_getCallerClass_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reflection_getClassAccessFlags_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reflection_areNestMates_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -376,6 +398,7 @@ interface WasmModule {
   _SystemProps_Raw_vmProperties_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _URLClassPath_getLookupCacheURLs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _VM_initialize_cb1(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _VM_getNanoTimeAdjustment_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _IOUtil_initIDs_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _IOUtil_iovMax_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _IOUtil_writevMax_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -384,11 +407,17 @@ interface WasmModule {
   _UnixNativeDispatcher_init_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixNativeDispatcher_getcwd_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixNativeDispatcher_stat0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _UnixNativeDispatcher_lstat0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _UnixNativeDispatcher_opendir0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _UnixNativeDispatcher_readdir0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _UnixNativeDispatcher_closedir_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixNativeDispatcher_open0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _UnixNativeDispatcher_access0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixFileDispatcherImpl_size0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixFileDispatcherImpl_allocationGranularity0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixFileDispatcherImpl_map0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _UnixFileDispatcherImpl_unmap0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _UnixNativeDispatcher_strerror_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _FileDispatcherImpl_init0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
 }
 

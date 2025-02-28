@@ -18,7 +18,7 @@ void print_field(const cp_field *field) {
   if ((field->access_flags & ACCESS_STATIC))
     return;
   const char *name;
-  switch (field_to_kind(&field->parsed_descriptor)) {
+  switch (field->parsed_descriptor.repr_kind) {
   case TYPE_KIND_FLOAT:
     name = "float ";
     break;
