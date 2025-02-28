@@ -390,6 +390,7 @@ interface WasmModule {
   _ConstantPool_getUTF8At0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _ConstantPool_getIntAt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _ConstantPool_getDoubleAt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _ConstantPool_getLongAt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reflection_getCallerClass_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reflection_getClassAccessFlags_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reflection_areNestMates_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
