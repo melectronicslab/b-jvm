@@ -905,7 +905,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
         if (obj.obj) {
           CHECK(read_string_to_utf8(thr, &message, obj.obj) == 0);
         }
-        fprintf(stderr, "Error in init phase %.*s: %.*s, %s\n", fmt_slice(thr->current_exception->descriptor->name),
+        printf("Error in init phase %.*s: %.*s, %s\n", fmt_slice(thr->current_exception->descriptor->name),
                 fmt_slice(phases[i]), obj.obj ? message.chars : "no message");
         abort();
       }
