@@ -6,8 +6,6 @@ DECLARE_NATIVE("java/lang", Object, hashCode, "()I") {
   return (stack_value){.i = (s32)get_object_hash_code(thread->vm, obj->obj)};
 }
 
-DECLARE_NATIVE("java/lang", Object, registerNatives, "()V") { return value_null(); }
-
 // Check whether the class is cloneable.
 static bool cloneable(vm *vm, classdesc *cd) { return instanceof(cd, cached_classes(vm)->cloneable); }
 

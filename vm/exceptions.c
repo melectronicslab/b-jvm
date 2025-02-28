@@ -2,6 +2,7 @@
 #include <objects.h>
 
 void raise_exception_object(vm_thread *thread, object obj) {
+  dump_trace(thread);
   DCHECK(!thread->current_exception && "Exception is already raised");
   DCHECK(obj && "Exception object must be non-null");
   // this check isn't possible early into vm setup

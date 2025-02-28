@@ -258,6 +258,12 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
                                stack_value *args, u8 argc) {
   native_callback *native = method->native_handle;
   if (!native) {
+    printf("Class state (before pushing native frame of it): %d\n", method->my_class->state);
+    printf("Neighborhood bytes around native_handle ( %p ): ", &method->native_handle);
+    for (int i = -16; i < 16; i++) {
+      printf("%02x ", ((u8 *)&method->native_handle)[i]);
+    }
+    printf("\n");
     raise_unsatisfied_link_error(thread, method);
     return nullptr;
   }
@@ -444,6 +450,8 @@ void register_native(vm *vm, slice class, const slice method_name, const slice m
                      native_callback callback) {
   if (class.chars[0] == '/')
     class = subslice(class, 1);
+
+  printf("Registering native: %.*s on class %.*s\n", fmt_slice(method_name), fmt_slice(class));
 
   heap_string heap_class = make_heap_str_from(class);
   for (size_t i = 0; i < class.len; i++) { // hacky way to avoid emscripten from complaining about symbol names
@@ -1411,16 +1419,21 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   if (entries) {
     for (int i = 0; i < arrlen(entries->entries); i++) {
       native_entry *entry = entries->entries + i;
+      printf("Trying to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
 
       for (int j = 0; j < class->methods_count; ++j) {
         cp_method *method = class->methods + j;
 
         if (utf8_equals_utf8(method->name, entry->name) &&
             utf8_equals_utf8(method->unparsed_descriptor, entry->descriptor)) {
+          printf("Successfully bound method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
           method->native_handle = &entry->callback;
-          break;
+          goto done;
         }
       }
+
+      printf("Failed to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
+      done:
     }
   }
 
