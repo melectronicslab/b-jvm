@@ -733,6 +733,16 @@ TEST_CASE("The algorithms") {
                               {"--scan-classpath=./test_files/the_algorithms"});
 }
 
+TEST_CASE("Preemptible mutex") {
+  auto result = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
+                              "test_files/mutex_preemption/",
+                              false, "org/junit/platform/console/ConsoleLauncher", "",
+                              {"--scan-classpath=./test_files/mutex_preemption/"});
+
+//  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") !=
+//          std::string::npos);
+}
+
 TEST_CASE("Simple sea of nodes") {
   auto result = run_test_case("test_files/share/assertj-core-3.26.3.jar:"
                               "test_files/share/commons-collections4-4.4.jar:"
