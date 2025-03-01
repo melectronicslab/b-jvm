@@ -542,8 +542,6 @@ typedef struct vm_thread {
     char synchronize_acquire_continuation[MONITOR_ACQUIRE_CONTINUATION_SIZE];
   } stack;
 
-  int no_smt_depth;
-
   // Pre-allocated out-of-memory and stack overflow errors
   obj_header *out_of_mem_error;
   obj_header *stack_overflow_error;
