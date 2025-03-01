@@ -701,6 +701,21 @@ Countdown value: 0
   std::cout << "Scheduler yielded " << result.yield_count << " times!" << std::endl;
 }
 
+TEST_CASE("Thread sleep interruption") {
+  auto result = run_scheduled_test_case("test_files/sleep_interruption/", true, "Main");
+  REQUIRE(result.stdout_ == R"(starting thread
+starting sleep
+interrupting thread
+interrupted
+finally
+joined; exiting
+)");
+
+  std::cout << result.stdout_ << std::endl;
+  std::cout << "Scheduler yielded " << result.yield_count << " times!" << std::endl;
+  std::cout << "and slept for " << result.us_slept << " µs!" << std::endl;
+}
+
 TEST_CASE("Thread park/unpark") {
   // run_scheduled_test_case("test_files/park_unpark/", false, "Main"); // for fun
   auto result = run_scheduled_test_case("test_files/park_unpark/", true, "Main");
