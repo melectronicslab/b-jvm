@@ -258,7 +258,7 @@ type LoadClass<C> = any & { new(): C };
 function buffered(call: (text: string) => void): (text: Uint8Array) => void {
     let buffer = "";
     return (text: Uint8Array) => {
-        buffer += String.fromCharCode.apply(null, text);
+        buffer += String.fromCharCode.apply(null, text as unknown as number[]);
         let idx: number;
         while ((idx = buffer.indexOf('\n')) != -1) {
             call(buffer.slice(0, idx + 1));
