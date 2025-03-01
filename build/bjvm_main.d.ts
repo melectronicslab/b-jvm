@@ -248,7 +248,6 @@ interface WasmModule {
   _Module_addExports0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _NullPointerException_getExtendedNPEMessage_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Object_hashCode_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
-  _Object_registerNatives_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Object_clone_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Object_getClass_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Object_notifyAll_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
