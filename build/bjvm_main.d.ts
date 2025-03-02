@@ -157,6 +157,7 @@ interface WasmModule {
   _ffi_free_async_run_ctx(_0: number): void;
   _free(_0: number): void;
   _ffi_get_class_json(_0: number): number;
+  _ffi_set_preemption_frequency_usec(_0: number, _1: number): void;
   _main(_0: number, _1: number): number;
   _make_js_handle(_0: number, _1: number): number;
   _drop_js_handle(_0: number, _1: number): void;

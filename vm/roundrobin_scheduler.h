@@ -16,7 +16,8 @@ extern "C" {
 typedef struct {
   // Associated VM
   vm *vm;
-
+  // Preemption frequency in microseconds (clamped to 1000)
+  u64 preemption_us;
   // Pointer to implementation
   void *_impl;
 } rr_scheduler;

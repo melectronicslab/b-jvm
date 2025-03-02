@@ -210,7 +210,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     return SCHEDULER_RESULT_DONE;
 
   vm_thread *thread = info->thread;
-  const int MICROSECONDS_TO_RUN = 10000;
+  const u64 MICROSECONDS_TO_RUN = scheduler->preemption_us;
 
   thread->fuel = 10000;
 
@@ -224,7 +224,9 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   // else, we start calling it
   info->wakeup_info = nullptr;
 
-  thread->yield_at_time = time + MICROSECONDS_TO_RUN;
+  if (__builtin_add_overflow(time, MICROSECONDS_TO_RUN, &thread->yield_at_time)) {
+    thread->yield_at_time = UINT64_MAX;  // in case someone passes a dubious number for preemption_us
+  }
 
   if (arrlen(info->call_queue) == 0) {
     (void)arrpop(impl->round_robin);

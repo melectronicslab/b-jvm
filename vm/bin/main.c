@@ -11,6 +11,7 @@
 #include <emscripten/emscripten.h>
 
 #include <roundrobin_scheduler.h>
+#include <tgmath.h>
 
 EMSCRIPTEN_KEEPALIVE
 vm *ffi_create_vm(const char *classpath, size_t heap_size, write_bytes stdout_, write_bytes stderr_) {
@@ -370,6 +371,12 @@ char *ffi_get_class_json(classdesc *desc) {
   char *result = strdup(out.data);
   string_builder_free(&out);
   return result;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ffi_set_preemption_frequency_usec(rr_scheduler *scheduler, double us) {
+  us = fabs(us);
+  scheduler->preemption_us = us > (double)UINT64_MAX ? UINT64_MAX : (u64)us;
 }
 
 int main() {}

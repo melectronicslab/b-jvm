@@ -2545,6 +2545,7 @@ var _ffi_run_step = Module['_ffi_run_step'] = createExportWrapper('ffi_run_step'
 var _ffi_free_async_run_ctx = Module['_ffi_free_async_run_ctx'] = createExportWrapper('ffi_free_async_run_ctx', 1);
 var _free = Module['_free'] = createExportWrapper('free', 1);
 var _ffi_get_class_json = Module['_ffi_get_class_json'] = createExportWrapper('ffi_get_class_json', 1);
+var _ffi_set_preemption_frequency_usec = Module['_ffi_set_preemption_frequency_usec'] = createExportWrapper('ffi_set_preemption_frequency_usec', 2);
 var _main = Module['_main'] = createExportWrapper('main', 2);
 var _make_js_handle = Module['_make_js_handle'] = createExportWrapper('make_js_handle', 2);
 var _drop_js_handle = Module['_drop_js_handle'] = createExportWrapper('drop_js_handle', 2);

@@ -1585,6 +1585,7 @@ void push_async_monitor_enter(vm_thread *thread, stack_frame *frame, monitor_acq
 static s64 monitorenter_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   NPE_ON_NULL(tos);
+  SPILL(tos);
 
   do {
     monitor_acquire_t ctx = {.args = {thread, (obj_header *)tos}};

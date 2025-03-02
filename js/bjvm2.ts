@@ -26,6 +26,10 @@ type VMOptions = {
     classpath: string;
     // Initial value of the preëmption frequency; can be changed later
     preemptionFrequencyUs?: number;
+    // Additional natives to be callable from Java code, using javah naming conventions. See
+    // https://docs.oracle.com/javase/1.5.0/docs/guide/jni/spec/design.html. An example is a function Math.clz32,
+    // which would be named Java_java_lang_Math_clz32. The function signature is (JNIEnv*, jclass, jint)jint.
+    natives?: Record<string, Function>;
 };
 
 export class BovineOS {
@@ -125,6 +129,13 @@ class BovineThread<Classes> {
         }
 
         try {
+            const stringIndices: number[] = [];
+            for (let i = 0; i < args.length; ++i) {
+                if (typeof args[i] === "string") {
+                    args[i] = this.vm.createHandle(this.createString(args[i]), true);
+                    stringIndices.push(i);
+                }
+            }
             const parsed = parseMethodDescriptor(method);
             let isInstanceMethod = !(method.accessFlags & 0x0008);
             let j = 0;
@@ -143,6 +154,9 @@ class BovineThread<Classes> {
                     const resultPtr = module._ffi_get_execution_record_result_pointer(executionRecord);
                     return readJavaType(this.vm, resultPtr, parsed.returnType);
                 }
+            }
+            for (let i = 0; i < stringIndices.length; ++i) {
+                args[stringIndices[i]]!.drop();
             }
 
             const promise = (async () => {
@@ -614,7 +628,6 @@ export class BovineVM<Classes> {
     private boundOnStderr: any;
 
     handleRegistry: FinalizationRegistry<number> = new FinalizationRegistry((index: number) => {
-        console.log("Dropping handle", index);
         this._module._drop_js_handle(this.ptr, index);
     });
     private namedClasses: Map<number /* bjvm_classdesc* */, any> = new Map();
@@ -634,20 +647,23 @@ export class BovineVM<Classes> {
         this.boundOnStderr = this.onStderr.bind(this);
         this.boundOnStdout = this.onStdout.bind(this);
 
-        this.ptr = this._module._ffi_create_vm(classpath, options.heapSize ?? 1 << 26,
+        this.ptr = this._module._ffi_create_vm(classpath, options.heapSize ?? DEFAULT_HEAP_SIZE,
             this._module.addFunction(this.boundOnStderr, 'viii'), this._module.addFunction(this.boundOnStdout, 'viii'));
         this._module._free(classpath);
         if (this.ptr === 0) {
             throw new Error("Failed to create VM");
         }
 
+        this.scheduler = this._module._ffi_create_rr_scheduler(this.ptr);
         this.primordialThread = this.createThread();
         this.activeThread = this.primordialThread;
 
         this.stderr = os.options.stderr ?? buffered(console.error);
         this.stdout = os.options.stdout ?? buffered(console.log);
+    }
 
-        this.scheduler = this._module._ffi_create_rr_scheduler(this.ptr);
+    setPreemptionFrequencyUs(us: number) {
+        this._module._ffi_set_preemption_frequency_usec(this.scheduler, us);
     }
 
     private onStdout(bufPointer: number, len: number) {
@@ -672,6 +688,17 @@ export class BovineVM<Classes> {
 
     getActiveThread() {
         return this.activeThread;
+    }
+
+    // Called directly from WASM, intending to call a native function with the given arguments. If the return value is
+    // -1 then execution of the method completed and proceeded synchronously. Otherwise, the return value is a handle
+    // to the Promise object which should be awaited upon before the thread is re-scheduled.
+    jsNativeEntry(threadPtr: number, methodPtr: number, nativeID: number, argsPtr: number): number {
+        void threadPtr;
+        void methodPtr;
+        void nativeID;
+        void argsPtr;
+        return 0;  // TODO
     }
 
     /**
@@ -699,12 +726,11 @@ export class BovineVM<Classes> {
         return made;
     }
 
-    createHandle(ptr: number): BaseHandle | string | null {
+    createHandle(ptr: number, overrideStringConversion = false): BaseHandle | string | null {
         if (ptr === 0) return null;
         const module = this._module;
 
-        let isString = module._ffi_is_string(ptr);
-        if (isString) {  // Convert to a JS string
+        if (!overrideStringConversion && module._ffi_is_string(ptr)) {  // Convert to a JS string
             const chars = module._ffi_get_string_data(ptr);
             const length = module._ffi_get_string_len(ptr);
             const coder = module._ffi_get_string_coder(ptr);
