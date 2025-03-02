@@ -117,17 +117,26 @@ static void push_thread_roots(gc_ctx *ctx, vm_thread *thr) {
     }
 
     code_analysis *analy = frame->method->code_analysis;
-    // List of stack and local values which are references
-    // In particular, 0 through stack - 1 refer to the stack, and stack through stack + locals - 1
-    // refer to the locals array
+    // List of stack and local values which are references.
+
+    // Because we share passed arguments between frames (the outgoing n arguments from frame 1, on its stack, become
+    // the first n locals of frame 2), we need to be careful not to scan the same memory for roots twice. This is
+    // where min_frame_addr_scanned comes in.
+
+    // Visualization of the situation:          ↓ min_frame_addr_scanned
+    // ┌───────────────┬─────────────┬──────────┬───────────┐
+    // │Frame #1 locals│Fr.1 metadata│     Fr.1 stack       │
+    // └───────────────┴─────────────┴──────────┼─ shared  ─┴─────────┬─────────────────
+    //                only scan this ←─────────→│     Fr.2 locals     │ Fr.2 metadata ...
+    //             part of Fr1's stack          └─────────────────────┴─────────────────
+
     stack_summary *ss = analy->stack_states[frame->program_counter];
     int i = 0;
     for (; i < ss->stack; ++i) {
       if (ss->entries[i] != TYPE_KIND_REFERENCE)
         continue;
       object *val = &frame->stack[i].obj;
-      if ((uintptr_t)val >= min_frame_addr_scanned) {
-        // We already processed this part of the stack as part of the inner frame's locals
+      if ((uintptr_t)val >= min_frame_addr_scanned) {  // see above
         continue;
       }
       PUSH_ROOT(val);
