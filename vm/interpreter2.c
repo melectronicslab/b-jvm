@@ -226,11 +226,11 @@
 #define ARGS_DOUBLE ARGS_BASE, [[maybe_unused]] s64 *arg_1, [[maybe_unused]] float *arg_2, [[maybe_unused]] double *tos_
 #define ARGS_FLOAT ARGS_BASE, [[maybe_unused]] s64 *arg_1, [[maybe_unused]] float *tos_, [[maybe_unused]] double *arg_3
 
-bool *tos_; // used by JMP_* and NEXT_* to detect what type of function we're in.
+static bool *tos_; // used by JMP_* and NEXT_* to detect what type of function we're in.
 
-s64 *arg_1; // not actually used, just to silence compiler errors in branches not taken at compile time
-float *arg_2;
-double *arg_3;
+static s64 *arg_1; // not actually used, just to silence compiler errors in branches not taken at compile time
+static float *arg_2;
+static double *arg_3;
 
 #define JMP_VOID return 4 * insn->kind;
 #define NEXT_VOID                                                                                                      \
