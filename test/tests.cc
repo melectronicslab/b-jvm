@@ -749,6 +749,11 @@ TEST_CASE("The algorithms") {
 }
 
 TEST_CASE("Preemptible mutex") {
+  auto result_a = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
+                              "test_files/java_util_concurrent/",
+                              false, "org/junit/platform/console/ConsoleLauncher", "",
+                              {"--scan-classpath=./test_files/java_util_concurrent/"});
+
   auto result = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
                               "test_files/mutex_preemption/",
                               false, "org/junit/platform/console/ConsoleLauncher", "",
