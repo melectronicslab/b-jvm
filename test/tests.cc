@@ -707,6 +707,7 @@ TEST_CASE("Thread sleep interruption") {
 starting sleep
 interrupting thread
 interrupted
+slept? true
 finally
 joined; exiting
 )");

@@ -71,7 +71,7 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_
     ASYNC_RETURN_VOID();
   }
 
-  u64 start_us = get_unix_us(), sleep_us = nanos / 1000, end; // haha stupid three-in-one declaration
+  u64 start_us = get_unix_us(), sleep_us = (u64) nanos / 1000, end; // haha stupid three-in-one declaration
   if (__builtin_add_overflow(start_us, sleep_us, &end)) {
     end = UINT64_MAX;
   }

@@ -1,5 +1,7 @@
 package com.kuriosityrobotics.shuttle;
 
+import org.opentest4j.AssertionFailedError;
+
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
@@ -308,6 +310,9 @@ class PreemptibleLockTest {
 			t.start(); // start new thread to preempt
 			// wait for preemption
 			assertThrows(InterruptedException.class, () -> Thread.sleep(Long.MAX_VALUE));
+		} catch (AssertionFailedError e) {
+		    t.interrupt();
+		    throw e;
 		} finally {
 			lock.unlock();
 		}
