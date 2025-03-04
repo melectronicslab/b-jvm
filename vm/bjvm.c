@@ -2248,7 +2248,7 @@ DEFINE_ASYNC(invokevirtual_signature_polymorphic) {
   DCHECK(args->method);
 
   struct native_MethodHandle *mh = (void *)target;
-  bool doing_var_handle = false;
+  self->doing_var_handle = false;
 
 doit:
   if (!mh->reflected_mh) {
@@ -2292,7 +2292,7 @@ doit:
       self->method = name->vmtarget;
 
       u8 argc = self->argc = self->method->descriptor->args_count;
-      if (doing_var_handle) {
+      if (self->doing_var_handle) {
         memmove(args->sp_ + 1, args->sp_, sizeof(stack_value) * argc); // includes objectref
       }
       args->sp_->obj = (void *)mh;
@@ -2376,7 +2376,7 @@ doit:
     mh = (void *)get_async_result(call_interpreter).obj;
     drop_handle(thread, self->vh);
     drop_handle(thread, self->result);
-    doing_var_handle = true;
+    self->doing_var_handle = true;
 
     goto doit;
   }

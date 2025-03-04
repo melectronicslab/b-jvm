@@ -279,6 +279,7 @@ DECLARE_ASYNC_VOID(invokevirtual_signature_polymorphic,
                     stack_frame *frame;
                     handle *result;
                     handle *vh;
+                    bool doing_var_handle;
                   ),
                   arguments(
                     vm_thread *thread;
