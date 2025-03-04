@@ -749,19 +749,26 @@ TEST_CASE("The algorithms") {
                               {"--scan-classpath=./test_files/the_algorithms"});
 }
 
-TEST_CASE("Preemptible mutex") {
+TEST_CASE("Java util concurrent") {
   auto result_a = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
-                              "test_files/java_util_concurrent/",
-                              false, "org/junit/platform/console/ConsoleLauncher", "",
-                              {"--scan-classpath=./test_files/java_util_concurrent/"});
+                                "test_files/java_util_concurrent/",
+                                true, "org/junit/platform/console/ConsoleLauncher", "",
+                                {"--scan-classpath=./test_files/java_util_concurrent/"});
 
-  auto result = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
+  std::cout << result_a.stdout_ << std::endl;
+  REQUIRE(result_a.stdout_.find("12 tests successful") != std::string::npos);
+  REQUIRE(result_a.stdout_.find("0 tests failed") != std::string::npos);
+}
+
+TEST_CASE("Preemptible mutex") {
+  auto result_b = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
                               "test_files/mutex_preemption/",
-                              false, "org/junit/platform/console/ConsoleLauncher", "",
+                              true, "org/junit/platform/console/ConsoleLauncher", "",
                               {"--scan-classpath=./test_files/mutex_preemption/"});
 
-//  REQUIRE(result.stdout_.find("649385721218674359357291468495127836163948572782536194876452913531869247924713685") !=
-//          std::string::npos);
+  std::cout << result_b.stdout_ << std::endl;
+  REQUIRE(result_b.stdout_.find("46 tests successful") != std::string::npos);
+  REQUIRE(result_b.stdout_.find("0 tests failed") != std::string::npos);
 }
 
 TEST_CASE("Simple sea of nodes") {
