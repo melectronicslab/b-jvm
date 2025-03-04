@@ -61,6 +61,9 @@ DECLARE_NATIVE("java/lang", Thread, interrupt0, "()V") {
 }
 
 DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_info wakeup_info), invoked_methods()) {
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   assert(argc == 1);
   s64 nanos = args[0].l;
   assert(nanos >= 0); // this is always checked before calling this private method
@@ -71,11 +74,16 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_
     ASYNC_RETURN_VOID();
   }
 
-  u64 end = get_unix_us() + nanos / 1000;
+  u64 start_us = get_unix_us(), sleep_us = (u64) nanos / 1000, end;
+  if (__builtin_add_overflow(start_us, sleep_us, &end)) {
+    end = 0; // overflow, just sleep forever
+  }
 
   self->wakeup_info.kind = RR_WAKEUP_SLEEP;
   self->wakeup_info.wakeup_us = end;
   ASYNC_YIELD((void *)&self->wakeup_info);
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
 
   // re-check interrupt status after wakeup
   if (thread->thread_obj->interrupted) {
@@ -101,5 +109,8 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, yield0, "()V", locals(rr_wakeup_info w
 
   self->wakeup_info.kind = RR_WAKEUP_YIELDING;
   ASYNC_YIELD((void *)&self->wakeup_info);
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   ASYNC_END_VOID();
 }

@@ -1027,7 +1027,6 @@ void free_thread(vm_thread *thread) {
   free(thread->stack.async_call_stack);
   free(thread->stack.frame_buffer);
   free(thread->handles);
-  free(thread->refuel_wakeup_info);
   remove_thread_from_vm_list(thread);
   free(thread);
 }
@@ -1698,11 +1697,10 @@ DEFINE_ASYNC(initialize_class) {
     // The class is being initialized by a different thread, and we need to wait for it to finish.
     // This effectively busy waits, but this is an edge case so it doesn't matter for now.
     while (cd->state == CD_STATE_INITIALIZING) {
-      self->wakeup_info = malloc(sizeof(rr_wakeup_info));
       ((rr_wakeup_info *)self->wakeup_info)->kind = RR_WAKEUP_YIELDING;
-      ASYNC_YIELD(&self->wakeup_info);
+      ASYNC_YIELD(self->wakeup_info);
+      DEBUG_PEDANTIC_YIELD(*((rr_wakeup_info *)self->wakeup_info));
       cd = args->classdesc; // reload!
-      free(self->wakeup_info);
     }
 
     ASYNC_RETURN(0); // the class is done

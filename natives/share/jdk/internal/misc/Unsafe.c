@@ -197,6 +197,8 @@ DECLARE_NATIVE_OVERLOADED("jdk/internal/misc", Unsafe, putLongVolatile, "(JJ)V",
 }
 
 DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeup_info wakeup_info), invoked_methods()) {
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   DCHECK(argc == 2);
   bool isAbsolute = args[0].i;
   s64 time = args[1].l; // elapsed nanos if !absolute, else epoch millis deadline
@@ -219,6 +221,8 @@ DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeu
   self->wakeup_info.kind = RR_THREAD_PARK;
   self->wakeup_info.wakeup_us = deadline_us;
   ASYNC_YIELD((void *)&self->wakeup_info);
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
 
   ASYNC_END(value_null());
 }

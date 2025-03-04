@@ -28,6 +28,12 @@ typedef struct obj_header obj_header;
 #endif
 
 /**
+ * Decouples the scheduler data structs from the VM.
+ */
+#define MONITOR_ACQUIRE_CONTINUATION_SIZE 64 // just to be safe
+#define SCHEDULER_WAKEUP_INFO_SIZE 32
+
+/**
  * These typedefs are to be used for any values that a Java program might see.  These mimick JNI types.
  */
 typedef s32 jint;
@@ -219,7 +225,7 @@ DECLARE_ASYNC(stack_value, run_native,
 
 DECLARE_ASYNC(
     int, initialize_class,
-    locals(initialize_class_t *recursive_call_space; void *wakeup_info; u16 i),
+    locals(initialize_class_t *recursive_call_space; char wakeup_info[SCHEDULER_WAKEUP_INFO_SIZE]; u16 i),
     arguments(vm_thread *thread; classdesc *classdesc),
     invoked_methods(
         invoked_method(call_interpreter)
@@ -515,7 +521,6 @@ void drop_js_handle(vm *vm, int index);
 struct async_stack;
 typedef struct async_stack async_stack_t;
 
-#define MONITOR_ACQUIRE_CONTINUATION_SIZE 64 // just to be safe
 typedef struct vm_thread {
   // Global VM corresponding to this thread
   vm *vm;
@@ -573,7 +578,7 @@ typedef struct vm_thread {
   s32 tid;
 
   // Allocation for the refuel_check wakeup info
-  void *refuel_wakeup_info;
+  char refuel_wakeup_info[SCHEDULER_WAKEUP_INFO_SIZE];
 
   // Whether this thread is currently being debugged, AND the debugger should be consulted after the execution of
   // every bytecode instruction.
