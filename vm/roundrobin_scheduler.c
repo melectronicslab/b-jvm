@@ -98,15 +98,16 @@ void rr_scheduler_uninit(rr_scheduler *scheduler) {
 }
 
 static bool is_sleeping(thread_info *info, u64 time) {
-  if (!info->wakeup_info)
+  rr_wakeup_info *wakeup_info = info->wakeup_info;
+  if (!wakeup_info)
     return false;
-  if (info->wakeup_info->kind == RR_WAKEUP_SLEEP
-      || (info->wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread))
-      || (info->wakeup_info->kind == RR_MONITOR_WAIT && !info->wakeup_info->monitor_wakeup.ready)
-      || (info->wakeup_info->kind == RR_MONITOR_ENTER_WAITING && !info->wakeup_info->monitor_wakeup.ready)) {
-    u64 wakeup = info->wakeup_info->wakeup_us;
+  if (wakeup_info->kind == RR_WAKEUP_SLEEP
+      || (wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread))
+      || (wakeup_info->kind == RR_MONITOR_WAIT && !wakeup_info->monitor_wakeup.ready)
+      || (wakeup_info->kind == RR_MONITOR_ENTER_WAITING && !wakeup_info->monitor_wakeup.ready)) {
+    u64 wakeup = wakeup_info->wakeup_us;
     // montitor enter is non-interruptible by Java language spec
-    bool interrupted = info->thread->thread_obj->interrupted && info->wakeup_info->kind != RR_MONITOR_ENTER_WAITING;
+    bool interrupted = info->thread->thread_obj->interrupted && wakeup_info->kind != RR_MONITOR_ENTER_WAITING;
     return !interrupted && (wakeup == 0 || wakeup >= time);
   } else {
     return false; // blocking on something else which presumably can resume soon
@@ -216,9 +217,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
 
   // If the thread is sleeping, check if it's time to wake up
   if (is_sleeping(info, time)) {
-    if (time < info->wakeup_info->wakeup_us) {
-      return SCHEDULER_RESULT_MORE;
-    }
+    return SCHEDULER_RESULT_MORE;
   }
 
   // else, we start calling it

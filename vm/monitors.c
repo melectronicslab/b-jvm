@@ -72,6 +72,7 @@ DEFINE_ASYNC(monitor_acquire) {
     self->wakeup_info.wakeup_us = 0;
     self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
+    DEBUG_PEDANTIC_YIELD(self->wakeup_info);
   }
 
   // done acquiring the monitor
@@ -81,6 +82,8 @@ DEFINE_ASYNC(monitor_acquire) {
 }
 
 DEFINE_ASYNC(monitor_reacquire_hold_count) {
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   // since this is a single-threaded vm, we don't need atomic operations
   self->handle = make_handle(args->thread, args->obj);
 
@@ -116,6 +119,7 @@ DEFINE_ASYNC(monitor_reacquire_hold_count) {
     self->wakeup_info.wakeup_us = 0;
     self->wakeup_info.monitor_wakeup.monitor = self->handle;
     ASYNC_YIELD((void *)&self->wakeup_info);
+    DEBUG_PEDANTIC_YIELD(self->wakeup_info);
   }
 
   // done acquiring the monitor

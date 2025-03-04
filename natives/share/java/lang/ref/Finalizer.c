@@ -15,6 +15,8 @@ DECLARE_NATIVE("java/lang/ref", Reference, clear0, "()V") { return value_null();
 
 DECLARE_ASYNC_NATIVE("java/lang/ref", Reference, waitForReferencePendingList, "()V",
                      locals(rr_wakeup_info wakeup_info;), invoked_methods()) {
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   struct timeval tv;
   gettimeofday(&tv, NULL);
   u64 time = tv.tv_sec * 1000000 + tv.tv_usec;
@@ -23,6 +25,9 @@ DECLARE_ASYNC_NATIVE("java/lang/ref", Reference, waitForReferencePendingList, "(
   self->wakeup_info.kind = RR_WAKEUP_SLEEP;
   self->wakeup_info.wakeup_us = end;
   ASYNC_YIELD((void *)&self->wakeup_info);
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   ASYNC_END_VOID();
 }
 

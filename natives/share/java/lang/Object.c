@@ -82,6 +82,9 @@ DECLARE_NATIVE("java/lang", Object, notify, "()V") {
 
 DECLARE_ASYNC_NATIVE("java/lang", Object, wait0, "(J)V", locals(u32 hold_count; rr_wakeup_info wakeup_info),
                      invoked_methods(invoked_method(monitor_reacquire_hold_count))) {
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
+
   assert(argc == 1);
   s64 timeoutMillis = args[0].l;
   assert(timeoutMillis >= 0); // this is always checked before calling this private method
@@ -104,6 +107,8 @@ DECLARE_ASYNC_NATIVE("java/lang", Object, wait0, "(J)V", locals(u32 hold_count; 
   self->wakeup_info.monitor_wakeup.monitor = obj; // already handlized
   self->wakeup_info.monitor_wakeup.ready = false;
   ASYNC_YIELD((void *)&self->wakeup_info);
+
+  DEBUG_PEDANTIC_YIELD(self->wakeup_info);
 
   // wake up: re-acquire the monitor
   AWAIT(monitor_reacquire_hold_count, thread, obj->obj, self->hold_count);

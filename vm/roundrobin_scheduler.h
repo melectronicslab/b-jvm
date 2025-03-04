@@ -13,6 +13,20 @@
 extern "C" {
 #endif
 
+#define DO_PEDANTIC_YIELDING 0
+#if DO_PEDANTIC_YIELDING
+#define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO) \
+  do {                              \
+    (WAKEUP_INFO).kind = RR_WAKEUP_YIELDING; \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
+  } while (0)
+#else
+#define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO) do { } while (0)
+#endif
+
 typedef struct {
   // Associated VM
   vm *vm;

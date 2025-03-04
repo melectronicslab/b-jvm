@@ -603,8 +603,9 @@ __attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
     continuation_frame *cont = async_stack_push(thread);
     // Provide a way for us to free the wakeup info. There will never be multiple refuel checks in flight within a
     // single thread.
-    rr_wakeup_info *wakeup = thread->refuel_wakeup_info ? thread->refuel_wakeup_info
-                                                        : (thread->refuel_wakeup_info = malloc(sizeof(rr_wakeup_info)));
+    rr_wakeup_info *wakeup = (rr_wakeup_info *)&thread->refuel_wakeup_info;
+    static_assert(sizeof(*wakeup) <= sizeof(thread->refuel_wakeup_info),
+                  "wakeup info can not be stored within thread cache");
     wakeup->kind = RR_WAKEUP_YIELDING;
     *cont = (continuation_frame){.pnt = CONT_RESUME_INSN, .wakeup = (void *)wakeup};
     return true;
@@ -727,7 +728,7 @@ DEFINE_ASYNC(resolve_getstatic_putstatic) {
     if (unlikely(fut.status == FUTURE_NOT_READY)) {                                                                    \
       continuation_frame *cont = async_stack_push(thread);                                                             \
       frame->is_async_suspended = true;                                                                                \
-      *cont = (continuation_frame){.pnt = CONT_RESOLVE, .ctx.resolve_insn = ctx};                                      \
+      *cont = (continuation_frame){.pnt = CONT_RESOLVE, .wakeup = fut.wakeup, .ctx.resolve_insn = ctx};                 \
       return 0;                                                                                                        \
     }                                                                                                                  \
     if (thread->current_exception)                                                                                     \
@@ -1575,13 +1576,6 @@ static s64 if_acmpne_impl_int(ARGS_INT) {
 
 /** Monitors */
 
-// Push the necessary continuation frame for a monitorenter instruction that is contended.
-void push_async_monitor_enter(vm_thread *thread, stack_frame *frame, monitor_acquire_t *ctx) {
-  continuation_frame *cont = async_stack_push(thread);
-  frame->is_async_suspended = true;
-  *cont = (continuation_frame){.pnt = CONT_MONITOR_ENTER, .ctx.acquire_monitor = *ctx};
-}
-
 static s64 monitorenter_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   NPE_ON_NULL(tos);
@@ -1593,7 +1587,9 @@ static s64 monitorenter_impl_int(ARGS_INT) {
       return 0;
     }
     if (fut.status == FUTURE_NOT_READY) { // monitor is contended
-      push_async_monitor_enter(thread, frame, &ctx);
+      continuation_frame *cont = async_stack_push(thread);
+      frame->is_async_suspended = true;
+      *cont = (continuation_frame){.pnt = CONT_MONITOR_ENTER, .wakeup = fut.wakeup, .ctx.acquire_monitor = ctx};
       return 0;
     }
   } while (0);
@@ -2113,7 +2109,7 @@ __attribute__((noinline)) static s64 invokesigpoly_impl_void(ARGS_VOID) {
   if (unlikely(fut.status == FUTURE_NOT_READY)) {
     continuation_frame *cont = async_stack_push(thread);
     frame->is_async_suspended = true;
-    *cont = (continuation_frame){.pnt = CONT_INVOKESIGPOLY, .ctx.sigpoly = ctx};
+    *cont = (continuation_frame){.pnt = CONT_INVOKESIGPOLY, .wakeup = fut.wakeup, .ctx.sigpoly = ctx};
     return 0;
   }
 
@@ -2965,7 +2961,7 @@ static inline stack_value interpret_native_frame(future_t *fut, vm_thread *threa
     return ctx._result;
   } else {
     continuation_frame *cont = async_stack_push(thread);
-    *cont = (continuation_frame){.pnt = CONT_RUN_NATIVE, .ctx.run_native = ctx};
+    *cont = (continuation_frame){.pnt = CONT_RUN_NATIVE, .wakeup = fut->wakeup, .ctx.run_native = ctx};
     frame->is_async_suspended = true;
     return (stack_value){0};
   }
@@ -3056,15 +3052,17 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *frame) {
     monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
     monitor_acquire_t ctx =
         frame->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
-    frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
     *fut = monitor_acquire(&ctx);
     if (fut->status == FUTURE_NOT_READY) {
       memcpy(store, &ctx, sizeof(ctx));
       static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
                     "context can not be stored within thread cache");
+      frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
+      frame->is_async_suspended = true;
       return value_null();
     }
     frame->synchronized_state = SYNCHRONIZE_DONE;
+    frame->is_async_suspended = false;
   }
 
   stack_value result;
