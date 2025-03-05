@@ -607,6 +607,22 @@ Testing funny constructor
 )");
 }
 
+TEST_CASE("Scuffed inner classes") {
+  auto result = run_test_case("test_files/scuffed_inner_classes/", true, "Testing");
+  REQUIRE(result.stdout_ == R"(Outer message: Hello
+Legitimate inner message: Hello from Inner
+Outer message (according to legitimate inner): Hello
+Creating a fake inner object assigned to the outer
+Outer message (according to fake inner): Hello
+Fake inner message: Hello from Inner
+Setting outer message using fake inner
+Outer message (according to fake inner): Bonjour
+Outer message (according to legitimate inner): Bonjour
+Testing another implanted inner object
+Message of new inner: Bonjour from Inner
+)");
+}
+
 TEST_CASE("Playground") { auto result = run_test_case("test_files/compiler", false); }
 
 #if 0
