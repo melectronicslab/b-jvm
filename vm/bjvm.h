@@ -507,7 +507,7 @@ static inline bool is_interpreter_frame(const stack_frame *frame) { return frame
 value *get_native_args(const stack_frame *frame); // same as locals, just called args for native
 
 stack_value *frame_stack(stack_frame *frame);
-stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *frame);
+stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_frame);
 
 native_frame *get_native_frame_data(stack_frame *frame);
 cp_method *get_frame_method(stack_frame *frame);
@@ -711,6 +711,13 @@ static inline int sizeof_type_kind(type_kind kind) {
 
 static inline stack_value *frame_locals(const stack_frame *frame) {
   DCHECK(!is_frame_native(frame));
+  return ((stack_value *)frame) - frame->num_locals;
+}
+
+static inline stack_value *frame_beginning(const stack_frame *frame) {
+  if (is_frame_native(frame)) {
+    return ((stack_value *)frame) - 2 * frame->num_locals;
+  }
   return ((stack_value *)frame) - frame->num_locals;
 }
 

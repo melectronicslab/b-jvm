@@ -87,6 +87,7 @@ static void free_thread_info_shutdown(thread_info *info) {
 
 void rr_scheduler_init(rr_scheduler *scheduler, vm *vm) {
   scheduler->vm = vm;
+  scheduler->preemption_us = 30000;
   scheduler->_impl = calloc(1, sizeof(impl));
 }
 
