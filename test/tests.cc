@@ -841,6 +841,18 @@ TEST_CASE("Deep recursion in GC") {
   REQUIRE(result.stdout_ == "Out of memory!\n");
 }
 
+TEST_CASE("Weak references") {
+  auto result = run_test_case("test_files/weak_references", true, "WeakReferences");
+  REQUIRE(result.stdout_ == R"(Egg
+Egg
+null
+null
+Egg
+null
+null
+)");
+}
+
 #if 0
 TEST_CASE("Print useful trampolines") { print_method_sigs(); }
 #endif

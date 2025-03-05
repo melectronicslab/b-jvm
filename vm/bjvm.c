@@ -253,12 +253,6 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
                                stack_value *args, u8 argc) {
   native_callback *native = method->native_handle;
   if (!native) {
-    printf("Class state (before pushing native frame of it): %d\n", method->my_class->state);
-    printf("Neighborhood bytes around native_handle ( %p ): ", &method->native_handle);
-    for (int i = -16; i < 16; i++) {
-      printf("%02x ", ((u8 *)&method->native_handle)[i]);
-    }
-    printf("\n");
     raise_unsatisfied_link_error(thread, method);
     return nullptr;
   }
@@ -651,6 +645,7 @@ vm *create_vm(const vm_options options) {
   vm->stdio_override_param = options.stdio_override_param;
 
   vm->next_tid = 0;
+  vm->reference_pending_list = nullptr;
 
   for (size_t i = 0; i < bjvm_natives_count; ++i) {
     native_t const *native_ptr = bjvm_natives[i];
