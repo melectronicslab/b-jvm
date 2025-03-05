@@ -600,6 +600,10 @@ Evaluated getLong (4)
 Evaluated instance initializer
 Evaluated constructor
 MyStuff[bool1=true, obj2='a string lol', byte3=3, long4=45]
+Testing funny constructor
+[]
+[an item]
+[an item]
 )");
 }
 
