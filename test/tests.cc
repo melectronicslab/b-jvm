@@ -589,6 +589,20 @@ Done
 )");
 }
 
+TEST_CASE("Field initialization order") {
+  auto result = run_test_case("test_files/field_initialization_order/", true, "Main");
+  REQUIRE(result.stdout_ == R"(Making stuff
+Evaluated static initializer
+Evaluated getBool (1)
+Evaluated getObj (2)
+Evaluated getByte (3)
+Evaluated getLong (4)
+Evaluated instance initializer
+Evaluated constructor
+MyStuff[bool1=true, obj2='a string lol', byte3=3, long4=45]
+)");
+}
+
 TEST_CASE("Playground") { auto result = run_test_case("test_files/compiler", false); }
 
 #if 0
