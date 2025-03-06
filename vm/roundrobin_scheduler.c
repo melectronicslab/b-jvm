@@ -223,7 +223,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   vm_thread *thread = info->thread;
   const u64 MICROSECONDS_TO_RUN = scheduler->preemption_us;
 
-  thread->fuel = 10000;
+  thread->fuel = 50000;
 
   // If the thread is sleeping, check if it's time to wake up
   if (is_sleeping(info, time)) {

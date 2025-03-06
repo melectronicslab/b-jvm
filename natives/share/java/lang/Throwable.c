@@ -58,7 +58,7 @@ DECLARE_NATIVE("java/lang", Throwable, fillInStackTrace, "(I)Ljava/lang/Throwabl
     if (!e->obj) // Failed to allocate StackTraceElement
       goto cleanup;
 
-    cp_method *method = get_frame_method(frame);
+    cp_method *method = frame->method;
 
 #define E ((struct native_StackTraceElement *)e->obj)
     int line = is_frame_native(frame) ? -1 : get_line_number(method->code, frame->program_counter);

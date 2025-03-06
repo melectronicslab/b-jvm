@@ -10,7 +10,7 @@ DECLARE_NATIVE("jdk/internal/reflect", Reflection, getCallerClass, "()Ljava/lang
   }
   if (frame == nullptr)
     return value_null();
-  return (stack_value){.obj = (void *)get_class_mirror(thread, get_frame_method(frame)->my_class)};
+  return (stack_value){.obj = (void *)get_class_mirror(thread, frame->method->my_class)};
 }
 
 DECLARE_NATIVE("jdk/internal/reflect", Reflection, getClassAccessFlags, "(Ljava/lang/Class;)I") {

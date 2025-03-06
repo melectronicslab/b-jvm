@@ -613,7 +613,12 @@ typedef struct bytecode_insn {
     type_kind array_type;
     // constant pool index or local variable index or branch target (instruction
     // index)
-    u32 index;
+    struct {
+      u32 index;
+      // for branches, the delta to the target.
+      // For local instructions like astore/dload, equal to max_locals - index
+      s32 delta;
+    };
     // Integer or long immediate
     s64 integer_imm;
     // Float immediate

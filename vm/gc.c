@@ -180,6 +180,7 @@ static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
     PUSH_ROOT(&vm->js_handles[i]);
   }
 
+  // Pending references
   PUSH_ROOT(&vm->reference_pending_list);
 
   // Static fields of bootstrap-loaded classes
@@ -468,11 +469,13 @@ void major_gc(vm *vm) {
   }
 
   // Go through all static and instance fields and rewrite in place
-  relocate_instance_fields(&ctx);
+
+  // this must come first because we read pending reference list
   for (int i = 0; i < arrlen(ctx.roots); ++i) {
     object *obj = ctx.roots[i];
     relocate_object(&ctx, obj);
   }
+  relocate_instance_fields(&ctx);
 
   arrfree(ctx.objs);
   free(ctx.new_location);

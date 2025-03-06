@@ -278,6 +278,12 @@ static double *arg_3;
 
 #endif // DO_TAILS
 
+#ifdef __clang__
+#define UNPREDICTABLE(x) x //__builtin_unpredictable(x)
+#else
+#define UNPREDICTABLE(x) x
+#endif
+
 // The current instruction
 #define insn (&insns[0])
 
@@ -328,7 +334,7 @@ int32_t __interpreter_intrinsic_max_insn() { return MAX_INSN_KIND; }
 
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos)                                                                                                     \
-  frame->program_counter = pc;                                                                                   \
+  frame->program_counter = pc;                                                                                         \
   *(sp - 1) = _Generic((tos),                                                                                          \
       s64: (stack_value){.l = (s64)tos},                                                                               \
       float: (stack_value){.f = (float)tos},                                                                           \
@@ -585,7 +591,7 @@ static continuation_frame *async_stack_peek(vm_thread *thread) {
 
 /** FUEL CHECKING */
 
-__attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
+[[maybe_unused]] static bool refuel_check(vm_thread *thread) {
   const int REFUEL = 50000;
   thread->fuel = REFUEL;
 
@@ -593,9 +599,7 @@ __attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
     return false;
 
   // Get the current time in milliseconds since 1970
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  u64 now = tv.tv_sec * 1000000 + tv.tv_usec;
+  u64 now = get_unix_us();
   if (thread->yield_at_time != 0 && now >= thread->yield_at_time) {
     thread->stack.top->is_async_suspended = true;
 
@@ -612,22 +616,38 @@ __attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
   return false;
 }
 
-static bool fuel_check_impl(vm_thread *thread) {
-  if (unlikely(thread->fuel-- == 0)) {
-    return refuel_check(thread);
+enum {
+  REQUESTING_FUEL_CHECK = 1
+};
+
+__attribute__((always_inline))
+[[maybe_unused]] static bool fuel_check_impl(int delta, vm_thread *thread, stack_frame *frame) {
+  if (unlikely((thread->fuel -= delta < 0) == 0)) {  // only count backward jumps
+    frame->is_async_suspended = true;
+    return true;
   }
   return false;
 }
 
 #define FUEL_CHECK                                                                                                     \
-  if (fuel_check_impl(thread)) {                                                                                       \
+  if (fuel_check_impl(insn->delta, thread, frame)) {                                                                                       \
     SPILL(tos);                                                                                                        \
-    return 0;                                                                                                          \
+    return REQUESTING_FUEL_CHECK;                                                                                                          \
   }
 #define FUEL_CHECK_VOID                                                                                                \
-  if (fuel_check_impl(thread)) {                                                                                       \
-    SPILL_VOID return 0;                                                                                               \
+  if (fuel_check_impl(insn->delta, thread, frame)) {                                                                                       \
+    SPILL_VOID return REQUESTING_FUEL_CHECK;                                                                              \
   }
+
+#define DO_FUEL_CHECKS 0
+
+#if !DO_FUEL_CHECKS
+#undef FUEL_CHECK
+#undef FUEL_CHECK_VOID
+
+#define FUEL_CHECK
+#define FUEL_CHECK_VOID
+#endif
 
 static void mark_insn_returns(bytecode_insn *inst) {
   inst->returns = inst->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
@@ -1432,36 +1452,32 @@ static s64 dreturn_impl_double(ARGS_DOUBLE) {
 static s64 goto_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   FUEL_CHECK_VOID
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  pc += insn->delta;
+  insns += insn->delta;
   JMP_VOID
 }
 
 static s64 goto_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
   FUEL_CHECK
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  pc += insn->delta;
+  insns += insn->delta;
   JMP_DOUBLE(tos)
 }
 
 static s64 goto_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK();
   FUEL_CHECK
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  pc += insn->delta;
+  insns += insn->delta;
   JMP_FLOAT(tos)
 }
 
 static s64 goto_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  pc += insn->delta;
+  insns += insn->delta;
   JMP_INT(tos)
 }
 
@@ -1515,11 +1531,11 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
   static s64 which##_impl_int(ARGS_INT) {                                                                              \
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
-    s32 old_pc = pc;                                                                                                   \
-    pc = ((s32)tos op 0) ? ((s32)insn->index - 1) : (s32)pc;                                          \
-    insns += pc - (s32)old_pc;                                                                            \
+    s32 offset = UNPREDICTABLE((s32)tos op 0) ? insn->delta : 1;                                                                    \
+    pc += offset; \
+    insns += offset; \
     sp--;                                                                                                              \
-    STACK_POLYMORPHIC_NEXT(*(sp - 1));                                                                                 \
+    STACK_POLYMORPHIC_JMP(*(sp - 1));                                                                                 \
   }
 
 MAKE_INT_BRANCH_AGAINST_0(ifeq, ==)
@@ -1536,11 +1552,11 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
     s64 a = (sp - 2)->i, b = (int)tos;                                                                                 \
-    s32 old_pc = pc;                                                                                                   \
-    pc = a op b ? ((s32)insn->index - 1) : pc;                                                                         \
-    insns += (s32)pc - (s32)old_pc;                                                                                    \
+    s32 offset = UNPREDICTABLE((s32)a op (s32)b) ? insn->delta : 1;                                                                 \
+    pc += offset;                                                                                                      \
+    insns += offset;                                                                                                   \
     sp -= 2;                                                                                                           \
-    STACK_POLYMORPHIC_NEXT(*(sp - 1));                                                                                 \
+    STACK_POLYMORPHIC_JMP(*(sp - 1));                                                                                 \
   }
 
 MAKE_INT_BRANCH(if_icmpeq, ==)
@@ -1554,22 +1570,22 @@ static s64 if_acmpeq_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
   obj_header *a = (sp - 2)->obj, *b = (obj_header *)tos;
-  int old_pc = pc;
-  pc = a == b ? ((s32)insn->index - 1) : pc;
-  insns += pc - old_pc;
+  s32 offset = UNPREDICTABLE(a == b) ? insn->delta : 1;
+  pc += offset;
+  insns += offset;
   sp -= 2;
-  STACK_POLYMORPHIC_NEXT(*(sp - 1))
+  STACK_POLYMORPHIC_JMP(*(sp - 1))
 }
 
 static s64 if_acmpne_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
   obj_header *a = (sp - 2)->obj, *b = (obj_header *)tos;
-  int old_pc = pc;
-  pc = a != b ? ((s32)insn->index - 1) : pc;
-  insns += pc - old_pc;
+  s32 offset = UNPREDICTABLE(a != b) ? insn->delta : 1;
+  pc += offset;
+  insns += offset;
   sp -= 2;
-  STACK_POLYMORPHIC_NEXT(*(sp - 1))
+  STACK_POLYMORPHIC_JMP(*(sp - 1))
 }
 
 /** Monitors */
@@ -2151,6 +2167,7 @@ static s64 invokecallsite_impl_void(ARGS_VOID) {
   if (kind == MH_KIND_INVOKE_STATIC) {
     // Invoke name->vmtarget with arguments mh, args
     cp_method *invoke = name->vmtarget;
+    [[maybe_unused]] bool returns = form->result != -1;
 
     // State of the stack:
     // ... args
@@ -2175,7 +2192,9 @@ static s64 invokecallsite_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokecallsite)
 
-static stack_value *get_local(stack_frame *frame, bytecode_insn *inst) { return frame_locals(frame) + inst->index; }
+static stack_value *get_local(stack_frame *frame, bytecode_insn *inst) {
+  return (stack_value *)frame - inst->delta;
+}
 
 /** Local variable accessors */
 static s64 iload_impl_void(ARGS_VOID) {
@@ -2865,28 +2884,104 @@ static void on_frame_end(vm_thread *thread, stack_frame *frame) {
   }
 }
 
+static bool do_entry_synchronization(future_t * fut, vm_thread * thread, stack_frame * frame, object synchronized_on) {
+  monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
+  monitor_acquire_t ctx =
+      frame->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
+  *fut = monitor_acquire(&ctx);
+  if (fut->status == FUTURE_NOT_READY) {
+    memcpy(store, &ctx, sizeof(ctx));
+    static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
+                  "context can not be stored within thread cache");
+    frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
+    frame->is_async_suspended = true;
+    return true;
+  }
+  frame->synchronized_state = SYNCHRONIZE_DONE;
+  frame->is_async_suspended = false;
+  return false;
+}
+
 static bool on_frame_start(future_t *fut, vm_thread *thread, stack_frame *frame) {
   object synchronized_on = get_sync_object(thread, frame);
   if (unlikely(synchronized_on) && frame->synchronized_state < SYNCHRONIZE_DONE) {
-    monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
-    monitor_acquire_t ctx =
-        frame->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
-    *fut = monitor_acquire(&ctx);
-    if (fut->status == FUTURE_NOT_READY) {
-      memcpy(store, &ctx, sizeof(ctx));
-      static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
-                    "context can not be stored within thread cache");
-      frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
-      frame->is_async_suspended = true;
-      return true;
-    }
-    frame->synchronized_state = SYNCHRONIZE_DONE;
-    frame->is_async_suspended = false;
+    return do_entry_synchronization(fut, thread, frame, synchronized_on);
   }
   return false;
 }
 
+#define HANDLE_EXCEPTION \
+exception_table_entry *handler = find_exception_handler(thread, current_frame, thread->current_exception->descriptor); \
+ \
+if (handler) { \
+  current_frame->program_counter = handler->handler_insn; \
+  current_frame->stack[0] = (stack_value){.obj = thread->current_exception}; \
+  thread->current_exception = nullptr; \
+ \
+  goto java_interpret_begin; \
+}
 
+// The interpreter handles a contiguous chain of Java method calls. An intervening native frame, or something that is
+// not a Java method call resulting from an invoke* (e.g., resolving a method ref, calling <clinit>) breaks the chain.
+// Entries into JITed code also break the chain.
+//
+// The CFG of the interpreter is as follows:
+//
+//  Entry
+//    ↓
+// ┌──┴──────────────────┐       ┌──────────────────────────────────────┐
+// │ Is async suspended? ├──yes─→┤ Resume at end of chain, no cont. pop │
+// └──┬──────────────────┘       └───┬──────────────────────────────────┘
+//    ↓ no (current = entry_frame)   │
+// ┌──┴──────────────────────────┐   ╎        ╔═══════════════════╗
+// │ Synchronize on entry_frame? ├─suspended─→║ cont: none needed ║
+// └──┬──────────────────────────┘   ╎        ╚═══════════════════╝
+//    └────┐ ok               ┌──────┘
+//      ┌──┴──────────────────┴─────┐       ┌─────────────────┐            ╔═══════════════════╗
+//  ┌──→│ current frame is native?  ├──yes─→┤cont. pop if sus.├─suspended─→║ cont: CONT_NATIVE ║
+//  │   └──┬────────────────────────┘       │ run native call │            ╚═══════════════════╝
+//  │      │                                └─────────────────┴──→─┐ ok
+//  │      ↓ no                                                    │
+//  │   ┌──┴──────────────────┐       ┌────────────────────────┐   ╎        ╔═════════════════╗
+//  │   │ Is async suspended? ├──yes─→┤ cont pop, async_resume ├─suspended─→║ cont: (various) ║
+//  │   └──┬──────────────────┘       └─┬──────────────────────┘   ╎        ╚═════════════════╝
+//  │      ↓ no               ┌──←──────┘ ok                       │
+//  │   ┌──┴──────────────────┴┐            ┌────────────────┐ no  │        ╔═════════════════╗
+//  │ ┌→│ Interpret Java frame ├─suspended─→│is refuel check?│─→─╌╌│╌╌──────║ cont: (various) ║
+//  │ │ └──┬──────────────────┬┘←─┐         └───────┬────────┘     │        ╚═════════════════╝
+//  │ │    │                  │   │                 ↓ yes          │
+//  │ │    │                  │   │     no  ┌───────┴────────┐ yes │        ╔════════════════════════╗
+//  │ │    │                  │   └────────←┤deadline passed?│─→─╌╌│╌╌──────║ cont: CONT_RESUME_INSN ║
+//  │ │    │                  │             └────────────────┘     │        ╚════════════════════════╝
+//  │ │    ↓ ok               └──←────┐ yes                        │
+//  │ │ ┌──┴────────────────┐       ┌─┴──────────────────┐         │
+//  │ │ │ Exception thrown? ├──yes─→│ Exception handler  │         │
+// y│ │ └──┬────────────────┘       │  in this frame?    │         │
+// e│ │    ↓ no                     └─┬───────────────┬──┘         │
+// s│ │ ┌──┴───────────────────┐      │               │            │
+//  └╌│←│Thread top != current?│      │               │            │
+//    │ └──┬───────────────────┘      │               │            │
+//    │    ↓ yes           ┌──←───────┘ no            ╎            │
+//    │ ┌──┴───────────────┴─┐←────────────────────────────────────┘
+//    │ │Unsynchronize frame,│                        ╎
+//    │ │     pop frame      │                        │
+//    │ └──┬─────────────────┘                        │
+//    │    ↓                                          │
+//    │ ┌──┴─────────────────┐      ╔═══════════════╗ │
+//    │ │frame = entry_frame?├─yes─→║ return result ║ │
+//    │ └──┬─────────────────┘      ╚═══════════════╝ │
+//    │    ↓ no                                       │
+// no │ ┌──┴─────────────────┐                        │
+//    └─┤ Pending exception? ├─yes────────────────→───┘
+//      └────────────────────┘
+//
+// When a invoke* bytecode is hit, it pushes a frame, changing the thread stack top to a new value which is no longer
+// equal to the current frame.
+//
+// Upon an async yield, both the entry frame and the last frame (which may be the same frame; but not intermediate
+// frames, if any) are marked as async-suspended. The "entry frame" is the first frame in the chain. The continuation
+// frame stores the last Java frame in the chain.
+//
 // NOLINTNEXTLINE(misc-no-recursion)
 stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_frame) {
   stack_frame *current_frame = entry_frame;
@@ -2894,7 +2989,8 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
     // Advance the interpreter to the frame in this chain of pure Java calls which was suspended
     current_frame = async_stack_peek(thread)->frame;
   } else {
-    if (on_frame_start(fut, thread, current_frame)) {
+    if (unlikely(on_frame_start(fut, thread, current_frame))) {
+      // Suspension during synchronization
       entry_frame->is_async_suspended = true;
       return (stack_value){0};
     }
@@ -2939,7 +3035,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
       /** Handle Java frames */
       s32 pc_ = current_frame->program_counter;
       stack_value *sp_ = &current_frame->stack[stack_depth(current_frame)];
-      bytecode_insn *insns = current_frame->method->code->code;
+      bytecode_insn *insns = current_frame->code;
       [[maybe_unused]] unsigned handler_i = 4 * (insns + pc_)->kind + (insns + pc_)->tos_before;
 
       if (unlikely(current_frame->is_async_suspended)) {
@@ -2969,6 +3065,18 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
 #endif
 
       if (unlikely(current_frame->is_async_suspended)) {
+        // Could be a fuel check
+
+#if DO_FUEL_CHECKS
+        if (result.l == REQUESTING_FUEL_CHECK) {
+          bool preempting = refuel_check(thread);
+          if (!preempting) {
+            current_frame->is_async_suspended = false;
+            goto java_interpret_begin;
+          }
+        }
+#endif
+
         // reconstruct future to return
         void *wk = async_stack_peek(thread)->wakeup;
         entry_frame->is_async_suspended = true;
@@ -2989,15 +3097,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
 
       if (unlikely(thread->current_exception)) {
         find_exception_handler:
-        exception_table_entry *handler = find_exception_handler(thread, current_frame, thread->current_exception->descriptor);
-
-        if (handler) {
-          current_frame->program_counter = handler->handler_insn;
-          current_frame->stack[0] = (stack_value){.obj = thread->current_exception};
-          thread->current_exception = nullptr;
-
-          goto java_interpret_begin;
-        }
+        HANDLE_EXCEPTION
       }
     }
 
@@ -3013,7 +3113,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
     if (thread->current_exception) {
       goto find_exception_handler;
     }
-    current_frame->program_counter++;
+    current_frame->program_counter++;  // advance past the invoke* instruction
     goto java_interpret_begin;
   }
 
