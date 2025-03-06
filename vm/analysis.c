@@ -615,8 +615,8 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     }
     break;
   }
-  case insn_invokevirtual:
   case insn_invokespecial:
+  case insn_invokevirtual:
   case insn_invokeinterface:
   case insn_invokestatic: {
     method_descriptor *descriptor =

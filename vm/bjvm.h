@@ -506,8 +506,12 @@ typedef struct stack_frame {
 // counter.
 u16 stack_depth(const stack_frame *frame);
 
-static inline bool is_frame_native(const stack_frame *frame) { return frame->kind == FRAME_KIND_NATIVE; }
-static inline bool is_interpreter_frame(const stack_frame *frame) { return frame->kind == FRAME_KIND_INTERPRETER; }
+static inline bool is_frame_native(const stack_frame *frame) {
+  return frame->kind == FRAME_KIND_NATIVE;
+}
+static inline bool is_interpreter_frame(const stack_frame *frame) {
+  return frame->kind == FRAME_KIND_INTERPRETER;
+}
 value *get_native_args(const stack_frame *frame); // same as locals, just called args for native
 
 stack_value *frame_stack(stack_frame *frame);

@@ -589,19 +589,21 @@ static bool refuel_check(vm_thread *thread) {
 }
 
 enum {
-  REQUESTING_FUEL_CHECK = 1
+  RETVAL_ASYNC_SUSPEND = 4 * MAX_INSN_KIND,
+  RETVAL_FUEL_CHECK = 4 * MAX_INSN_KIND + 1,
+  RETVAL_EXCEPTION_THROWN = 4 * MAX_INSN_KIND + 2
 };
 
 #define FUEL_CHECK                                                                                                     \
   if (unlikely(FUEL-- == 0)) {                                                                                       \
     SPILL(tos);                                                                                                        \
     frame->is_async_suspended = true; \
-    return REQUESTING_FUEL_CHECK;                                                                                                          \
+    return RETVAL_FUEL_CHECK;                                                                                                          \
   }
 #define FUEL_CHECK_VOID                                                                                                \
   if (unlikely(FUEL-- == 0)) {                                                                                       \
     frame->is_async_suspended = true; \
-    SPILL_VOID return REQUESTING_FUEL_CHECK;                                                                              \
+    SPILL_VOID return RETVAL_FUEL_CHECK;                                                                              \
   }
 
 #define DO_FUEL_CHECKS 1
@@ -712,22 +714,16 @@ DEFINE_ASYNC(resolve_getstatic_putstatic) {
       continuation_frame *cont = async_stack_push(thread);                                                             \
       frame->is_async_suspended = true;                                                                                \
       *cont = (continuation_frame){.pnt = CONT_RESOLVE, .frame=frame_, .wakeup = fut.wakeup, .ctx.resolve_insn = ctx};                 \
-      return 0;                                                                                                        \
+      return RETVAL_ASYNC_SUSPEND;                                                                                                        \
     }                                                                                                                  \
     if (thread->current_exception)                                                                                     \
-      return 0;                                                                                                        \
+      return RETVAL_EXCEPTION_THROWN;                                                                                                        \
   } while (0)
 
 __attribute__((noinline)) static s64 getstatic_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
-
   TryResolve(thread, insn, frame, sp);
-
-  if (unlikely(thread->current_exception)) {
-    return 0;
-  }
-
   JMP_VOID // we rewrote this instruction to a resolved form, so jump to that implementation
 }
 FORWARD_TO_NULLARY(getstatic)
@@ -738,9 +734,6 @@ __attribute__((noinline)) static s64 putstatic_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
   TryResolve(thread, insn, frame, sp);
-  if (thread->current_exception) {
-    return 0;
-  }
   STACK_POLYMORPHIC_JMP(*(sp - 1));
 }
 FORWARD_TO_NULLARY(putstatic)
@@ -1237,7 +1230,7 @@ static s64 idiv_impl_int(ARGS_INT) {
   if (unlikely(b == 0)) {
     SPILL(tos);
     raise_div0_arithmetic_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   sp--;
   NEXT_INT(java_idiv(a, b));
@@ -1249,7 +1242,7 @@ static s64 ldiv_impl_int(ARGS_INT) {
   if (unlikely(b == 0)) {
     SPILL(tos);
     raise_div0_arithmetic_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   sp--;
   NEXT_INT(java_ldiv(a, b));
@@ -1268,7 +1261,7 @@ static s64 irem_impl_int(ARGS_INT) {
   if (unlikely(b == 0)) {
     SPILL(tos);
     raise_div0_arithmetic_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   sp--;
   NEXT_INT(java_irem(a, b));
@@ -1280,7 +1273,7 @@ static s64 lrem_impl_int(ARGS_INT) {
   if (unlikely(b == 0)) {
     SPILL(tos);
     raise_div0_arithmetic_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   sp--;
   NEXT_INT(java_lrem(a, b));
@@ -1305,7 +1298,7 @@ static s64 arraylength_impl_int(ARGS_INT) {
     if (unlikely(index < 0 || index >= length)) {                                                                      \
       SPILL_VOID;                                                                                                      \
       raise_array_index_oob_exception(thread, index, length);                                                          \
-      return 0;                                                                                                        \
+      return RETVAL_EXCEPTION_THROWN;                                                                                                      \
     }                                                                                                                  \
     sp--;                                                                                                              \
     type cow = (type)load(array, index);                                                                               \
@@ -1331,7 +1324,7 @@ ARRAY_LOAD(caload, CharArrayLoad, s64, NEXT_INT)
     if (unlikely(index < 0 || index >= length)) {                                                                      \
       SPILL_VOID;                                                                                                      \
       raise_array_index_oob_exception(thread, index, length);                                                          \
-      return 0;                                                                                                        \
+      return RETVAL_EXCEPTION_THROWN;                                                                                                        \
     }                                                                                                                  \
     store(array, index, (tt3)tos);                                                                                     \
     sp -= 3;                                                                                                           \
@@ -1358,13 +1351,13 @@ static s64 aastore_impl_int(ARGS_INT) {
   if (unlikely(index < 0 || index >= length)) {
     SPILL(tos);
     raise_array_index_oob_exception(thread, index, length);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   // Instanceof check against the component type
   if (value && !instanceof(value->descriptor, array->descriptor->one_fewer_dim)) {
     SPILL(tos);
     raise_array_store_exception(thread, value->descriptor->name);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   ReferenceArrayStore(array, index, value);
   sp -= 3;
@@ -1556,13 +1549,13 @@ static s64 monitorenter_impl_int(ARGS_INT) {
     monitor_acquire_t ctx = {.args = {thread, (obj_header *)tos}};
     future_t fut = monitor_acquire(&ctx);
     if (unlikely(thread->current_exception)) { // oom
-      return 0;
+      return RETVAL_EXCEPTION_THROWN;
     }
     if (fut.status == FUTURE_NOT_READY) { // monitor is contended
       continuation_frame *cont = async_stack_push(thread);
       frame->is_async_suspended = true;
       *cont = (continuation_frame){.pnt = CONT_MONITOR_ENTER, .frame=frame, .wakeup = fut.wakeup, .ctx.acquire_monitor = ctx};
-      return 0;
+      return RETVAL_ASYNC_SUSPEND;
     }
   } while (0);
 
@@ -1580,7 +1573,7 @@ static s64 monitorexit_impl_int(ARGS_INT) {
   if (unlikely(result)) {
     SPILL_VOID
     raise_illegal_monitor_state_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   sp--;
@@ -1607,7 +1600,7 @@ static s64 new_impl_void(ARGS_VOID) {
   cp_class_info *info = &insn->cp->class_info;
   int error = resolve_class(thread, info);
   if (error)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   TryResolve(thread, insn, frame, sp);
   JMP_VOID
@@ -1619,7 +1612,7 @@ static s64 new_resolved_impl_void(ARGS_VOID) {
   SPILL_VOID
   obj_header *obj = new_object(thread, insn->classdesc);
   if (!obj)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   sp++;
   NEXT_INT(obj)
@@ -1632,11 +1625,11 @@ static s64 newarray_impl_int(ARGS_INT) {
   SPILL(tos)
   if (unlikely(count < 0)) {
     raise_negative_array_size_exception(thread, count);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   obj_header *array = CreatePrimitiveArray1D(thread, insn->array_type, count);
   if (unlikely(!array)) {
-    return 0; // oom
+    return RETVAL_EXCEPTION_THROWN; // oom
   }
   NEXT_INT(array)
 }
@@ -1646,11 +1639,11 @@ static s64 anewarray_impl_int(ARGS_INT) {
   SPILL_VOID
   cp_class_info *info = &insn->cp->class_info;
   if (resolve_class(thread, info)) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   DCHECK(info->classdesc);
   if (link_class(thread, info->classdesc)) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   insn->classdesc = info->classdesc;
   insn->kind = insn_anewarray_resolved;
@@ -1664,13 +1657,13 @@ static s64 anewarray_resolved_impl_int(ARGS_INT) {
   int count = tos;
   if (count < 0) {
     raise_negative_array_size_exception(thread, count);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;;
   }
   obj_header *array = CreateObjectArray1D(thread, insn->classdesc, count);
-  if (array) {
+  if (likely(array)) {
     NEXT_INT(array)
   }
-  return 0; // oom
+  return RETVAL_EXCEPTION_THROWN;; // oom
 }
 
 static s64 multianewarray_impl_int(ARGS_INT) {
@@ -1678,7 +1671,7 @@ static s64 multianewarray_impl_int(ARGS_INT) {
   SPILL(tos)
   u16 temp_sp = sp - frame_stack(frame);
   if (multianewarray(thread, frame, insn->multianewarray, &temp_sp))
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   sp = frame_stack(frame) + temp_sp;
   NEXT_INT(frame_stack(frame)[temp_sp - 1].obj)
@@ -1717,9 +1710,6 @@ __attribute__((noinline)) static s64 invokestatic_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   SPILL_VOID
   TryResolve(thread, insn, frame, sp);
-  if (thread->current_exception)
-    return 0;
-
   if (intrinsify(insn)) {
     STACK_POLYMORPHIC_JMP(*(sp - 1));
   }
@@ -1755,7 +1745,7 @@ void attempt_jit(cp_method *method) {
   if (method->jit_entry) {                                                                                             \
     ((jit_trampoline)(method)->trampoline)((method)->jit_entry, thread, method, argz);                                 \
     if (thread->current_exception) {                                                                                   \
-      return 0;                                                                                                        \
+      return RETVAL_EXCEPTION_THROWN;                                                                                                        \
     }                                                                                                                  \
     sp -= insn->args;                                                                                                  \
     sp += returns;                                                                                                     \
@@ -1780,7 +1770,7 @@ static s64 invokestatic_resolved_impl_void(ARGS_VOID) {
     invoked_frame = push_frame(thread, method, sp - insn->args, insn->args);
   }
   if (unlikely(!invoked_frame)) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   AttemptInvoke(thread, invoked_frame, insn->args, returns);
@@ -1796,7 +1786,7 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   SPILL_VOID
   if (!receiver) {
     raise_null_pointer_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   resolve_methodref_t ctx = {};
@@ -1808,7 +1798,7 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   CHECK(fut.status == FUTURE_READY);
   thread->stack.synchronous_depth--;
   if (thread->current_exception) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   method_info = &insn->cp->methodref;
   mark_insn_returns(insn);
@@ -1835,6 +1825,12 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
     JMP_VOID
   }
 
+  if (method_info->resolved->access_flags & ACCESS_FINAL) { // if the method is FINAL, we can make it an invokespecial
+    insn->kind = insn_invokespecial_resolved;
+    insn->ic = method_info->resolved;
+    JMP_VOID
+  }
+
   insn->kind = insn_invokevtable_monomorphic;
   insn->ic = vtable_lookup(receiver->descriptor, method_info->resolved->vtable_index);
   insn->ic2 = receiver->descriptor;
@@ -1850,7 +1846,7 @@ __attribute__((noinline)) static s64 invokespecial_impl_void(ARGS_VOID) {
   SPILL_VOID
   if (!receiver) {
     raise_null_pointer_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   resolve_methodref_t ctx = {};
@@ -1859,7 +1855,7 @@ __attribute__((noinline)) static s64 invokespecial_impl_void(ARGS_VOID) {
   future_t fut = resolve_methodref(&ctx);
   CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   method_info = &insn->cp->methodref;
@@ -1887,11 +1883,11 @@ __attribute__((noinline)) static s64 invokespecial_impl_void(ARGS_VOID) {
     }
     if (!candidate) {
       raise_abstract_method_error(thread, method_info->resolved);
-      return 0;
+      return RETVAL_EXCEPTION_THROWN;
     }
   } else if (candidate->access_flags & ACCESS_ABSTRACT) {
     raise_abstract_method_error(thread, candidate);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   // If this is the <init> method of Object, make it a nop
@@ -1918,7 +1914,7 @@ static s64 invokespecial_resolved_impl_void(ARGS_VOID) {
 
   stack_frame *invoked_frame = push_frame(thread, receiver_method, sp - insn->args, insn->args);
   if (!invoked_frame)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   AttemptInvoke(thread, invoked_frame, insn->args, returns);
 }
@@ -1932,7 +1928,7 @@ __attribute__((noinline)) static s64 invokeinterface_impl_void(ARGS_VOID) {
   SPILL_VOID
   if (!receiver) {
     raise_null_pointer_exception(thread);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   resolve_methodref_t ctx = {};
@@ -1941,18 +1937,20 @@ __attribute__((noinline)) static s64 invokeinterface_impl_void(ARGS_VOID) {
   future_t fut = resolve_methodref(&ctx);
   CHECK(fut.status == FUTURE_READY);
   if (thread->current_exception)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   method_info = &insn->cp->methodref;
   if (!(method_info->resolved->my_class->access_flags & ACCESS_INTERFACE)) {
     insn->kind = insn_invokevirtual;
     JMP_VOID
   }
+  mark_insn_returns(insn);
+
   cp_method *method =
       itable_lookup(receiver->descriptor, method_info->resolved->my_class, method_info->resolved->itable_index);
   if (!method) {
     raise_abstract_method_error(thread, method_info->resolved);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   if (method_argc(method) != method_argc(method_info->resolved)) {
@@ -1961,10 +1959,15 @@ __attribute__((noinline)) static s64 invokeinterface_impl_void(ARGS_VOID) {
            fmt_slice(receiver->descriptor->name), fmt_slice(method->my_class->name), fmt_slice(method->name));
   }
 
+  if (method_info->resolved->access_flags & ACCESS_FINAL) { // if the method is FINAL, we can make it an invokespecial
+    insn->kind = insn_invokespecial_resolved;
+    insn->ic = method_info->resolved;
+    JMP_VOID
+  }
+
   insn->ic = method;
   insn->ic2 = receiver->descriptor;
   insn->kind = insn_invokeitable_monomorphic;
-  mark_insn_returns(insn);
   JMP_VOID
 }
 FORWARD_TO_NULLARY(invokeinterface)
@@ -2001,7 +2004,7 @@ static s64 invokeitable_vtable_monomorphic_impl_void(ARGS_VOID) {
   ConsiderJitEntry(thread, ((cp_method *)insn->ic), sp - insn->args);
   stack_frame *invoked_frame = push_frame(thread, insn->ic, sp - insn->args, insn->args);
   if (!invoked_frame)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   AttemptInvoke(thread, invoked_frame, insn->args, returns);
 }
@@ -2026,11 +2029,11 @@ __attribute__((noinline)) static s64 invokesigpoly_impl_void(ARGS_VOID) {
     continuation_frame *cont = async_stack_push(thread);
     frame->is_async_suspended = true;
     *cont = (continuation_frame){.pnt = CONT_INVOKESIGPOLY, .frame=frame, .wakeup = fut.wakeup, .ctx.sigpoly = ctx};
-    return 0;
+    return RETVAL_ASYNC_SUSPEND;
   }
 
   if (thread->current_exception)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   sp -= insn->args;
   sp += returns;
@@ -2047,7 +2050,7 @@ static s64 invokeitable_polymorphic_impl_void(ARGS_VOID) {
   cp_method *receiver_method = itable_lookup(receiver->descriptor, insn->ic, (size_t)insn->ic2);
   if (unlikely(!receiver_method)) {
     raise_abstract_method_error(thread, insn->cp->methodref.resolved);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   DCHECK(receiver_method);
 
@@ -2055,7 +2058,7 @@ static s64 invokeitable_polymorphic_impl_void(ARGS_VOID) {
 
   stack_frame *invoked_frame = push_frame(thread, receiver_method, sp - insn->args, insn->args);
   if (!invoked_frame)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   AttemptInvoke(thread, invoked_frame, insn->args, returns);
 }
@@ -2074,7 +2077,7 @@ static s64 invokevtable_polymorphic_impl_void(ARGS_VOID) {
 
   stack_frame *invoked_frame = push_frame(thread, receiver_method, sp - insn->args, insn->args);
   if (!invoked_frame)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   AttemptInvoke(thread, invoked_frame, insn->args, returns);
 }
@@ -2098,7 +2101,7 @@ __attribute__((noinline)) static s64 invokedynamic_impl_void(ARGS_VOID) {
   CHECK(fut.status == FUTURE_READY);
 
   if (thread->current_exception) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
   DCHECK(insn->ic);
@@ -2139,7 +2142,7 @@ static s64 invokecallsite_impl_void(ARGS_VOID) {
 
     stack_frame *invoked_frame = push_frame(thread, invoke, arguments, insn->args);
     if (!invoked_frame) {
-      return 0;
+      return RETVAL_EXCEPTION_THROWN;
     }
 
     AttemptInvoke(thread, invoked_frame, insn->args, returns);
@@ -2276,11 +2279,11 @@ static s64 ldc_impl_void(ARGS_VOID) {
       SPILL_VOID
       if (resolve_class(thread, &ent->class_info)) {
         DCHECK(thread->current_exception);
-        return 0;
+        return RETVAL_EXCEPTION_THROWN;
       }
       if (link_class(thread, ent->class_info.classdesc)) {
         DCHECK(thread->current_exception);
-        return 0;
+        return RETVAL_EXCEPTION_THROWN;
       }
       obj_header *obj = (void *)get_class_mirror(thread, ent->class_info.classdesc);
       ent->class_info.vm_object = obj;
@@ -2296,7 +2299,7 @@ static s64 ldc_impl_void(ARGS_VOID) {
     obj_header *obj = MakeJStringFromModifiedUTF8(thread, s, true);
     if (!obj) {
       DCHECK(thread->current_exception);
-      return 0;
+      return RETVAL_EXCEPTION_THROWN;
     }
     ent->string.interned = obj;
     NEXT_INT(obj);
@@ -2512,7 +2515,7 @@ static s64 athrow_impl_int(ARGS_INT) {
   SPILL(tos)
   NPE_ON_NULL(tos);
   thread->current_exception = (obj_header *)tos;
-  return 0;
+  return RETVAL_EXCEPTION_THROWN;
 }
 
 static s64 checkcast_impl_int(ARGS_INT) {
@@ -2521,7 +2524,7 @@ static s64 checkcast_impl_int(ARGS_INT) {
   SPILL(tos)
   int error = resolve_class(thread, info) || link_class(thread, info->classdesc);
   if (error)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   RELOAD(tos)
   insn->classdesc = info->classdesc;
@@ -2535,7 +2538,7 @@ static s64 checkcast_resolved_impl_int(ARGS_INT) {
   if (obj && unlikely(!instanceof(obj->descriptor, insn->classdesc))) {
     SPILL(tos)
     raise_class_cast_exception(thread, obj->descriptor, insn->classdesc);
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
   NEXT_INT(tos)
 }
@@ -2546,7 +2549,7 @@ static s64 instanceof_impl_int(ARGS_INT) {
   SPILL(tos)
   int error = resolve_class(thread, info) || link_class(thread, info->classdesc);
   if (error)
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
 
   RELOAD(tos)
   insn->classdesc = info->classdesc;
@@ -2662,7 +2665,8 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
       return lreturn_impl_int(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
 
     case 0:
-    case 1: // special value in case of exception or suspend or invoke (theoretically also nop_impl_void, but javac
+    case RETVAL_EXCEPTION_THROWN:
+    case RETVAL_ASYNC_SUSPEND: // special value in case of exception or suspend or invoke (theoretically also nop_impl_void, but javac
             // doesn't use that)
       return handler_i;
     default: {
@@ -2785,7 +2789,7 @@ static s64 async_resume_impl_void(ARGS_VOID) {
     cont.wakeup = fut.wakeup;
     *async_stack_push(thread) = cont;
     frame->is_async_suspended = true;
-    return 0;
+    return RETVAL_ASYNC_SUSPEND;
   }
 
   // Now calculate sp correctly depending on whether we're advancing an instruction or not
@@ -2793,7 +2797,7 @@ static s64 async_resume_impl_void(ARGS_VOID) {
 
   frame->is_async_suspended = false;
   if (unlikely(thread->current_exception)) {
-    return 0;
+    return RETVAL_EXCEPTION_THROWN;
   }
 
 #if !DO_TAILS
@@ -3020,11 +3024,12 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
       }
 #endif
 
-      if (unlikely(result.l < 2 && current_frame->is_async_suspended)) {
+      bool maybe_suspending = result.l >> 1 == RETVAL_FUEL_CHECK >> 1;
+      if (unlikely(maybe_suspending && current_frame->is_async_suspended)) {
         // Could be a fuel check
 
 #if DO_FUEL_CHECKS
-        if (result.l == REQUESTING_FUEL_CHECK) {
+        if (result.l == RETVAL_FUEL_CHECK) {
           bool preempting = refuel_check(thread);
           if (!preempting) {
             current_frame->is_async_suspended = false;
@@ -3051,12 +3056,13 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
         continue;
       }
 
-      if (unlikely(thread->current_exception)) {
+      if (unlikely(result.l == RETVAL_EXCEPTION_THROWN && thread->current_exception)) {
         find_exception_handler:
         HANDLE_EXCEPTION
       }
     }
 
+    /** End frame logic */
     on_frame_end(thread, current_frame);
     pop_frame(thread, current_frame);
     if (current_frame == entry_frame) { // done with this chain of interpreter frames
