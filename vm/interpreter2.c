@@ -2720,6 +2720,7 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
       spill.temp_double_tos = double_tos;
       spill.temp_float_tos = float_tos;
       spill.temp_int_tos = int_tos;
+      spill.temp_fuel = fuel;
 
 #ifdef EMSCRIPTEN
 #define notco_call __interpreter_intrinsic_notco_call_outlined
@@ -3045,7 +3046,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
         result.l = async_resume_impl_void(thread, current_frame, insns_, fuel_, sp_, 0, 0, 0);
 #else
         handler_i =
-            async_resume_impl_void(thread, current_frame, &insns_, &pc_, &sp_,
+            async_resume_impl_void(thread, current_frame, &insns_, &fuel_, &sp_,
               nullptr /* computed */, nullptr, nullptr);
 #endif
       }
