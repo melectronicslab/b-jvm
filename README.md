@@ -1,5 +1,7 @@
 A JVM for the web. Bring back the applet! /s
 
+**This project is not, in any way, affiliated with or endorsed by Oracle, Inc. or the OpenJDK project.**
+
 ## Why?
 
 I (Timothy) have three overarching goals for the project, in roughly descending order: 1. to learn about compilers and runtimes; 2. to make it easy to run and interface with modern, OpenJDK-based Java projects in the browser, without extensive rewrites; 3. to push the envelope of WebAssembly a bit.
