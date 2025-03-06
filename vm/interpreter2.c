@@ -3053,7 +3053,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
         continue;
       }
 
-      if (unlikely(result.l == RETVAL_EXCEPTION_THROWN && thread->current_exception)) {
+      if (unlikely(thread->current_exception)) {
         find_exception_handler:
         HANDLE_EXCEPTION
       }
