@@ -278,6 +278,6 @@ DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, getMembers,
 }
 
 DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, clearCallSiteContext,
-  "(Ljava/lang/invoke/MethodHandleNatives$CallSiteContext;)V") {
+               "(Ljava/lang/invoke/MethodHandleNatives$CallSiteContext;)V") {
   return value_null();
 }

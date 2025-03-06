@@ -5,8 +5,8 @@ void raise_exception_object(vm_thread *thread, object obj) {
   DCHECK(!thread->current_exception && "Exception is already raised");
   DCHECK(obj && "Exception object must be non-null");
   // this check isn't possible early into vm setup
-//  DCHECK(instanceof(obj->descriptor, cached_classes(thread->vm)->throwable) &&
-//         "Exception is not subclass of Throwable");
+  //  DCHECK(instanceof(obj->descriptor, cached_classes(thread->vm)->throwable) &&
+  //         "Exception is not subclass of Throwable");
 
   thread->current_exception = obj;
 
@@ -71,8 +71,8 @@ void raise_unsatisfied_link_error(vm_thread *thread, const cp_method *method) {
   INIT_STACK_STRING(err, 1000);
   INIT_STACK_STRING(class_name, 1000);
   exchange_slashes_and_dots(&class_name, method->my_class->name);
-  bprintf(err, "Method %.*s on class %.*s with descriptor %.*s", fmt_slice(method->name),
-          fmt_slice(class_name), fmt_slice(method->unparsed_descriptor));
+  bprintf(err, "Method %.*s on class %.*s with descriptor %.*s", fmt_slice(method->name), fmt_slice(class_name),
+          fmt_slice(method->unparsed_descriptor));
   raise_vm_exception(thread, STR("java/lang/UnsatisfiedLinkError"), err);
 }
 

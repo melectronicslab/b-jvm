@@ -15,16 +15,18 @@ extern "C" {
 
 #define DO_PEDANTIC_YIELDING 0
 #if DO_PEDANTIC_YIELDING
-#define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO) \
-  do {                              \
-    (WAKEUP_INFO).kind = RR_WAKEUP_YIELDING; \
-    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
-    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
-    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
-    ASYNC_YIELD((void *)&(WAKEUP_INFO)); \
+#define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO)                                                                              \
+  do {                                                                                                                 \
+    (WAKEUP_INFO).kind = RR_WAKEUP_YIELDING;                                                                           \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO));                                                                               \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO));                                                                               \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO));                                                                               \
+    ASYNC_YIELD((void *)&(WAKEUP_INFO));                                                                               \
   } while (0)
 #else
-#define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO) do { } while (0)
+#define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO)                                                                              \
+  do {                                                                                                                 \
+  } while (0)
 #endif
 
 typedef struct {
@@ -57,12 +59,12 @@ typedef struct {
 scheduler_status_t rr_scheduler_execute_immediately(execution_record *record);
 
 typedef enum {
-  RR_WAKEUP_YIELDING,       // timeslice yielded, resume soon
-  RR_WAKEUP_SLEEP,          // Thread.sleep
+  RR_WAKEUP_YIELDING,          // timeslice yielded, resume soon
+  RR_WAKEUP_SLEEP,             // Thread.sleep
   RR_WAKEUP_REFERENCE_PENDING, // Reference.waitForReferencePendingList
-  RR_THREAD_PARK,           // Unsafe.park
-  RR_MONITOR_ENTER_WAITING, // wants to acquire mutex, but it's contended
-  RR_MONITOR_WAIT,          // isn't holding, but is waiting for notify
+  RR_THREAD_PARK,              // Unsafe.park
+  RR_MONITOR_ENTER_WAITING,    // wants to acquire mutex, but it's contended
+  RR_MONITOR_WAIT,             // isn't holding, but is waiting for notify
 } rr_wakeup_kind;
 
 typedef struct {

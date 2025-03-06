@@ -173,7 +173,7 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, allocateInstance, "(Ljava/lang/Class
 DECLARE_NATIVE("jdk/internal/misc", Unsafe, freeMemory0, "(J)V") {
   DCHECK(argc == 1);
   free((void *)args[0].l);
-  remove_unsafe_allocation(thread->vm, (void*) args[0].l);
+  remove_unsafe_allocation(thread->vm, (void *)args[0].l);
   return value_null();
 }
 
@@ -195,7 +195,8 @@ DECLARE_NATIVE_OVERLOADED("jdk/internal/misc", Unsafe, putLongVolatile, "(JJ)V",
   return value_null();
 }
 
-DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeup_info wakeup_info), invoked_methods()) {
+DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeup_info wakeup_info),
+                     invoked_methods()) {
   DEBUG_PEDANTIC_YIELD(self->wakeup_info);
 
   DCHECK(argc == 2);
@@ -206,11 +207,14 @@ DECLARE_ASYNC_NATIVE("jdk/internal/misc", Unsafe, park, "(ZJ)V", locals(rr_wakeu
   u64 deadline_us;
 
   if (isAbsolute) {
-    if (time < 0) ASYNC_RETURN_VOID(); // negative epoch time
+    if (time < 0)
+      ASYNC_RETURN_VOID();          // negative epoch time
     deadline_us = (u64)time * 1000; // epoch millis to micros
-    if (deadline_us < start_us) ASYNC_RETURN_VOID(); // already happened
+    if (deadline_us < start_us)
+      ASYNC_RETURN_VOID(); // already happened
   } else {
-    if (time < 0) ASYNC_RETURN_VOID(); // negative duration nanos, already elapsed
+    if (time < 0)
+      ASYNC_RETURN_VOID();                                  // negative duration nanos, already elapsed
     deadline_us = time == 0 ? 0 : start_us + (time / 1000); // 0 duration means no timeout
   }
 
@@ -231,9 +235,9 @@ DECLARE_NATIVE("jdk/internal/misc", Unsafe, unpark, "(Ljava/lang/Object;)V") {
 
   rr_scheduler *scheduler = thread->vm->scheduler;
   assert(scheduler && "Cannot park thread without a scheduler!");
-  struct native_Thread *thr = (struct native_Thread *) args[0].handle->obj;
+  struct native_Thread *thr = (struct native_Thread *)args[0].handle->obj;
 
-  [[maybe_unused]] int err = set_unpark_permit((vm_thread *) thr->eetop);
+  [[maybe_unused]] int err = set_unpark_permit((vm_thread *)thr->eetop);
   assert(!err && "Tried to unpark a non-alive thread");
   return value_null();
 }

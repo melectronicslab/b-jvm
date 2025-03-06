@@ -461,7 +461,7 @@ TEST_CASE("[perf test] Taylor series") {
   vm_options my_options = default_vm_options();
   my_options.heap_size = 1 << 30; // 1 GB
   auto result = run_test_case("test_files/autodiff/", false, "TaylorSeriesTest", "", {"1"}, my_options);
-//  REQUIRE(result.stdout_.find("Done!") != std::string::npos);
+  //  REQUIRE(result.stdout_.find("Done!") != std::string::npos);
 }
 
 TEST_CASE("[perf test] Sudoku solver") {
@@ -798,9 +798,9 @@ TEST_CASE("Java util concurrent") {
 
 TEST_CASE("Preemptible mutex") {
   auto result_b = run_test_case("test_files/share/junit-platform-console-standalone-1.12.0.jar:"
-                              "test_files/mutex_preemption/",
-                              true, "org/junit/platform/console/ConsoleLauncher", "",
-                              {"--scan-classpath=./test_files/mutex_preemption/"});
+                                "test_files/mutex_preemption/",
+                                true, "org/junit/platform/console/ConsoleLauncher", "",
+                                {"--scan-classpath=./test_files/mutex_preemption/"});
 
   std::cout << result_b.stdout_ << std::endl;
   REQUIRE(result_b.stdout_.find("46 tests successful") != std::string::npos);
@@ -808,14 +808,14 @@ TEST_CASE("Preemptible mutex") {
 }
 
 TEST_CASE("Simple sea of nodes") {
-  auto result = run_test_case("test_files/share/assertj-core-3.26.3.jar:"
-                              "test_files/share/commons-collections4-4.4.jar:"
-                              "test_files/share/commons-lang3-3.17.0.jar:"
-                              "test_files/share/junit-platform-console-standalone-1.12.0.jar:"
-                              "test_files/simple/simple.jar:"
-                              "test_files/simple",
-                              false, "org/junit/platform/console/ConsoleLauncher", "",
-                              {"--scan-classpath=./test_files/simple"});
+  auto result =
+      run_test_case("test_files/share/assertj-core-3.26.3.jar:"
+                    "test_files/share/commons-collections4-4.4.jar:"
+                    "test_files/share/commons-lang3-3.17.0.jar:"
+                    "test_files/share/junit-platform-console-standalone-1.12.0.jar:"
+                    "test_files/simple/simple.jar:"
+                    "test_files/simple",
+                    false, "org/junit/platform/console/ConsoleLauncher", "", {"--scan-classpath=./test_files/simple"});
 }
 
 TEST_CASE("URLClassLoader") {

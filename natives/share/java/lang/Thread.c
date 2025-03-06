@@ -74,7 +74,7 @@ DECLARE_ASYNC_NATIVE("java/lang", Thread, sleepNanos0, "(J)V", locals(rr_wakeup_
     ASYNC_RETURN_VOID();
   }
 
-  u64 start_us = get_unix_us(), sleep_us = (u64) nanos / 1000, end;
+  u64 start_us = get_unix_us(), sleep_us = (u64)nanos / 1000, end;
   if (__builtin_add_overflow(start_us, sleep_us, &end)) {
     end = 0; // overflow, just sleep forever
   }

@@ -35,8 +35,9 @@ using std::vector;
 namespace Bjvm::Tests {
 // todo: use actual c++ RAII class instead of this scuff
 static void tear_down_vm(vm *vm) {
-  auto *scheduler = (rr_scheduler *) vm->scheduler;
-  if (scheduler) rr_scheduler_uninit(scheduler);
+  auto *scheduler = (rr_scheduler *)vm->scheduler;
+  if (scheduler)
+    rr_scheduler_uninit(scheduler);
   free_vm(vm);
   delete scheduler; // scuff scuff scuff
 }
@@ -44,10 +45,10 @@ static void tear_down_vm(vm *vm) {
 // todo: use actual c++ RAII class instead of this scuff
 std::unique_ptr<vm, void (*)(vm *)> CreateTestVM(vm_options options) {
   vm *vm = create_vm(options);
-  auto *scheduler = new rr_scheduler {};
+  auto *scheduler = new rr_scheduler{};
   rr_scheduler_init(scheduler, vm);
   vm->scheduler = scheduler;
-    return { vm, tear_down_vm };
+  return {vm, tear_down_vm};
 }
 
 std::vector<std::string> ListDirectory(const std::string &path, bool recursive) {
@@ -173,7 +174,7 @@ std::optional<std::vector<u8>> ReadFile(const std::string &file) {
 std::string ReadFileAsString(const std::string &file) {
   auto data = ReadFile(file);
   if (!data) {
-    return { };
+    return {};
   }
   return {data->begin(), data->end()};
 }
@@ -205,7 +206,8 @@ static void busy_wait(double us) { EM_ASM("const endAt = Date.now() + $0 / 1000;
 #endif
 
 ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio, std::string main_class,
-                                                std::string input, std::vector<std::string> string_args, vm_options options) {
+                                                std::string input, std::vector<std::string> string_args,
+                                                vm_options options) {
   printf("Classpath: %s\n", classpath.c_str());
 
   ScheduledTestCaseResult result{};

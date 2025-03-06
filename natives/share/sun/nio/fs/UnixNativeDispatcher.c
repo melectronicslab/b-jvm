@@ -1,9 +1,9 @@
 
 #include <natives-dsl.h>
 #ifdef EMSCRIPTEN
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <dirent.h>
 #else
 #include <sys/errno.h>
 #include <sys/fcntl.h>
@@ -86,7 +86,6 @@ stack_value stat_impl(value *args) {
   MapAttrLong(st_ctime_sec, st.st_ctim.tv_sec);
   MapAttrLong(st_ctime_nsec, st.st_ctim.tv_nsec);
 #endif
-
 
 #ifdef __APPLE__
   MapAttrLong(st_birthtime_sec, st.st_birthtime);
