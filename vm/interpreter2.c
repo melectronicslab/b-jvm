@@ -142,45 +142,7 @@
 #endif
 
 #ifdef EMSCRIPTEN
-
-#define JMP_INT(tos)                                                                                                   \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns, pc, sp, tos, b_undef, c_undef);)
-#define JMP_FLOAT(tos)                                                                                                 \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns, pc, sp, a_undef, tos, c_undef);)
-#define JMP_DOUBLE(tos)                                                                                                \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns, pc, sp, a_undef, b_undef, tos);)
-
-#define NEXT_INT(tos)                                                                                                  \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_int(thread, frame, insns + 1, pc + 1, sp, (int64_t)tos,      \
-                                                              b_undef, c_undef);)
-#define NEXT_FLOAT(tos)                                                                                                \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_float(thread, frame, insns + 1, pc + 1, sp, a_undef, tos,    \
-                                                                c_undef);)
-#define NEXT_DOUBLE(tos)                                                                                               \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_double(thread, frame, insns + 1, pc + 1, sp, a_undef,        \
-                                                                 b_undef, tos);)
-
-#define JMP_VOID                                                                                                       \
-  WITH_UNDEF(                                                                                                          \
-      MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns, pc, sp, a_undef, b_undef, c_undef);)
-// Jump to the instruction at pc + 1, with nothing in the top of the stack.
-#define NEXT_VOID                                                                                                      \
-  WITH_UNDEF(MUSTTAIL return __interpreter_intrinsic_next_void(thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, \
-                                                               c_undef);)
-
-// Go to the next instruction, but where we don't know a priori the top-of-stack type for that instruction, and must
-// look it up from the analyzed tos type.
-#define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
-  stack_value __tos = (tos);                                                                                           \
-  MUSTTAIL return __interpreter_intrinsic_next_polymorphic(thread, frame, insns + 1, pc + 1, sp, __tos.l, __tos.f,     \
-                                                           __tos.d);
-
-// Go to the instruction at pc, but where we don't know a priori the top-of-stack type for that instruction, and must
-// look it up from the analyzed tos type.
-#define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
-  stack_value __tos = (tos);                                                                                           \
-  MUSTTAIL return __interpreter_intrinsic_next_polymorphic(thread, frame, insns, pc, sp, __tos.l, __tos.f, __tos.d);
-
+#error "Unsupported"
 #else // !ifdef EMSCRIPTEN
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
@@ -317,12 +279,6 @@ static bytecode_handler_t jmp_table_double[MAX_INSN_KIND];
     [TOS_FLOAT] = jmp_table_float,
     [TOS_DOUBLE] = jmp_table_double,
 };
-
-extern int64_t __interpreter_intrinsic_next_polymorphic(ARGS_VOID);
-extern int64_t __interpreter_intrinsic_next_void(ARGS_VOID);
-extern int64_t __interpreter_intrinsic_next_int(ARGS_INT);
-extern int64_t __interpreter_intrinsic_next_double(ARGS_DOUBLE);
-extern int64_t __interpreter_intrinsic_next_float(ARGS_FLOAT);
 
 // Call the bytecode implementation through a funcref table. This prevents inlining by the runtime and regalloc from
 // dying.
