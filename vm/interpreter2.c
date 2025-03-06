@@ -2949,7 +2949,9 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
     }
   }
 
-  stack_value result;
+  constexpr s64 UNLIKELY_NUMBER = -53;  // used to guard the first async suspended check to avoid a mem access
+
+  stack_value result = (stack_value) {.l = UNLIKELY_NUMBER /* rare number */};
   while (true) {
     if (is_frame_native(current_frame)) {
       /** Handle native calls */
@@ -2992,7 +2994,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
       bytecode_insn *insns_ = current_frame->code + pc_;
       [[maybe_unused]] unsigned handler_i = 4 * insns_->kind + insns_->tos_before;
 
-      if (unlikely(current_frame->is_async_suspended)) {
+      if (result.l == UNLIKELY_NUMBER && unlikely(current_frame->is_async_suspended)) {
         entry_frame->is_async_suspended = false;
 #if DO_TAILS
         result.l = async_resume_impl_void(thread, current_frame, insns_, fuel_, sp_, 0, 0, 0);
@@ -3018,7 +3020,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
       }
 #endif
 
-      if (unlikely(current_frame->is_async_suspended)) {
+      if (unlikely(result.l < 2 && current_frame->is_async_suspended)) {
         // Could be a fuel check
 
 #if DO_FUEL_CHECKS
