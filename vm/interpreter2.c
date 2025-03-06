@@ -592,15 +592,6 @@ enum {
   REQUESTING_FUEL_CHECK = 1
 };
 
-__attribute__((always_inline))
-static bool fuel_check_impl(int delta, vm_thread *thread, stack_frame *frame) {
-  if (unlikely((thread->fuel -= delta < 0) == 0)) {  // only count backward jumps
-    frame->is_async_suspended = true;
-    return true;
-  }
-  return false;
-}
-
 #define FUEL_CHECK                                                                                                     \
   if (unlikely(FUEL-- == 0)) {                                                                                       \
     SPILL(tos);                                                                                                        \
