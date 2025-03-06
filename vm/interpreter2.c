@@ -591,7 +591,7 @@ static continuation_frame *async_stack_peek(vm_thread *thread) {
 
 /** FUEL CHECKING */
 
-[[maybe_unused]] static bool refuel_check(vm_thread *thread) {
+static bool refuel_check(vm_thread *thread) {
   const int REFUEL = 50000;
   thread->fuel = REFUEL;
 
