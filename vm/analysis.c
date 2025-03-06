@@ -242,7 +242,7 @@ static void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind
   {                                                                                                                    \
     if (index >= ctx->code->max_locals)                                                                                \
       goto local_overflow;                                                                                             \
-    ctx->locals.entries[LOCAL_INDEX] = local_source(TYPE_KIND_##kind, insn_index);                                           \
+    ctx->locals.entries[LOCAL_INDEX] = local_source(TYPE_KIND_##kind, insn_index);                                     \
   }
 // Remap the index to the new local variable index after unwidening.
 #define SWIZZLE_LOCAL(index)                                                                                           \
@@ -255,7 +255,7 @@ static void calculate_tos_type(struct method_analysis_ctx *ctx, reduced_tos_kind
 // Assert that the local at the given index has the appropriate kind.
 #define CHECK_LOCAL(index, kind)                                                                                       \
   {                                                                                                                    \
-    if (ctx->locals.entries[LOCAL_INDEX].type != TYPE_KIND_##kind)                                                           \
+    if (ctx->locals.entries[LOCAL_INDEX].type != TYPE_KIND_##kind)                                                     \
       goto local_type_mismatch;                                                                                        \
   }
 #define REWRITE(kind_)                                                                                                 \

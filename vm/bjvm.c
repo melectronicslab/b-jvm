@@ -84,9 +84,7 @@ inline int set_unpark_permit(vm_thread *thread) {
   return 0;
 }
 
-inline bool query_unpark_permit(vm_thread *thread) {
-  return thread->unpark_permit;
-}
+inline bool query_unpark_permit(vm_thread *thread) { return thread->unpark_permit; }
 
 bool has_expanded_data(header_word *data) { return !((uintptr_t)data->expanded_data & IS_MARK_WORD); }
 
@@ -138,7 +136,7 @@ stack_value *frame_stack(stack_frame *frame) {
 
 native_frame_data *get_native_frame_data(stack_frame *frame) {
   DCHECK(is_frame_native(frame));
-  return (native_frame_data*) (frame + 1);
+  return (native_frame_data *)(frame + 1);
 }
 
 obj_header *deref_js_handle(vm *vm, int index) {
@@ -185,7 +183,6 @@ handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_na
       return thread->handles + i;
     }
   }
-
 
 #if DCHECKS_ENABLED
   // Print where the handles were allocated
@@ -408,7 +405,7 @@ void register_native(vm *vm, slice class, const slice method_name, const slice m
   if (class.chars[0] == '/')
     class = subslice(class, 1);
 
-//  printf("Registering native: %.*s on class %.*s\n", fmt_slice(method_name), fmt_slice(class));
+  //  printf("Registering native: %.*s on class %.*s\n", fmt_slice(method_name), fmt_slice(class));
 
   heap_string heap_class = make_heap_str_from(class);
   for (size_t i = 0; i < class.len; i++) { // hacky way to avoid emscripten from complaining about symbol names
@@ -884,7 +881,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
           CHECK(read_string_to_utf8(thr, &message, obj.obj) == 0);
         }
         printf("Error in init phase %.*s: %.*s, %s\n", fmt_slice(thr->current_exception->descriptor->name),
-                fmt_slice(phases[i]), obj.obj ? message.chars : "no message");
+               fmt_slice(phases[i]), obj.obj ? message.chars : "no message");
         abort();
       }
 
@@ -1053,7 +1050,7 @@ struct native_MethodType *resolve_method_type(vm_thread *thread, method_descript
 
   stack_value result = call_interpreter_synchronous(
       thread, init, (stack_value[]){{.obj = (void *)rtype}, {.obj = ptypes->obj}, {.i = 1 /* trusted */}});
-  // todo: check for exceptions
+  CHECK(!thread->current_exception);
   drop_handle(thread, ptypes);
   return (void *)result.obj;
 }
@@ -1388,21 +1385,22 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   if (entries) {
     for (int i = 0; i < arrlen(entries->entries); i++) {
       native_entry *entry = entries->entries + i;
-//      printf("Trying to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
+      //      printf("Trying to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
 
       for (int j = 0; j < class->methods_count; ++j) {
         cp_method *method = class->methods + j;
 
         if (utf8_equals_utf8(method->name, entry->name) &&
             utf8_equals_utf8(method->unparsed_descriptor, entry->descriptor)) {
-//          printf("Successfully bound method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
+          //          printf("Successfully bound method %.*s on class %.*s\n", fmt_slice(entry->name),
+          //          fmt_slice(chars));
           method->native_handle = &entry->callback;
           goto done;
         }
       }
 
-//      printf("Failed to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
-      done:
+      //      printf("Failed to bind method %.*s on class %.*s\n", fmt_slice(entry->name), fmt_slice(chars));
+    done:
     }
   }
 
@@ -1802,7 +1800,7 @@ cp_method *method_lookup(classdesc *descriptor, const slice name, const slice me
 
 static char *get_next_frame_start(vm_thread *thread) {
   if (thread->stack.top) {
-    return (char*)thread->stack.top + sizeof(stack_frame) + thread->stack.top->max_stack * sizeof(stack_value);
+    return (char *)thread->stack.top + sizeof(stack_frame) + thread->stack.top->max_stack * sizeof(stack_value);
   }
   return thread->stack.frame_buffer;
 }
@@ -1813,7 +1811,7 @@ static bool initialize_async_ctx(async_run_ctx *ctx, vm_thread *thread, cp_metho
   memset(ctx, 0, sizeof(*ctx));
 
   u8 argc = method_argc(method);
-  stack_value *stack_top = (stack_value*)get_next_frame_start(thread);
+  stack_value *stack_top = (stack_value *)get_next_frame_start(thread);
 
   if ((uintptr_t)(stack_top + argc) > (uintptr_t)thread->stack.frame_buffer_end) {
     raise_exception_object(thread, thread->stack_overflow_error);
@@ -2134,7 +2132,7 @@ bool instanceof(const classdesc *o, const classdesc *target) {
         }
       }
       if (o->kind == CD_KIND_PRIMITIVE || target->kind == CD_KIND_PRIMITIVE) {
-        return false;  // handled earlier
+        return false; // handled earlier
       }
     } else {
       // o is 1D primitive array, equality check suffices

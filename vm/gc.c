@@ -140,7 +140,7 @@ static void push_thread_roots(gc_ctx *ctx, vm_thread *thr) {
       if (ss->entries[i] != TYPE_KIND_REFERENCE)
         continue;
       object *val = &frame->stack[i].obj;
-      if ((uintptr_t)val >= min_frame_addr_scanned) {  // see above
+      if ((uintptr_t)val >= min_frame_addr_scanned) { // see above
         continue;
       }
       PUSH_ROOT(val);
@@ -250,7 +250,7 @@ static void mark_reachable(gc_ctx *ctx, object obj) {
     reference_list *refs = desc->instance_references;
     size_t i = 0;
     if (instanceof(desc, ctx->Reference)) {
-      ++i;  // skip the 'referent' field
+      ++i; // skip the 'referent' field
     }
 
     for (; i < refs->count; ++i) {
@@ -328,7 +328,7 @@ static void quicksort_pointers(void **ptrs, size_t count) {
 // Returns false if the object could not be relocated
 static bool relocate_object(gc_ctx *ctx, object *obj) {
   if (!*obj)
-    return true;  // object was nullptr
+    return true; // object was nullptr
 
   DCHECK(((uintptr_t)obj & 1) == 0);
 

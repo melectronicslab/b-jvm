@@ -46,10 +46,12 @@ struct ScheduledTestCaseResult : TestCaseResult {
 
 void print_method_sigs();
 ScheduledTestCaseResult run_test_case(std::string classpath, bool capture_stdio = true, std::string main_class = "Main",
-                                      std::string input = "", std::vector<std::string> args = {}, vm_options options = default_vm_options());
+                                      std::string input = "", std::vector<std::string> args = {},
+                                      vm_options options = default_vm_options());
 ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio = true,
                                                 std::string main_class = "Main", std::string input = "",
-                                                std::vector<std::string> args = {}, vm_options options = default_vm_options());
+                                                std::vector<std::string> args = {},
+                                                vm_options options = default_vm_options());
 } // namespace Bjvm::Tests
 
 #endif // TESTS_COMMON_H

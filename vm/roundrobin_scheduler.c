@@ -65,7 +65,7 @@ void monitor_exit_handler(rr_scheduler *scheduler, obj_header *monitor) {
 void free_thread_info(rr_scheduler *scheduler, thread_info *info) {
   // technically doesn't need to acquire the monitor to notify, since scheduler is god
   info->thread->thread_obj->eetop = 0; // set the eetop to nullptr
-  monitor_notify_all(scheduler, (obj_header *) info->thread->thread_obj);
+  monitor_notify_all(scheduler, (obj_header *)info->thread->thread_obj);
 
   arrfree(info->call_queue);
   free(info);
@@ -111,10 +111,10 @@ static bool is_sleeping(thread_info *info, u64 time) {
   if (wakeup_info->kind == RR_WAKEUP_REFERENCE_PENDING) {
     return !info->thread->vm->reference_pending_list;
   }
-  if (wakeup_info->kind == RR_WAKEUP_SLEEP
-      || (wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread))
-      || (wakeup_info->kind == RR_MONITOR_WAIT && !wakeup_info->monitor_wakeup.ready)
-      || (wakeup_info->kind == RR_MONITOR_ENTER_WAITING && !wakeup_info->monitor_wakeup.ready)) {
+  if (wakeup_info->kind == RR_WAKEUP_SLEEP ||
+      (wakeup_info->kind == RR_THREAD_PARK && !query_unpark_permit(info->thread)) ||
+      (wakeup_info->kind == RR_MONITOR_WAIT && !wakeup_info->monitor_wakeup.ready) ||
+      (wakeup_info->kind == RR_MONITOR_ENTER_WAITING && !wakeup_info->monitor_wakeup.ready)) {
     u64 wakeup = wakeup_info->wakeup_us;
     // montitor enter is non-interruptible by Java language spec
     bool interrupted = info->thread->thread_obj->interrupted && wakeup_info->kind != RR_MONITOR_ENTER_WAITING;
@@ -167,9 +167,9 @@ u64 rr_scheduler_may_sleep_us(rr_scheduler *scheduler) {
     if (arrlen(info->call_queue) > 0) {
       if (is_sleeping(info, time)) {
         u64 wakeup_time = info->wakeup_info->wakeup_us;
-//        if (wakeup_time == 0) {
-//          wakeup_time = time + 10 * 1000000; // 10 seconds instead of infinite sleep just to be safe
-//        }
+        //        if (wakeup_time == 0) {
+        //          wakeup_time = time + 10 * 1000000; // 10 seconds instead of infinite sleep just to be safe
+        //        }
 
         if (wakeup_time != 0 && wakeup_time < min) {
           min = wakeup_time;
@@ -234,7 +234,7 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
   info->wakeup_info = nullptr;
 
   if (__builtin_add_overflow(time, MICROSECONDS_TO_RUN, &thread->yield_at_time)) {
-    thread->yield_at_time = UINT64_MAX;  // in case someone passes a dubious number for preemption_us
+    thread->yield_at_time = UINT64_MAX; // in case someone passes a dubious number for preemption_us
   }
 
   if (arrlen(info->call_queue) == 0) {
@@ -263,7 +263,8 @@ scheduler_status_t rr_scheduler_step(rr_scheduler *scheduler) {
     info->wakeup_info = (void *)fut.wakeup;
   }
 
-  return (arrlen(impl->round_robin) == 0 || only_daemons_running(impl->round_robin)) ? SCHEDULER_RESULT_DONE : SCHEDULER_RESULT_MORE;
+  return (arrlen(impl->round_robin) == 0 || only_daemons_running(impl->round_robin)) ? SCHEDULER_RESULT_DONE
+                                                                                     : SCHEDULER_RESULT_MORE;
 }
 
 static thread_info *get_or_create_thread_info(impl *impl, vm_thread *thread) {

@@ -24,8 +24,8 @@ DECLARE_NATIVE("java/io", FileOutputStream, writeBytes, "([BIIZ)V") {
     thread->vm->write_stdout(buf, length, thread->vm->stdio_override_param);
   } else if (unix_fd == 2 && thread->vm->write_stderr) {
     thread->vm->write_stderr(buf, length, thread->vm->stdio_override_param);
-  } else { // do an actual syscall
-    if (unix_fd == 2) {  // for some reason stderr needs this??
+  } else {              // do an actual syscall
+    if (unix_fd == 2) { // for some reason stderr needs this??
       fprintf(stderr, "%.*s", length, buf);
     } else {
       while (length > 0) {

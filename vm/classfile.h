@@ -762,7 +762,7 @@ typedef struct cp_method {
   size_t vtable_index;
   // Index in the itable, if applicable.
   size_t itable_index;
-  int my_index;  // index in the method table of the class
+  int my_index;        // index in the method table of the class
   void *native_handle; // native_callback
 
   struct native_Constructor *reflection_ctor;

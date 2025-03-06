@@ -409,7 +409,7 @@ typedef struct vm {
 
   // Latest TID
   s32 next_tid;
-  struct native_Reference *reference_pending_list;  // for java/lang/ref/Reference implementation
+  struct native_Reference *reference_pending_list; // for java/lang/ref/Reference implementation
 
   bool vm_initialized;
   void *scheduler; // rr_scheduler or null
@@ -492,26 +492,23 @@ typedef struct stack_frame {
   };
 
   u16 program_counter; // In instruction indices. Unused by native frames.
-  // 0 for native frames. End of the stack frame is at frame_base + sizeof(stack_frame) + current_stack * sizeof(stack_value)
+  // 0 for native frames. End of the stack frame is at frame_base + sizeof(stack_frame) + current_stack *
+  // sizeof(stack_value)
   u16 max_stack;
   u16 num_locals;
 
   bytecode_insn *code;   // pointer to the code segment (hoisted from method for efficiency). Interpreter only
   u16 *insn_index_to_sd; // stack depth at each instruction (hoisted from method for efficiency). Interpreter only
 
-  stack_value stack[];  // interpreter frame or compiled frame. In the native case a "native_frame" lives here
+  stack_value stack[]; // interpreter frame or compiled frame. In the native case a "native_frame" lives here
 } stack_frame;
 
 // Get the current stack depth of the interpreted frame, based on the program
 // counter.
 u16 stack_depth(const stack_frame *frame);
 
-static inline bool is_frame_native(const stack_frame *frame) {
-  return frame->kind == FRAME_KIND_NATIVE;
-}
-static inline bool is_interpreter_frame(const stack_frame *frame) {
-  return frame->kind == FRAME_KIND_INTERPRETER;
-}
+static inline bool is_frame_native(const stack_frame *frame) { return frame->kind == FRAME_KIND_NATIVE; }
+static inline bool is_interpreter_frame(const stack_frame *frame) { return frame->kind == FRAME_KIND_INTERPRETER; }
 value *get_native_args(const stack_frame *frame); // same as locals, just called args for native
 
 stack_value *frame_stack(stack_frame *frame);
@@ -598,7 +595,7 @@ typedef struct vm_thread {
 } vm_thread;
 
 // park/unpark
-int set_unpark_permit(vm_thread *thread); // returns -1 if thread not existent somehow (dead reference)
+int set_unpark_permit(vm_thread *thread);    // returns -1 if thread not existent somehow (dead reference)
 bool query_unpark_permit(vm_thread *thread); // calling this from the thread itself, so it must be alive
 
 handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file, int line_no);
