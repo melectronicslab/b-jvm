@@ -460,7 +460,7 @@ As a char: A
 #define ALL_PERF_TESTS 0
 #if ALL_PERF_TESTS // these cases are slowwww
 
-TEST_CASE("Taylor Series") {
+TEST_CASE("Taylor series") {
   vm_options my_options = default_vm_options();
   my_options.heap_size = 1 << 30; // 1 GB
   auto result = run_test_case("test_files/autodiff/", false, "TaylorSeriesTest", "", {"1"}, my_options);
