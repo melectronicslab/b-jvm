@@ -460,6 +460,13 @@ As a char: A
 #define ALL_PERF_TESTS 0
 #if ALL_PERF_TESTS // these cases are slowwww
 
+TEST_CASE("Taylor Series") {
+  vm_options my_options = default_vm_options();
+  my_options.heap_size = 1 << 30; // 1 GB
+  auto result = run_test_case("test_files/autodiff/", false, "TaylorSeriesTest", "", {"1"}, my_options);
+//  REQUIRE(result.stdout_.find("Done!") != std::string::npos);
+}
+
 TEST_CASE("Sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver" << std::endl;

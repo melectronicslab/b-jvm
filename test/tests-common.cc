@@ -195,9 +195,9 @@ void print_method_sigs() {
 }
 
 ScheduledTestCaseResult run_test_case(std::string classpath, bool capture_stdio, std::string main_class,
-                                      std::string input, std::vector<std::string> args) {
+                                      std::string input, std::vector<std::string> args, vm_options options) {
   return run_scheduled_test_case(std::move(classpath), capture_stdio, std::move(main_class), std::move(input),
-                                 std::move(args));
+                                 std::move(args), options);
 }
 
 #ifdef EMSCRIPTEN
@@ -205,9 +205,8 @@ static void busy_wait(double us) { EM_ASM("const endAt = Date.now() + $0 / 1000;
 #endif
 
 ScheduledTestCaseResult run_scheduled_test_case(std::string classpath, bool capture_stdio, std::string main_class,
-                                                std::string input, std::vector<std::string> string_args) {
+                                                std::string input, std::vector<std::string> string_args, vm_options options) {
   printf("Classpath: %s\n", classpath.c_str());
-  vm_options options = default_vm_options();
 
   ScheduledTestCaseResult result{};
   result.stdin_ = input;
