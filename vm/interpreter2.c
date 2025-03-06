@@ -343,7 +343,7 @@ int32_t __interpreter_intrinsic_max_insn() { return MAX_INSN_KIND; }
   if (unlikely(!expr)) {                                                                                               \
     SPILL_VOID                                                                                                         \
     raise_null_pointer_exception(thread);                                                                              \
-    return 0;                                                                                                          \
+    return RETVAL_EXCEPTION_THROWN;                                                                                                          \
   }
 
 /** Helper functions */
@@ -2666,6 +2666,7 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
 
     case 0:
     case RETVAL_EXCEPTION_THROWN:
+    case RETVAL_FUEL_CHECK:
     case RETVAL_ASYNC_SUSPEND: // special value in case of exception or suspend or invoke (theoretically also nop_impl_void, but javac
             // doesn't use that)
       return handler_i;
@@ -2953,9 +2954,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
     }
   }
 
-  constexpr s64 UNLIKELY_NUMBER = -53;  // used to guard the first async suspended check to avoid a mem access
-
-  stack_value result = (stack_value) {.l = UNLIKELY_NUMBER /* rare number */};
+  stack_value result;
   while (true) {
     if (is_frame_native(current_frame)) {
       /** Handle native calls */
@@ -2998,7 +2997,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
       bytecode_insn *insns_ = current_frame->code + pc_;
       [[maybe_unused]] unsigned handler_i = 4 * insns_->kind + insns_->tos_before;
 
-      if (result.l == UNLIKELY_NUMBER && unlikely(current_frame->is_async_suspended)) {
+      if (unlikely(current_frame->is_async_suspended)) {
         entry_frame->is_async_suspended = false;
 #if DO_TAILS
         result.l = async_resume_impl_void(thread, current_frame, insns_, fuel_, sp_, 0, 0, 0);
@@ -3024,9 +3023,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
       }
 #endif
 
-      bool maybe_suspending = result.l >> 1 == RETVAL_FUEL_CHECK >> 1;
-      if (unlikely(maybe_suspending && current_frame->is_async_suspended)) {
-        // Could be a fuel check
+      if (unlikely(current_frame->is_async_suspended)) {
 
 #if DO_FUEL_CHECKS
         if (result.l == RETVAL_FUEL_CHECK) {
