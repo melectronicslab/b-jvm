@@ -460,6 +460,13 @@ As a char: A
 #define ALL_PERF_TESTS 0
 #if ALL_PERF_TESTS // these cases are slowwww
 
+TEST_CASE("Taylor series") {
+  vm_options my_options = default_vm_options();
+  my_options.heap_size = 1 << 30; // 1 GB
+  auto result = run_test_case("test_files/autodiff/", false, "TaylorSeriesTest", "", {"1"}, my_options);
+//  REQUIRE(result.stdout_.find("Done!") != std::string::npos);
+}
+
 TEST_CASE("Sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver" << std::endl;
@@ -586,6 +593,40 @@ Cursed time
 Reached
 Correctly threw ClassCastException upon getting
 Done
+)");
+}
+
+TEST_CASE("Field initialization order") {
+  auto result = run_test_case("test_files/field_initialization_order/", true, "Main");
+  REQUIRE(result.stdout_ == R"(Making stuff
+Evaluated static initializer
+Evaluated getBool (1)
+Evaluated getObj (2)
+Evaluated getByte (3)
+Evaluated getLong (4)
+Evaluated instance initializer
+Evaluated constructor
+MyStuff[bool1=true, obj2='a string lol', byte3=3, long4=45]
+Testing funny constructor
+[]
+[an item]
+[an item]
+)");
+}
+
+TEST_CASE("Scuffed inner classes") {
+  auto result = run_test_case("test_files/scuffed_inner_classes/", true, "Testing");
+  REQUIRE(result.stdout_ == R"(Outer message: Hello
+Legitimate inner message: Hello from Inner
+Outer message (according to legitimate inner): Hello
+Creating a fake inner object assigned to the outer
+Outer message (according to fake inner): Hello
+Fake inner message: Hello from Inner
+Setting outer message using fake inner
+Outer message (according to fake inner): Bonjour
+Outer message (according to legitimate inner): Bonjour
+Testing another implanted inner object
+Message of new inner: Bonjour from Inner
 )");
 }
 

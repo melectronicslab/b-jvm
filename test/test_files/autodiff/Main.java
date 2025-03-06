@@ -2,7 +2,6 @@ import java.util.Random;
 
 import nilgiri.math.*;
 import nilgiri.math.autodiff.*;
-import nilgiri.math.ia.*;
 
 public class Main {
     private final DoubleRealFactory RNFactory = DoubleRealFactory.instance();
