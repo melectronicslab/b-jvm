@@ -593,7 +593,7 @@ enum {
 };
 
 __attribute__((always_inline))
-[[maybe_unused]] static bool fuel_check_impl(int delta, vm_thread *thread, stack_frame *frame) {
+static bool fuel_check_impl(int delta, vm_thread *thread, stack_frame *frame) {
   if (unlikely((thread->fuel -= delta < 0) == 0)) {  // only count backward jumps
     frame->is_async_suspended = true;
     return true;
