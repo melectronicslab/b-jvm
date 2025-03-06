@@ -124,7 +124,12 @@
   } while (0);
 #else
 
-#define INLINE_ASM asm volatile("" : "=X"(a_undef), "=X"(b_undef), "=X"(c_undef));
+#ifdef __aarch64__
+#define INLINE_ASM asm volatile("" : "=r"(a_undef), "=w"(b_undef), "=w"(c_undef));
+#else
+#define INLINE_ASM asm volatile("" : "=r"(a_undef), "=x"(b_undef), "=x"(c_undef));
+#endif
+
 
 #define WITH_UNDEF(expr)                                                                                               \
   do {                                                                                                                 \
