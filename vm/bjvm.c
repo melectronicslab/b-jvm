@@ -121,11 +121,9 @@ u16 stack_depth(const stack_frame *frame) {
   DCHECK(!is_frame_native(frame), "Can't get stack depth of native frame");
   DCHECK(frame->method, "Can't get stack depth of fake frame");
   int pc = frame->program_counter;
-  if (pc == 0) // stack is always 0 at method entry, common case
-    return 0;
   code_analysis *analy = frame->method->code_analysis;
   DCHECK(pc < analy->insn_count);
-  return analy->insn_index_to_sd[pc];
+  return frame->insn_index_to_sd[pc];
 }
 
 value *get_native_args(const stack_frame *frame) {
@@ -138,12 +136,10 @@ stack_value *frame_stack(stack_frame *frame) {
   return frame->stack;
 }
 
-native_frame *get_native_frame_data(stack_frame *frame) {
+native_frame_data *get_native_frame_data(stack_frame *frame) {
   DCHECK(is_frame_native(frame));
-  return (native_frame*) (frame + 1);
+  return (native_frame_data*) (frame + 1);
 }
-
-cp_method *get_frame_method(stack_frame *frame) { return frame->method; }
 
 obj_header *deref_js_handle(vm *vm, int index) {
   if (index < 0 || index >= arrlen(vm->js_handles)) {
@@ -175,16 +171,6 @@ void drop_js_handle(vm *vm, int index) {
   vm->js_handles[index] = nullptr;
 }
 
-[[maybe_unused]] static int handles_count(vm_thread *thread) {
-  int count = 0;
-  for (int i = 0; i < thread->handles_capacity; ++i) {
-    if (thread->handles[i].obj) {
-      count++;
-    }
-  }
-  return count;
-}
-
 handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_name, int line_no) {
   if (!obj)
     return &thread->null_handle;
@@ -200,6 +186,7 @@ handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_na
     }
   }
 
+
 #if DCHECKS_ENABLED
   // Print where the handles were allocated
   printf("Handle exhaustion: Locations ");
@@ -209,6 +196,8 @@ handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_na
     }
   }
   printf("\n");
+#else
+  printf("Handle exhaustion! Build with DCHECKS_ENABLED to find out where...\n");
 #endif
   UNREACHABLE(); // When we need more handles, rewrite to use a LL impl
 }
@@ -273,7 +262,7 @@ stack_frame *push_native_frame(vm_thread *thread, cp_method *method, const metho
   frame->kind = FRAME_KIND_NATIVE;
   frame->num_locals = argc;
   // this many additional slots are used for the native info
-  frame->max_stack = align_up(sizeof(native_frame), sizeof(stack_value));
+  frame->max_stack = align_up(sizeof(native_frame_data), sizeof(stack_value));
   frame->method = method;
   get_native_frame_data(frame)->method_shape = descriptor;
   frame->is_async_suspended = false;
@@ -310,6 +299,9 @@ stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value 
   frame->program_counter = 0;
   frame->max_stack = code->max_stack;
   frame->num_locals = code->max_locals;
+
+  frame->code = code->code;
+  frame->insn_index_to_sd = method->code_analysis->insn_index_to_sd;
 
   // Not necessary, but possibly helpful when looking at debug dumps
   // memset(frame_stack(frame), 0x0, code->max_stack * sizeof(stack_value));
@@ -1438,7 +1430,7 @@ void dump_trace(vm_thread *thread) {
   // Walk frames and print the method/line number
   stack_frame *frame = thread->stack.top;
   while (frame) {
-    cp_method *method = get_frame_method(frame);
+    cp_method *method = frame->method;
     if (is_frame_native(frame)) {
       printf("  at %.*s.%.*s(Native Method)\n", fmt_slice(method->my_class->name), fmt_slice(method->name));
     } else {
@@ -1482,7 +1474,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
     // class with a matching name
     stack_frame *frame = thread->stack.top;
     while (frame) {
-      classdesc *d = get_frame_method(frame)->my_class;
+      classdesc *d = frame->method->my_class;
       if (utf8_equals_utf8(d->name, chars)) {
         class = d;
         break;
@@ -2171,29 +2163,6 @@ bool method_types_compatible(struct native_MethodType *provider_mt, struct nativ
     }
   }
   return true;
-}
-
-// Dump the contents of the method type to the specified stream.
-[[maybe_unused]] static void dump_method_type(FILE *stream, struct native_MethodType *type) {
-  fprintf(stream, "(");
-  for (int i = 0; i < ArrayLength(type->ptypes); ++i) {
-    classdesc *desc = unmirror_class(((obj_header **)ArrayData(type->ptypes))[i]);
-    fprintf(stream, "%.*s", fmt_slice(desc->name));
-    if (i + 1 < ArrayLength(type->ptypes))
-      fprintf(stream, ", ");
-  }
-  fprintf(stream, ") -> %.*s\n", fmt_slice(unmirror_class(type->rtype)->name));
-}
-
-[[maybe_unused]] static heap_string debug_dump_string(vm_thread *thread, obj_header *header) {
-  cp_method *toString = method_lookup(header->descriptor, STR("toString"), STR("()Ljava/lang/String;"), true, true);
-  stack_value result = call_interpreter_synchronous(thread, toString, (stack_value[]){{.obj = header}});
-
-  heap_string str;
-  if (read_string_to_utf8(thread, &str, result.obj)) {
-    UNREACHABLE();
-  }
-  return str;
 }
 
 void wrong_method_type_error([[maybe_unused]] vm_thread *thread, [[maybe_unused]] struct native_MethodType *provider_mt,

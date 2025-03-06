@@ -79,12 +79,6 @@ bool hash_table_contains(const string_hash_table *tbl, const char *key, int len)
 
 /**
  * Insert the key/value pair into the hash table and return the old value, if
- * any. Ownership of the key is passed into the function.
- */
-void *hash_table_insert_impl(string_hash_table *tbl, char *key, int len, void *value, bool copy_key);
-
-/**
- * Insert the key/value pair into the hash table and return the old value, if
  * any. If len = -1, the key is treated as a null-terminated string literal.
  */
 [[nodiscard]] void *hash_table_insert(string_hash_table *tbl, const char *key, int len, void *value);

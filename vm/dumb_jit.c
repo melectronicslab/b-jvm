@@ -192,7 +192,6 @@ static expression deopt() {
   dummy.method = ctx->method;
   s32 locals = dummy.num_locals = ctx->method->code->max_locals;
   s32 max_stack = dummy.max_stack = ctx->method->code->max_stack;
-  dummy.max_stack = max_stack;
   dummy.program_counter = ctx->curr_pc;
 
   // Tantamount to performing two i64 stores, beginning at the frame base

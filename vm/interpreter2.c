@@ -59,12 +59,12 @@
 #if 0
 #undef DEBUG_CHECK
 #define DEBUG_CHECK()                                                                                                  \
-  if (tick++ > 18000000) {                                                  \
+  if (1) {                                                  \
     SPILL_VOID                                                                                                         \
     printf("Frame method: %p\n", frame->method);                                                                       \
     cp_method *m = frame->method;                                                                                      \
-    printf("Calling method %.*s, descriptor %.*s, on class %.*s; sp = %ld; %d, %lld, %d\n", fmt_slice(m->name),              \
-           fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp - frame->stack, __LINE__, tick, pc);  \
+    printf("Calling method %.*s, descriptor %.*s, on class %.*s; sp = %ld; %d, %lld\n", fmt_slice(m->name),              \
+           fmt_slice(m->unparsed_descriptor), fmt_slice(m->my_class->name), sp - frame->stack, __LINE__, tick);  \
     heap_string s = insn_to_string(insn, pc);                                                                          \
     printf("Insn kind: %.*s\n", fmt_slice(s));                                                                         \
     free_heap_str(s);                                                                                                  \
@@ -84,13 +84,15 @@
 
 #if DO_TAILS
 #define sp sp_
-#define pc pc_
+#define pc (insns - frame->code)
+#define FUEL fuel_
 #define tos tos_
+#define insns_ insns
 
 // Arguments common to all TOS kinds.
 #define ARGS_BASE                                                                                                      \
   [[maybe_unused]] vm_thread *thread, [[maybe_unused]] stack_frame *frame, [[maybe_unused]] bytecode_insn *insns,      \
-      [[maybe_unused]] s32 pc_, [[maybe_unused]] stack_value *sp_
+      [[maybe_unused]] s32 fuel_, [[maybe_unused]] stack_value *sp_
 
 // Arguments wherein the special TOS is called "tos", and the other arguments are named arg_1, arg_2, arg_3, where
 // arg_1 is the integer argument, arg_2 is the float argument, and arg_3 is the double argument.
@@ -121,12 +123,20 @@
     MUSTTAIL return (expr);                                                                                            \
   } while (0);
 #else
+
+#ifdef __aarch64__
+#define INLINE_ASM asm volatile("" : "=r"(a_undef), "=w"(b_undef), "=w"(c_undef));
+#else
+#define INLINE_ASM asm volatile("" : "=r"(a_undef), "=x"(b_undef), "=x"(c_undef));
+#endif
+
+
 #define WITH_UNDEF(expr)                                                                                               \
   do {                                                                                                                 \
     s64 a_undef;                                                                                                       \
     float b_undef;                                                                                                     \
     double c_undef;                                                                                                    \
-    asm volatile("" : "=r"(a_undef), "=r"(b_undef), "=r"(c_undef));                                                    \
+    INLINE_ASM                                                    \
     MUSTTAIL return (expr);                                                                                            \
   } while (0);
 #endif
@@ -175,15 +185,15 @@
 #define ADVANCE_INT_(tos, insn_off)                                                                                    \
   int k = insns[insn_off].kind;                                                                                        \
   s64 __tos = (s64)(tos);                                                                                              \
-  WITH_UNDEF(jmp_table_int[k](thread, frame, insns + insn_off, pc + insn_off, sp, (s64)__tos, b_undef, c_undef));
+  WITH_UNDEF(jmp_table_int[k](thread, frame, insns + insn_off, FUEL, sp, (s64)__tos, b_undef, c_undef));
 #define ADVANCE_FLOAT_(tos, insn_off)                                                                                  \
   int k = insns[insn_off].kind;                                                                                        \
   float __tos = (tos);                                                                                                 \
-  WITH_UNDEF(jmp_table_float[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, __tos, c_undef));
+  WITH_UNDEF(jmp_table_float[k](thread, frame, insns + insn_off, FUEL, sp, a_undef, __tos, c_undef));
 #define ADVANCE_DOUBLE_(tos, insn_off)                                                                                 \
   int k = insns[insn_off].kind;                                                                                        \
   double __tos = (tos);                                                                                                \
-  WITH_UNDEF(jmp_table_double[k](thread, frame, insns + insn_off, pc + insn_off, sp, a_undef, b_undef, __tos));
+  WITH_UNDEF(jmp_table_double[k](thread, frame, insns + insn_off, FUEL, sp, a_undef, b_undef, __tos));
 
 #define JMP_INT(tos) ADVANCE_INT_(tos, 0)
 #define JMP_FLOAT(tos) ADVANCE_FLOAT_(tos, 0)
@@ -195,30 +205,32 @@
 
 // Jump to the instruction at pc, with nothing in the top of the stack. This does NOT imply that sp = 0, only that
 // all stack values are in memory (rather than in a register)
-#define JMP_VOID WITH_UNDEF(jmp_table_void[insns[0].kind](thread, frame, insns, pc, sp, a_undef, b_undef, c_undef));
+#define JMP_VOID WITH_UNDEF(jmp_table_void[insns[0].kind](thread, frame, insns, FUEL, sp, a_undef, b_undef, c_undef));
 // Jump to the instruction at pc + 1, with nothing in the top of the stack.
 #define NEXT_VOID                                                                                                      \
-  WITH_UNDEF(jmp_table_void[insns[1].kind](thread, frame, insns + 1, pc + 1, sp, a_undef, b_undef, c_undef));
+  WITH_UNDEF(jmp_table_void[insns[1].kind](thread, frame, insns + 1, FUEL, sp, a_undef, b_undef, c_undef));
 
 #define STACK_POLYMORPHIC_NEXT(tos)                                                                                    \
   stack_value __tos = (tos);                                                                                           \
-  MUSTTAIL return bytecode_tables[insns[1].tos_before][insns[1].kind](thread, frame, insns + 1, pc + 1, sp, __tos.l,       \
+  MUSTTAIL return bytecode_tables[insns[1].tos_before][insns[1].kind](thread, frame, insns + 1, FUEL, sp, __tos.l,       \
                                                                   __tos.f, __tos.d);
 
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
   stack_value __tos = (tos);                                                                                           \
-  MUSTTAIL return bytecode_tables[insns[0].tos_before][insns[0].kind](thread, frame, insns, pc, sp, __tos.l, __tos.f,     \
+  MUSTTAIL return bytecode_tables[insns[0].tos_before][insns[0].kind](thread, frame, insns, FUEL, sp, __tos.l, __tos.f,     \
                                                                    __tos.d);
 #endif // ifdef EMSCRIPTEN
 #else  // !DO_TAILS
 
 #define sp (*sp_)
-#define pc (*pc_)
+#define pc (insns - frame->code)
 #define tos (*tos_)
+#define insns (*insns_)
+#define FUEL (*fuel_)
 
 #define ARGS_BASE                                                                                                      \
-  [[maybe_unused]] vm_thread *thread, [[maybe_unused]] stack_frame *frame, [[maybe_unused]] bytecode_insn *insns,      \
-      [[maybe_unused]] s32 *pc_, [[maybe_unused]] stack_value **sp_
+  [[maybe_unused]] vm_thread *thread, [[maybe_unused]] stack_frame *frame, [[maybe_unused]] bytecode_insn **insns_,      \
+      [[maybe_unused]] s32 *fuel_, [[maybe_unused]] stack_value **sp_
 
 #define ARGS_VOID ARGS_BASE, [[maybe_unused]] s64 *arg_1, [[maybe_unused]] float *arg_2, [[maybe_unused]] double *arg_3
 #define ARGS_INT ARGS_BASE, [[maybe_unused]] s64 *tos_, [[maybe_unused]] float *arg_2, [[maybe_unused]] double *arg_3
@@ -233,8 +245,8 @@ static double *arg_3;
 
 #define JMP_VOID return 4 * insn->kind;
 #define NEXT_VOID                                                                                                      \
-  pc++;                                                                                                                \
-  return 4 * (insn + 1)->kind;
+  insns++; \
+  return 4 * insn->kind;
 
 #define SET_INT(tos) *(_Generic((*tos_), s64: true, default: false) ? (s64 *)tos_ : arg_1) = (s64)tos;
 #define SET_FLOAT(tos) *(_Generic((*tos_), float: true, default: false) ? (float *)tos_ : arg_2) = tos;
@@ -245,24 +257,24 @@ static double *arg_3;
   return 4 * insn->kind + TOS_INT;
 #define NEXT_INT(tos)                                                                                                  \
   SET_INT(tos);                                                                                                        \
-  pc++;                                                                                                                \
-  return 4 * (insn + 1)->kind + TOS_INT;
+  insns++; \
+  return 4 * insn->kind + TOS_INT;
 
 #define JMP_FLOAT(tos)                                                                                                 \
   SET_FLOAT(tos);                                                                                                      \
   return 4 * insn->kind + TOS_FLOAT;
 #define NEXT_FLOAT(tos)                                                                                                \
   SET_FLOAT(tos);                                                                                                      \
-  pc++;                                                                                                                \
-  return 4 * (insn + 1)->kind + TOS_FLOAT;
+  insns++; \
+  return 4 * insn->kind + TOS_FLOAT;
 
 #define JMP_DOUBLE(tos)                                                                                                \
   SET_DOUBLE(tos);                                                                                                     \
   return 4 * insn->kind + TOS_DOUBLE;
 #define NEXT_DOUBLE(tos)                                                                                               \
   SET_DOUBLE(tos);                                                                                                     \
-  pc++;                                                                                                                \
-  return 4 * (insn + 1)->kind + TOS_DOUBLE;
+  insns++; \
+  return 4 * insn->kind + TOS_DOUBLE;
 
 #define STACK_POLYMORPHIC_JMP(tos)                                                                                     \
   SET_FLOAT((tos).f);                                                                                                  \
@@ -273,10 +285,16 @@ static double *arg_3;
   SET_FLOAT((tos).f);                                                                                                  \
   SET_INT((tos).l);                                                                                                    \
   SET_DOUBLE((tos).d);                                                                                                 \
-  pc++;                                                                                                                \
-  return 4 * (insn + 1)->kind + (insn + 1)->tos_before;
+  insns++; \
+  return 4 * insn->kind + insn->tos_before;
 
 #endif // DO_TAILS
+
+#ifdef __clang__
+#define UNPREDICTABLE(x) x //__builtin_unpredictable(x)
+#else
+#define UNPREDICTABLE(x) x
+#endif
 
 // The current instruction
 #define insn (&insns[0])
@@ -326,17 +344,20 @@ void *__interpreter_intrinsic_double_table_base() { return jmp_table_double; }
 EMSCRIPTEN_KEEPALIVE
 int32_t __interpreter_intrinsic_max_insn() { return MAX_INSN_KIND; }
 
+// Same as SPILL(tos), but when no top-of-stack value is available
+#define SPILL_VOID \
+  frame->program_counter = pc; \
+  thread->fuel = (u32)FUEL;
+
 // Spill all the information currently in locals/registers to the frame (required at safepoints and when interrupting)
 #define SPILL(tos)                                                                                                     \
-  frame->program_counter = pc;                                                                                   \
+  SPILL_VOID                                                                                         \
   *(sp - 1) = _Generic((tos),                                                                                          \
       s64: (stack_value){.l = (s64)tos},                                                                               \
       float: (stack_value){.f = (float)tos},                                                                           \
       double: (stack_value){.d = (double)tos},                                                                         \
       obj_header *: (stack_value){.obj = (obj_header *)(uintptr_t)tos} /* shut up float branch */                      \
   );
-// Same as SPILL(tos), but when no top-of-stack value is available
-#define SPILL_VOID frame->program_counter = pc;
 
 // Reload the top of stack type -- used after an instruction which may have instigated a GC. RELOAD_VOID is not
 // required.
@@ -348,17 +369,17 @@ int32_t __interpreter_intrinsic_max_insn() { return MAX_INSN_KIND; }
 #define FORWARD_TO_NULLARY(which)                                                                                      \
   static s64 which##_impl_int(ARGS_INT) {                                                                              \
     *(sp - 1) = (stack_value){.l = tos};                                                                               \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc_, sp_, tos_, arg_2, arg_3);                             \
+    MUSTTAIL return which##_impl_void(thread, frame, insns_, fuel_, sp_, tos_, arg_2, arg_3);                             \
   }                                                                                                                    \
                                                                                                                        \
   static s64 which##_impl_float(ARGS_FLOAT) {                                                                          \
     *(sp - 1) = (stack_value){.f = tos};                                                                               \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc_, sp_, arg_1, tos_, arg_3);                             \
+    MUSTTAIL return which##_impl_void(thread, frame, insns_, fuel_, sp_, arg_1, tos_, arg_3);                             \
   }                                                                                                                    \
                                                                                                                        \
   static s64 which##_impl_double(ARGS_DOUBLE) {                                                                        \
     *(sp - 1) = (stack_value){.d = tos};                                                                               \
-    MUSTTAIL return which##_impl_void(thread, frame, insns, pc_, sp_, arg_1, arg_2, tos_);                             \
+    MUSTTAIL return which##_impl_void(thread, frame, insns_, fuel_, sp_, arg_1, arg_2, tos_);                             \
   }
 
 // Emit a null pointer exception when the given expression is null.
@@ -585,17 +606,16 @@ static continuation_frame *async_stack_peek(vm_thread *thread) {
 
 /** FUEL CHECKING */
 
-__attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
-  const int REFUEL = 50000;
+[[maybe_unused]]
+static bool refuel_check(vm_thread *thread) {
+  const int REFUEL = 200000;
   thread->fuel = REFUEL;
 
   if (thread->stack.synchronous_depth) // we're in a synchronous call, don't try to yield
     return false;
 
   // Get the current time in milliseconds since 1970
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  u64 now = tv.tv_sec * 1000000 + tv.tv_usec;
+  u64 now = get_unix_us();
   if (thread->yield_at_time != 0 && now >= thread->yield_at_time) {
     thread->stack.top->is_async_suspended = true;
 
@@ -612,22 +632,40 @@ __attribute__((noinline)) static bool refuel_check(vm_thread *thread) {
   return false;
 }
 
-static bool fuel_check_impl(vm_thread *thread) {
-  if (unlikely(thread->fuel-- == 0)) {
-    return refuel_check(thread);
+enum {
+  REQUESTING_FUEL_CHECK = 1
+};
+
+__attribute__((always_inline))
+[[maybe_unused]] static bool fuel_check_impl(int delta, vm_thread *thread, stack_frame *frame) {
+  if (unlikely((thread->fuel -= delta < 0) == 0)) {  // only count backward jumps
+    frame->is_async_suspended = true;
+    return true;
   }
   return false;
 }
 
 #define FUEL_CHECK                                                                                                     \
-  if (fuel_check_impl(thread)) {                                                                                       \
+  if (unlikely(FUEL-- == 0)) {                                                                                       \
     SPILL(tos);                                                                                                        \
-    return 0;                                                                                                          \
+    frame->is_async_suspended = true; \
+    return REQUESTING_FUEL_CHECK;                                                                                                          \
   }
 #define FUEL_CHECK_VOID                                                                                                \
-  if (fuel_check_impl(thread)) {                                                                                       \
-    SPILL_VOID return 0;                                                                                               \
+  if (unlikely(FUEL-- == 0)) {                                                                                       \
+    frame->is_async_suspended = true; \
+    SPILL_VOID return REQUESTING_FUEL_CHECK;                                                                              \
   }
+
+#define DO_FUEL_CHECKS 1
+
+#if !DO_FUEL_CHECKS
+#undef FUEL_CHECK
+#undef FUEL_CHECK_VOID
+
+#define FUEL_CHECK
+#define FUEL_CHECK_VOID
+#endif
 
 static void mark_insn_returns(bytecode_insn *inst) {
   inst->returns = inst->cp->methodref.descriptor->return_type.base_kind != TYPE_KIND_VOID;
@@ -1432,36 +1470,28 @@ static s64 dreturn_impl_double(ARGS_DOUBLE) {
 static s64 goto_impl_void(ARGS_VOID) {
   DEBUG_CHECK();
   FUEL_CHECK_VOID
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  insns += insn->delta;
   JMP_VOID
 }
 
 static s64 goto_impl_double(ARGS_DOUBLE) {
   DEBUG_CHECK();
   FUEL_CHECK
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  insns += insn->delta;
   JMP_DOUBLE(tos)
 }
 
 static s64 goto_impl_float(ARGS_FLOAT) {
   DEBUG_CHECK();
   FUEL_CHECK
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  insns += insn->delta;
   JMP_FLOAT(tos)
 }
 
 static s64 goto_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
-  s32 delta = (s32)insn->index - (s32)pc;
-  pc = insn->index;
-  insns += delta;
+  insns += insn->delta;
   JMP_INT(tos)
 }
 
@@ -1473,11 +1503,11 @@ static s64 tableswitch_impl_int(ARGS_INT) {
   s32 *offsets = insn->tableswitch->targets;
   if (index < low || index > high) {
     int delta = (s32)(insn->tableswitch->default_target - 1) - (s32)pc;
-    pc = insn->tableswitch->default_target - 1;
+
     insns += delta;
   } else {
     int delta = (offsets[index - low] - 1) - pc;
-    pc = offsets[index - low] - 1;
+
     insns += delta;
   }
   sp--;
@@ -1497,7 +1527,7 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
   for (int i = 0; i < n; i++) {
     if (keys[i] == key) {
       int delta = (offsets[i] - 1) - pc;
-      pc = offsets[i] - 1;
+
       insns += delta;
       sp--;
       STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -1505,7 +1535,7 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
   }
   // No key found, jump to default
   int delta = (default_target - 1) - pc;
-  pc = default_target - 1;
+
   insns += delta;
   sp--;
   STACK_POLYMORPHIC_NEXT(*(sp - 1));
@@ -1515,11 +1545,10 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
   static s64 which##_impl_int(ARGS_INT) {                                                                              \
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
-    s32 old_pc = pc;                                                                                                   \
-    pc = ((s32)tos op 0) ? ((s32)insn->index - 1) : (s32)pc;                                          \
-    insns += pc - (s32)old_pc;                                                                            \
+    s32 offset = UNPREDICTABLE((s32)tos op 0) ? insn->delta : 1;                                                       \
+    insns += offset; \
     sp--;                                                                                                              \
-    STACK_POLYMORPHIC_NEXT(*(sp - 1));                                                                                 \
+    STACK_POLYMORPHIC_JMP(*(sp - 1));                                                                                 \
   }
 
 MAKE_INT_BRANCH_AGAINST_0(ifeq, ==)
@@ -1536,11 +1565,10 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
     s64 a = (sp - 2)->i, b = (int)tos;                                                                                 \
-    s32 old_pc = pc;                                                                                                   \
-    pc = a op b ? ((s32)insn->index - 1) : pc;                                                                         \
-    insns += (s32)pc - (s32)old_pc;                                                                                    \
+    s32 offset = UNPREDICTABLE((s32)a op (s32)b) ? insn->delta : 1;                                                                 \
+    insns += offset;                                                                                                   \
     sp -= 2;                                                                                                           \
-    STACK_POLYMORPHIC_NEXT(*(sp - 1));                                                                                 \
+    STACK_POLYMORPHIC_JMP(*(sp - 1));                                                                                 \
   }
 
 MAKE_INT_BRANCH(if_icmpeq, ==)
@@ -1554,22 +1582,20 @@ static s64 if_acmpeq_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
   obj_header *a = (sp - 2)->obj, *b = (obj_header *)tos;
-  int old_pc = pc;
-  pc = a == b ? ((s32)insn->index - 1) : pc;
-  insns += pc - old_pc;
+  s32 offset = UNPREDICTABLE(a == b) ? insn->delta : 1;
+  insns += offset;
   sp -= 2;
-  STACK_POLYMORPHIC_NEXT(*(sp - 1))
+  STACK_POLYMORPHIC_JMP(*(sp - 1))
 }
 
 static s64 if_acmpne_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
   obj_header *a = (sp - 2)->obj, *b = (obj_header *)tos;
-  int old_pc = pc;
-  pc = a != b ? ((s32)insn->index - 1) : pc;
-  insns += pc - old_pc;
+  s32 offset = UNPREDICTABLE(a != b) ? insn->delta : 1;
+  insns += offset;
   sp -= 2;
-  STACK_POLYMORPHIC_NEXT(*(sp - 1))
+  STACK_POLYMORPHIC_JMP(*(sp - 1))
 }
 
 /** Monitors */
@@ -2151,6 +2177,7 @@ static s64 invokecallsite_impl_void(ARGS_VOID) {
   if (kind == MH_KIND_INVOKE_STATIC) {
     // Invoke name->vmtarget with arguments mh, args
     cp_method *invoke = name->vmtarget;
+    [[maybe_unused]] bool returns = form->result != -1;
 
     // State of the stack:
     // ... args
@@ -2175,7 +2202,9 @@ static s64 invokecallsite_impl_void(ARGS_VOID) {
 }
 FORWARD_TO_NULLARY(invokecallsite)
 
-static stack_value *get_local(stack_frame *frame, bytecode_insn *inst) { return frame_locals(frame) + inst->index; }
+static stack_value *get_local(stack_frame *frame, bytecode_insn *inst) {
+  return (stack_value *)frame - inst->delta;
+}
 
 /** Local variable accessors */
 static s64 iload_impl_void(ARGS_VOID) {
@@ -2610,7 +2639,7 @@ static s64 drem_impl_double(ARGS_DOUBLE) {
 }
 
 [[maybe_unused]] static s64 notco_fallback(ARGS_VOID, int index) {
-  return bytecode_tables[index & 0x3][index >> 2](thread, frame, insns, pc_, sp_, arg_1, arg_2, arg_3);
+  return bytecode_tables[index & 0x3][index >> 2](thread, frame, insns_, fuel_, sp_, arg_1, arg_2, arg_3);
 }
 
 [[maybe_unused]] static standard_debugger *get_active_debugger(vm *vm) { return vm->debugger; }
@@ -2624,14 +2653,16 @@ __attribute__((noinline)) void debugger_pause(vm_thread *thread, stack_frame *fr
 #if DO_TAILS
 static s64 entry_impl_void(ARGS_VOID) { STACK_POLYMORPHIC_JMP(*(sp - 1)) }
 #else
-static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn *code, s32 pc_, stack_value *sp_,
+__attribute__((always_inline))
+static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn *code, s32 fuel, stack_value *sp_,
                             unsigned handler_i, bool check_stepping) {
-  struct {
+  struct spill_s {
+    bytecode_insn *temp_code;
     stack_value *temp_sp_;
     int64_t temp_int_tos;
     double temp_double_tos;
     float temp_float_tos;
-    s32 temp_pc;
+    int temp_fuel;
   } spill;
 
   int64_t int_tos = (sp_ - 1)->l;
@@ -2642,7 +2673,7 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
     if (check_stepping && unlikely(thread->is_single_stepping)) {
       standard_debugger *dbg = get_active_debugger(thread->vm);
       DCHECK(dbg && "Debugger not active");
-      frame->program_counter = pc_;
+      frame->program_counter = code - frame->code;
       bool should_pause = dbg->should_pause(dbg, thread, frame);
       if (should_pause) {
         debugger_pause(thread, frame);
@@ -2661,7 +2692,7 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
 
 #define INL(insn__, tos__)                                                                                             \
   case 4 * insn_##insn__ + tos_##tos__:                                                                                \
-    handler_i = insn__##_impl_##tos__(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);       \
+    handler_i = insn__##_impl_##tos__(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);       \
     break;
 
 #include "interpreter2-notco.inc"
@@ -2670,37 +2701,31 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
     case 4 * insn_return + TOS_DOUBLE:
     case 4 * insn_return + TOS_FLOAT:
     case 4 * insn_return + TOS_VOID:
-      return return_impl_void(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+      return return_impl_void(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
 
     case 4 * insn_areturn + TOS_INT:
-      return areturn_impl_int(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+      return areturn_impl_int(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
     case 4 * insn_dreturn + TOS_DOUBLE:
-      return dreturn_impl_double(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+      return dreturn_impl_double(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
     case 4 * insn_freturn + TOS_FLOAT:
-      return freturn_impl_float(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+      return freturn_impl_float(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
     case 4 * insn_ireturn + TOS_INT:
-      return ireturn_impl_int(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+      return ireturn_impl_int(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
     case 4 * insn_lreturn + TOS_INT:
-      return lreturn_impl_int(thread, frame, code + pc_, &pc_, &sp_, &int_tos, &float_tos, &double_tos);
+      return lreturn_impl_int(thread, frame, &code, &fuel, &sp_, &int_tos, &float_tos, &double_tos);
 
-    case 0: // special value in case of exception or suspend (theoretically also nop_impl_void, but javac doesn't use
-            // that)
-
-      if (!(thread->current_exception || frame->is_async_suspended)) {
-#if DCHECKS_ENABLED
-        INIT_STACK_STRING(s, 1000);
-        s = bprintf(s, "Interpreter not in an exception or in a suspended state (insn kind: %d)", code[pc_].kind);
-        raise_vm_exception(thread, STR("java/lang/InternalError"), s);
-#endif
-      }
-      return 0;
+    case 0:
+    case 1: // special value in case of exception or suspend or invoke (theoretically also nop_impl_void, but javac
+            // doesn't use that)
+      return handler_i;
     default: {
       // outlined case
-      spill.temp_pc = pc_;
+      spill.temp_code = code;
       spill.temp_sp_ = sp_;
       spill.temp_double_tos = double_tos;
       spill.temp_float_tos = float_tos;
       spill.temp_int_tos = int_tos;
+      spill.temp_fuel = fuel;
 
 #ifdef EMSCRIPTEN
 #define notco_call __interpreter_intrinsic_notco_call_outlined
@@ -2708,10 +2733,10 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
 #define notco_call notco_fallback
 #endif
 
-      handler_i = notco_call(thread, frame, code + pc_, &spill.temp_pc, &spill.temp_sp_, &spill.temp_int_tos,
-                             &spill.temp_float_tos, &spill.temp_double_tos, (int)handler_i);
+      handler_i = notco_call(thread, frame, &spill.temp_code, &spill.temp_fuel /* all branches are inlined */,
+          &spill.temp_sp_, &spill.temp_int_tos, &spill.temp_float_tos, &spill.temp_double_tos, (int)handler_i);
 
-      pc_ = spill.temp_pc;
+      code = spill.temp_code;
       sp_ = spill.temp_sp_;
       int_tos = spill.temp_int_tos;
       float_tos = spill.temp_float_tos;
@@ -2724,15 +2749,15 @@ static s64 entry_notco_impl(vm_thread *thread, stack_frame *frame, bytecode_insn
 }
 
 [[maybe_unused]] __attribute__((noinline)) static s64 entry_notco_no_stepping(vm_thread *thread, stack_frame *frame,
-                                                                              bytecode_insn *code, s32 pc_,
+                                                                              bytecode_insn *code, s32 fuel_,
                                                                               stack_value *sp_, unsigned handler_i) {
-  return entry_notco_impl(thread, frame, code, pc_, sp_, handler_i, false);
+  return entry_notco_impl(thread, frame, code, fuel_, sp_, handler_i, false);
 }
 
 [[maybe_unused]] __attribute__((noinline)) static s64 entry_notco_with_stepping(vm_thread *thread, stack_frame *frame,
-                                                                                bytecode_insn *code, s32 pc_,
+                                                                                bytecode_insn *code, s32 fuel_,
                                                                                 stack_value *sp_, unsigned handler_i) {
-  return entry_notco_impl(thread, frame, code, pc_, sp_, handler_i, true);
+  return entry_notco_impl(thread, frame, code, fuel_, sp_, handler_i, true);
 }
 #endif
 
@@ -2865,28 +2890,104 @@ static void on_frame_end(vm_thread *thread, stack_frame *frame) {
   }
 }
 
+static bool do_entry_synchronization(future_t * fut, vm_thread * thread, stack_frame * frame, object synchronized_on) {
+  monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
+  monitor_acquire_t ctx =
+      frame->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
+  *fut = monitor_acquire(&ctx);
+  if (fut->status == FUTURE_NOT_READY) {
+    memcpy(store, &ctx, sizeof(ctx));
+    static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
+                  "context can not be stored within thread cache");
+    frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
+    frame->is_async_suspended = true;
+    return true;
+  }
+  frame->synchronized_state = SYNCHRONIZE_DONE;
+  frame->is_async_suspended = false;
+  return false;
+}
+
 static bool on_frame_start(future_t *fut, vm_thread *thread, stack_frame *frame) {
   object synchronized_on = get_sync_object(thread, frame);
   if (unlikely(synchronized_on) && frame->synchronized_state < SYNCHRONIZE_DONE) {
-    monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
-    monitor_acquire_t ctx =
-        frame->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
-    *fut = monitor_acquire(&ctx);
-    if (fut->status == FUTURE_NOT_READY) {
-      memcpy(store, &ctx, sizeof(ctx));
-      static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
-                    "context can not be stored within thread cache");
-      frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
-      frame->is_async_suspended = true;
-      return true;
-    }
-    frame->synchronized_state = SYNCHRONIZE_DONE;
-    frame->is_async_suspended = false;
+    return do_entry_synchronization(fut, thread, frame, synchronized_on);
   }
   return false;
 }
 
+#define HANDLE_EXCEPTION \
+exception_table_entry *handler = find_exception_handler(thread, current_frame, thread->current_exception->descriptor); \
+ \
+if (handler) { \
+  current_frame->program_counter = handler->handler_insn; \
+  current_frame->stack[0] = (stack_value){.obj = thread->current_exception}; \
+  thread->current_exception = nullptr; \
+ \
+  goto java_interpret_begin; \
+}
 
+// The interpreter handles a contiguous chain of Java method calls. An intervening native frame, or something that is
+// not a Java method call resulting from an invoke* (e.g., resolving a method ref, calling <clinit>) breaks the chain.
+// Entries into JITed code also break the chain.
+//
+// The CFG of the interpreter is as follows:
+//
+//  Entry
+//    ↓
+// ┌──┴──────────────────┐       ┌──────────────────────────────────────┐
+// │ Is async suspended? ├──yes─→┤ Resume at end of chain, no cont. pop │
+// └──┬──────────────────┘       └───┬──────────────────────────────────┘
+//    ↓ no (current = entry_frame)   │
+// ┌──┴──────────────────────────┐   ╎        ╔═══════════════════╗
+// │ Synchronize on entry_frame? ├─suspended─→║ cont: none needed ║
+// └──┬──────────────────────────┘   ╎        ╚═══════════════════╝
+//    └────┐ ok               ┌──────┘
+//      ┌──┴──────────────────┴─────┐       ┌─────────────────┐            ╔═══════════════════╗
+//  ┌──→│ current frame is native?  ├──yes─→┤cont. pop if sus.├─suspended─→║ cont: CONT_NATIVE ║
+//  │   └──┬────────────────────────┘       │ run native call │            ╚═══════════════════╝
+//  │      │                                └─────────────────┴──→─┐ ok
+//  │      ↓ no                                                    │
+//  │   ┌──┴──────────────────┐       ┌────────────────────────┐   ╎        ╔═════════════════╗
+//  │   │ Is async suspended? ├──yes─→┤ cont pop, async_resume ├─suspended─→║ cont: (various) ║
+//  │   └──┬──────────────────┘       └─┬──────────────────────┘   ╎        ╚═════════════════╝
+//  │      ↓ no               ┌──←──────┘ ok                       │
+//  │   ┌──┴──────────────────┴┐            ┌────────────────┐ no  │        ╔═════════════════╗
+//  │ ┌→│ Interpret Java frame ├─suspended─→│is refuel check?│─→─╌╌│╌╌──────║ cont: (various) ║
+//  │ │ └──┬──────────────────┬┘←─┐         └───────┬────────┘     │        ╚═════════════════╝
+//  │ │    │                  │   │                 ↓ yes          │
+//  │ │    │                  │   │     no  ┌───────┴────────┐ yes │        ╔════════════════════════╗
+//  │ │    │                  │   └────────←┤deadline passed?│─→─╌╌│╌╌──────║ cont: CONT_RESUME_INSN ║
+//  │ │    │                  │             └────────────────┘     │        ╚════════════════════════╝
+//  │ │    ↓ ok               └──←────┐ yes                        │
+//  │ │ ┌──┴────────────────┐       ┌─┴──────────────────┐         │
+//  │ │ │ Exception thrown? ├──yes─→│ Exception handler  │         │
+// y│ │ └──┬────────────────┘       │  in this frame?    │         │
+// e│ │    ↓ no                     └─┬───────────────┬──┘         │
+// s│ │ ┌──┴───────────────────┐      │               │            │
+//  └╌│←│Thread top != current?│      │               │            │
+//    │ └──┬───────────────────┘      │               │            │
+//    │    ↓ yes           ┌──←───────┘ no            ╎            │
+//    │ ┌──┴───────────────┴─┐←────────────────────────────────────┘
+//    │ │Unsynchronize frame,│                        ╎
+//    │ │     pop frame      │                        │
+//    │ └──┬─────────────────┘                        │
+//    │    ↓                                          │
+//    │ ┌──┴─────────────────┐      ╔═══════════════╗ │
+//    │ │frame = entry_frame?├─yes─→║ return result ║ │
+//    │ └──┬─────────────────┘      ╚═══════════════╝ │
+//    │    ↓ no                                       │
+// no │ ┌──┴─────────────────┐                        │
+//    └─┤ Pending exception? ├─yes────────────────→───┘
+//      └────────────────────┘
+//
+// When a invoke* bytecode is hit, it pushes a frame, changing the thread stack top to a new value which is no longer
+// equal to the current frame.
+//
+// Upon an async yield, both the entry frame and the last frame (which may be the same frame; but not intermediate
+// frames, if any) are marked as async-suspended. The "entry frame" is the first frame in the chain. The continuation
+// frame stores the last Java frame in the chain.
+//
 // NOLINTNEXTLINE(misc-no-recursion)
 stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_frame) {
   stack_frame *current_frame = entry_frame;
@@ -2894,7 +2995,8 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
     // Advance the interpreter to the frame in this chain of pure Java calls which was suspended
     current_frame = async_stack_peek(thread)->frame;
   } else {
-    if (on_frame_start(fut, thread, current_frame)) {
+    if (unlikely(on_frame_start(fut, thread, current_frame))) {
+      // Suspension during synchronization
       entry_frame->is_async_suspended = true;
       return (stack_value){0};
     }
@@ -2938,37 +3040,50 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
 
       /** Handle Java frames */
       s32 pc_ = current_frame->program_counter;
+      s32 fuel_ = (s32)thread->fuel;
       stack_value *sp_ = &current_frame->stack[stack_depth(current_frame)];
-      bytecode_insn *insns = current_frame->method->code->code;
-      [[maybe_unused]] unsigned handler_i = 4 * (insns + pc_)->kind + (insns + pc_)->tos_before;
+      bytecode_insn *insns_ = current_frame->code + pc_;
+      [[maybe_unused]] unsigned handler_i = 4 * insns_->kind + insns_->tos_before;
 
       if (unlikely(current_frame->is_async_suspended)) {
         entry_frame->is_async_suspended = false;
 #if DO_TAILS
-        result.l = async_resume_impl_void(thread, current_frame, insns + pc_, pc_, sp_, 0, 0, 0);
+        result.l = async_resume_impl_void(thread, current_frame, insns_, fuel_, sp_, 0, 0, 0);
 #else
         handler_i =
-            async_resume_impl_void(thread, current_frame, insns + pc_, &pc_, &sp_,
+            async_resume_impl_void(thread, current_frame, &insns_, &fuel_, &sp_,
               nullptr /* computed */, nullptr, nullptr);
 #endif
       }
 
 #if DO_TAILS
       else {
-        result.l = entry_impl_void(thread, current_frame, insns + pc_, pc_, sp_, 0, 0, 0);
+        result.l = entry_impl_void(thread, current_frame, insns_, fuel_, sp_, 0, 0, 0);
       }
 #else
       if (likely(!current_frame->is_async_suspended && !thread->current_exception)) {
         // In the no-tails case, sp, pc, etc. will have been set up appropriately for this call
         if (thread->is_single_stepping) {
-          result.l = entry_notco_with_stepping(thread, current_frame, insns, pc_, sp_, handler_i);
+          result.l = entry_notco_with_stepping(thread, current_frame, insns_, fuel_, sp_, handler_i);
         } else {
-          result.l = entry_notco_no_stepping(thread, current_frame, insns, pc_, sp_, handler_i);
+          result.l = entry_notco_no_stepping(thread, current_frame, insns_, fuel_, sp_, handler_i);
         }
       }
 #endif
 
       if (unlikely(current_frame->is_async_suspended)) {
+        // Could be a fuel check
+
+#if DO_FUEL_CHECKS
+        if (result.l == REQUESTING_FUEL_CHECK) {
+          bool preempting = refuel_check(thread);
+          if (!preempting) {
+            current_frame->is_async_suspended = false;
+            goto java_interpret_begin;
+          }
+        }
+#endif
+
         // reconstruct future to return
         void *wk = async_stack_peek(thread)->wakeup;
         entry_frame->is_async_suspended = true;
@@ -2989,15 +3104,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
 
       if (unlikely(thread->current_exception)) {
         find_exception_handler:
-        exception_table_entry *handler = find_exception_handler(thread, current_frame, thread->current_exception->descriptor);
-
-        if (handler) {
-          current_frame->program_counter = handler->handler_insn;
-          current_frame->stack[0] = (stack_value){.obj = thread->current_exception};
-          thread->current_exception = nullptr;
-
-          goto java_interpret_begin;
-        }
+        HANDLE_EXCEPTION
       }
     }
 
@@ -3013,7 +3120,7 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
     if (thread->current_exception) {
       goto find_exception_handler;
     }
-    current_frame->program_counter++;
+    current_frame->program_counter++;  // advance past the invoke* instruction
     goto java_interpret_begin;
   }
 
