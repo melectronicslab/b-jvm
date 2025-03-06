@@ -195,6 +195,8 @@ void *hash_table_delete(string_hash_table *tbl, const char *key, int len) {
   return ret_val;
 }
 
+void *hash_table_insert_impl(string_hash_table *tbl, char *key, int len, void *value, bool copy_key);
+
 // NOLINTNEXTLINE(misc-no-recursion)
 void hash_table_rehash(string_hash_table *tbl, size_t new_capacity) {
   string_hash_table new_table = make_hash_table(tbl->free, tbl->load_factor, new_capacity);

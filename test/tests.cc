@@ -457,10 +457,14 @@ As a char: A
   REQUIRE(result_many.stdin_ == ""); // BufferedReader tries to consume 8192 bytes, but we only provide 7
 }
 
-#define ALL_PERF_TESTS 0
-#if ALL_PERF_TESTS // these cases are slowwww
+TEST_CASE("[perf test] Taylor series") {
+  vm_options my_options = default_vm_options();
+  my_options.heap_size = 1 << 30; // 1 GB
+  auto result = run_test_case("test_files/autodiff/", false, "TaylorSeriesTest", "", {"1"}, my_options);
+//  REQUIRE(result.stdout_.find("Done!") != std::string::npos);
+}
 
-TEST_CASE("Sudoku solver") {
+TEST_CASE("[perf test] Sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver" << std::endl;
   std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
@@ -477,7 +481,7 @@ TEST_CASE("Sudoku solver") {
   std::cout << "That's " << (double)elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
-TEST_CASE("Scheduled sudoku solver") {
+TEST_CASE("[perf test] Scheduled sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver with a scheduler" << std::endl;
   std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
@@ -496,7 +500,7 @@ TEST_CASE("Scheduled sudoku solver") {
   std::cout << "That's " << (double)elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
-TEST_CASE("Scheduled worker sudoku solver") {
+TEST_CASE("[perf test] Scheduled worker sudoku solver") {
   int num_puzzles = 33761;
   std::cout << "Starting sudoku solver with a worker thread" << std::endl;
   std::cout << "Hang on tight, solving " << num_puzzles << " sudoku puzzles..." << std::endl;
@@ -515,7 +519,7 @@ TEST_CASE("Scheduled worker sudoku solver") {
   std::cout << "That's " << (double)elapsed / num_puzzles << " ms per puzzle!" << std::endl;
 }
 
-TEST_CASE("Autodiff") {
+TEST_CASE("[perf test] Autodiff") {
   int num_derivatives = 10000 * 10 + 3;
   std::cout << "Testing Autodiff" << std::endl;
   std::cout << "Hang on tight, automatically differentiating " << num_derivatives << " simple expressions..."
@@ -532,8 +536,6 @@ TEST_CASE("Autodiff") {
   std::cout << "Done in " << elapsed << " ms!" << std::endl;
   std::cout << "That's " << (double)elapsed / num_derivatives << " ms per evaluation!" << std::endl;
 }
-
-#endif
 
 TEST_CASE("Method parameters reflection API") {
   auto result = run_test_case("test_files/method_parameters/", true, "MethodParameters");

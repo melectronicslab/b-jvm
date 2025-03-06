@@ -263,6 +263,7 @@ interface WasmModule {
   _ProcessHandleImpl_waitForProcessExit0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Runtime_availableProcessors_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Runtime_maxMemory_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _Runtime_gc_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Shutdown_beforeHalt_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Shutdown_halt0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _String_intern_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
@@ -300,6 +301,7 @@ interface WasmModule {
   _MethodHandleNatives_staticFieldBase_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _MethodHandleNatives_staticFieldOffset_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _MethodHandleNatives_getMembers_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
+  _MethodHandleNatives_clearCallSiteContext_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Finalizer_isFinalizationEnabled_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reference_refersTo0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Reference_clear0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;

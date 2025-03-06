@@ -177,7 +177,7 @@ typedef int (*poll_available_bytes)(void *param); // returns the number of bytes
 #define CARD_BYTES 4096
 
 typedef struct stack_frame stack_frame;
-typedef struct native_frame native_frame;
+typedef struct native_frame_data native_frame_data;
 
 // Continue execution of a thread.
 //
@@ -449,11 +449,11 @@ typedef struct {
 } vm_options;
 
 // Extra data associated with a native method. Placed just ahead of the corresponding stack frame.
-typedef struct native_frame {
+typedef struct native_frame_data {
   // Descriptor on the instruction itself. Unequal to method->descriptor only
   // in the situation of signature-polymorphic methods.
   const method_descriptor *method_shape;
-} native_frame;
+} native_frame_data;
 
 typedef enum : u8 { FRAME_KIND_INTERPRETER, FRAME_KIND_NATIVE, FRAME_KIND_COMPILED } frame_kind;
 
@@ -492,9 +492,12 @@ typedef struct stack_frame {
   };
 
   u16 program_counter; // In instruction indices. Unused by native frames.
-  // 0 for native frames. End of the stack frame is at frame_base + sizeof(stack_frame) + max_stack * sizeof(stack_value)
+  // 0 for native frames. End of the stack frame is at frame_base + sizeof(stack_frame) + current_stack * sizeof(stack_value)
   u16 max_stack;
   u16 num_locals;
+
+  bytecode_insn *code;   // pointer to the code segment (hoisted from method for efficiency). Interpreter only
+  u16 *insn_index_to_sd; // stack depth at each instruction (hoisted from method for efficiency). Interpreter only
 
   stack_value stack[];  // interpreter frame or compiled frame. In the native case a "native_frame" lives here
 } stack_frame;
@@ -503,15 +506,18 @@ typedef struct stack_frame {
 // counter.
 u16 stack_depth(const stack_frame *frame);
 
-static inline bool is_frame_native(const stack_frame *frame) { return frame->kind == FRAME_KIND_NATIVE; }
-static inline bool is_interpreter_frame(const stack_frame *frame) { return frame->kind == FRAME_KIND_INTERPRETER; }
+static inline bool is_frame_native(const stack_frame *frame) {
+  return frame->kind == FRAME_KIND_NATIVE;
+}
+static inline bool is_interpreter_frame(const stack_frame *frame) {
+  return frame->kind == FRAME_KIND_INTERPRETER;
+}
 value *get_native_args(const stack_frame *frame); // same as locals, just called args for native
 
 stack_value *frame_stack(stack_frame *frame);
 stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_frame);
 
-native_frame *get_native_frame_data(stack_frame *frame);
-cp_method *get_frame_method(stack_frame *frame);
+native_frame_data *get_native_frame_data(stack_frame *frame);
 
 EMSCRIPTEN_KEEPALIVE
 obj_header *deref_js_handle(vm *vm, int index);
