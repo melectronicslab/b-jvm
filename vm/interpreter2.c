@@ -1509,7 +1509,7 @@ static s64 lookupswitch_impl_int(ARGS_INT) {
   static s64 which##_impl_int(ARGS_INT) {                                                                              \
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
-    s32 offset = UNPREDICTABLE((s32)tos op 0) ? insn->delta : sizeof(bytecode_insn);                                   \
+    s32 offset = UNPREDICTABLE((s32)tos op 0) ? insn->delta : (s32)sizeof(bytecode_insn);                                   \
     insns = (bytecode_insn*)((char*)insns + offset);                                                                   \
     sp--;                                                                                                              \
     STACK_POLYMORPHIC_JMP(*(sp - 1));                                                                                  \
@@ -1529,7 +1529,7 @@ MAKE_INT_BRANCH_AGAINST_0(ifnonnull, !=)
     DEBUG_CHECK();                                                                                                     \
     FUEL_CHECK                                                                                                         \
     s64 a = (sp - 2)->i, b = (int)tos;                                                                                 \
-    s32 offset = UNPREDICTABLE((s32)a op(s32) b) ? insn->delta : sizeof(bytecode_insn);                                \
+    s32 offset = UNPREDICTABLE((s32)a op(s32) b) ? insn->delta : (s32)sizeof(bytecode_insn);                                \
     insns = (bytecode_insn*)((char*)insns + offset);                                                                   \
     sp -= 2;                                                                                                           \
     STACK_POLYMORPHIC_JMP(*(sp - 1));                                                                                  \
@@ -1546,7 +1546,7 @@ static s64 if_acmpeq_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
   obj_header *a = (sp - 2)->obj, *b = (obj_header *)tos;
-  s32 offset = UNPREDICTABLE(a == b) ? insn->delta : sizeof(bytecode_insn);
+  s32 offset = UNPREDICTABLE(a == b) ? insn->delta : (s32)sizeof(bytecode_insn);
   insns = (bytecode_insn*)((char*)insns + offset);
   sp -= 2;
   STACK_POLYMORPHIC_JMP(*(sp - 1))
@@ -1556,7 +1556,7 @@ static s64 if_acmpne_impl_int(ARGS_INT) {
   DEBUG_CHECK();
   FUEL_CHECK
   obj_header *a = (sp - 2)->obj, *b = (obj_header *)tos;
-  s32 offset = UNPREDICTABLE(a != b) ? insn->delta : sizeof(bytecode_insn);
+  s32 offset = UNPREDICTABLE(a != b) ? insn->delta : (s32)sizeof(bytecode_insn);
   insns = (bytecode_insn*)((char*)insns + offset);
   sp -= 2;
   STACK_POLYMORPHIC_JMP(*(sp - 1))
