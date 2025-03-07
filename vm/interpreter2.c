@@ -517,7 +517,8 @@ typedef enum {
   CONT_INVOKESIGPOLY,
   CONT_MONITOR_ENTER,
   CONT_RESUME_INSN,
-  CONT_DEBUGGER_PAUSE
+  CONT_DEBUGGER_PAUSE,
+  CONT_SYNCHRONIZED_METHOD
 } continuation_point;
 
 typedef struct {
@@ -2846,23 +2847,30 @@ object get_sync_object(vm_thread *thread, stack_frame *frame) {
 }
 
 static bool do_entry_synchronization(future_t *fut, vm_thread *thread, stack_frame *frame, object synchronized_on) {
-  monitor_acquire_t *store = (monitor_acquire_t *)thread->stack.synchronize_acquire_continuation;
-  monitor_acquire_t ctx = frame->synchronized_state ? *store : (monitor_acquire_t){.args = {thread, synchronized_on}};
+  bool already_tried = frame->synchronized_state == SYNCHRONIZE_IN_PROGRESS;
+
+  monitor_acquire_t ctx = (monitor_acquire_t){.args = {thread, synchronized_on}};
+  if (unlikely(already_tried)) {  // resume the previous call to monitor acuiqre
+    continuation_frame *cont = async_stack_pop(thread);
+    DCHECK(cont->pnt == CONT_SYNCHRONIZED_METHOD);
+    ctx = cont->ctx.acquire_monitor;
+  }
+
   *fut = monitor_acquire(&ctx);
   if (fut->status == FUTURE_NOT_READY) {
-    memcpy(store, &ctx, sizeof(ctx));
-    static_assert(sizeof(ctx) <= sizeof(thread->stack.synchronize_acquire_continuation),
-                  "context can not be stored within thread cache");
+    continuation_frame *cont = async_stack_push(thread);
+    *cont = (continuation_frame){.pnt = CONT_SYNCHRONIZED_METHOD, .frame = frame, .ctx.acquire_monitor = ctx};
     frame->synchronized_state = SYNCHRONIZE_IN_PROGRESS;
     frame->is_async_suspended = true;
     return true;
   }
+
   frame->synchronized_state = SYNCHRONIZE_DONE;
   frame->is_async_suspended = false;
   return false;
 }
 
-// Executed whenever a frame begins.
+// Executed whenever a frame begins or is resumed. (i.e., it can be called multiple times)
 static bool on_frame_start(future_t *fut, vm_thread *thread, stack_frame *frame) {
   object synchronized_on = get_sync_object(thread, frame);
   if (unlikely(synchronized_on) && frame->synchronized_state < SYNCHRONIZE_DONE) {
@@ -2952,16 +2960,16 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
   if (unlikely(entry_frame->is_async_suspended)) {
     // Advance the interpreter to the frame in this chain of pure Java calls which was suspended
     current_frame = async_stack_peek(thread)->frame;
-  } else {
+  }
+
+  stack_value result;
+  while (true) {
     if (unlikely(on_frame_start(fut, thread, current_frame))) {
       // Suspension during synchronization
       entry_frame->is_async_suspended = true;
       return (stack_value){0};
     }
-  }
 
-  stack_value result;
-  while (true) {
     if (is_frame_native(current_frame)) {
       /** Handle native calls */
       run_native_t ctx;
@@ -3050,10 +3058,6 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
         DCHECK(result.l == 0);
         DCHECK(!current_frame->is_async_suspended);
         current_frame = thread->stack.top;
-        if (on_frame_start(fut, thread, current_frame)) {
-          entry_frame->is_async_suspended = true;
-          return (stack_value){0};
-        }
         continue;
       }
 
