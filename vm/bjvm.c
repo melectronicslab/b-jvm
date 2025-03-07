@@ -296,7 +296,7 @@ stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value 
   stack_frame *restrict frame = (stack_frame *)(args + code->max_locals);
   if ((uintptr_t)((char*)frame + code->frame_size) > (uintptr_t)thread->stack.frame_buffer_end) {
     // allows the above check to become a tail call
-    [[clang::musttail]] return raise_exception_object_tramp(thread, method, args, argc);
+    return raise_exception_object_tramp(thread, method, args, argc);
   }
 
   // See linkage.c for how the template frame is generated
