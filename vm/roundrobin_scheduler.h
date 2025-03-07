@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define DO_PEDANTIC_YIELDING 0
+#define DO_PEDANTIC_YIELDING 1
 #if DO_PEDANTIC_YIELDING
 #define DEBUG_PEDANTIC_YIELD(WAKEUP_INFO)                                                                              \
   do {                                                                                                                 \

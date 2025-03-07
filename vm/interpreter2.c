@@ -517,7 +517,8 @@ typedef enum {
   CONT_INVOKESIGPOLY,
   CONT_MONITOR_ENTER,
   CONT_RESUME_INSN,
-  CONT_DEBUGGER_PAUSE
+  CONT_DEBUGGER_PAUSE,
+  CONT_SYNCHRONIZED_METHOD
 } continuation_point;
 
 typedef struct {
@@ -2951,13 +2952,21 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
   stack_frame *current_frame = entry_frame;
   if (unlikely(entry_frame->is_async_suspended)) {
     // Advance the interpreter to the frame in this chain of pure Java calls which was suspended
-    current_frame = async_stack_peek(thread)->frame;
-  } else {
-    if (unlikely(on_frame_start(fut, thread, current_frame))) {
-      // Suspension during synchronization
-      entry_frame->is_async_suspended = true;
-      return (stack_value){0};
+    continuation_frame *peek = async_stack_peek(thread);
+    current_frame = peek->frame;
+    if (peek->pnt == CONT_SYNCHRONIZED_METHOD) {
+      async_stack_pop(thread);
     }
+  }
+
+  if (unlikely(on_frame_start(fut, thread, current_frame))) {
+    // Suspension during synchronization
+    if (current_frame != entry_frame) {
+      entry_frame->is_async_suspended = true;
+      continuation_frame *cont = async_stack_push(thread);
+      *cont = (continuation_frame){.pnt = CONT_SYNCHRONIZED_METHOD, .frame = current_frame};
+    }
+    return (stack_value){0};
   }
 
   stack_value result;
@@ -3052,6 +3061,8 @@ stack_value interpret_2(future_t *fut, vm_thread *thread, stack_frame *entry_fra
         current_frame = thread->stack.top;
         if (on_frame_start(fut, thread, current_frame)) {
           entry_frame->is_async_suspended = true;
+          continuation_frame *cont = async_stack_push(thread);
+          *cont = (continuation_frame){.pnt = CONT_SYNCHRONIZED_METHOD, .frame = current_frame};
           return (stack_value){0};
         }
         continue;
