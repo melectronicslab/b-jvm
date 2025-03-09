@@ -660,9 +660,29 @@ void free_classfile(classdesc cf);
 
 void free_vm(vm *vm);
 
+// Synchronous variant of lookup_class specifically for the bootstrap class loader.
 classdesc *bootstrap_lookup_class(vm_thread *thread, slice name);
+
+// Load (but do not link or initialize) the class with the given binary name (using slashes, not dots).
+DECLARE_ASYNC(
+  classdesc *, lookup_class,
+  locals(
+    slice chars;
+  ),
+  arguments(
+    vm_thread *thread;
+    slice name;
+    classloader *cl;
+    bool raise_class_not_found;
+  ),
+  invoked_methods(
+    invoked_method(call_interpreter)
+  )
+);
+
 classdesc *bootstrap_lookup_class_impl(vm_thread *thread, slice name, bool raise_class_not_found);
 classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *classfile_bytes, size_t classfile_len);
+classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes, size_t classfile_len);
 cp_method *method_lookup(classdesc *classdesc, const slice name, const slice descriptor, bool superclasses,
                          bool superinterfaces);
 
@@ -689,6 +709,7 @@ void dump_frame(FILE *stream, const stack_frame *frame);
 struct native_Class *primitive_class_mirror(vm_thread *thread, type_kind prim_kind);
 
 int resolve_class(vm_thread *thread, cp_class_info *info);
+int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *loader);
 
 #include "natives_gen.h"
 

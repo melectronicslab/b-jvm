@@ -21,7 +21,7 @@ typedef struct classloader {
   bool is_bootstrap;
   // parent class loader (null iff this is the bootstrap class loader)
   struct classloader *parent;
-  // set of loaded classes
+  // set of classes which this loader has defined
   string_hash_table loaded;
   // set of classes for which this loader is an initiating loader
   string_hash_table initiating;
