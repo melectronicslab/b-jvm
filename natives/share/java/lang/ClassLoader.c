@@ -9,7 +9,7 @@ DECLARE_NATIVE("java/lang", ClassLoader, findLoadedClass0, "(Ljava/lang/String;)
   for (u32 i = 0; i < read.len; ++i)
     if (read.chars[i] == '.')
       read.chars[i] = '/';
-  classdesc *cd = hash_table_lookup(&thread->vm->classes, read.chars, read.len);
+  classdesc *cd = hash_table_lookup(&thread->vm->bootstrap_classloader->loaded, read.chars, read.len);
   free_heap_str(read);
   return (stack_value){.obj = cd ? (void *)get_class_mirror(thread, cd) : nullptr};
 

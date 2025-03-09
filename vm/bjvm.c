@@ -424,7 +424,8 @@ void register_native(vm *vm, slice class, const slice method_name, const slice m
   }
   class = hslc(heap_class);
 
-  classdesc *cd = hash_table_lookup(&vm->classes, class.chars, (int)class.len);
+  // TODO look across all classloaders
+  classdesc *cd = hash_table_lookup(&vm->bootstrap_classloader->loaded, class.chars, (int)class.len);
   CHECK(cd == nullptr, "%.*s: Natives must be registered before class is loaded", fmt_slice(class));
 
   native_entries *existing = hash_table_lookup(&vm->natives, class.chars, (int)class.len);
@@ -567,14 +568,14 @@ vm_options default_vm_options() {
   return options;
 }
 
-static void free_classdesc(void *cd) {
+void free_classdesc(void *cd) {
   classdesc *classdesc = cd;
   classdesc->dtor(classdesc);
 }
 
 void existing_classes_are_javabase(vm *vm, module *module) {
   // Iterate through all bootstrap-loaded classes and assign them to the module
-  hash_table_iterator it = hash_table_get_iterator(&vm->classes);
+  hash_table_iterator it = hash_table_get_iterator(&vm->bootstrap_classloader->loaded);
   char *key;
   size_t key_len;
   classdesc *classdesc;
@@ -616,14 +617,14 @@ vm *create_vm(const vm_options options) {
   INIT_STACK_STRING(classpath, 1000);
   classpath = bprintf(classpath, "%.*s:%.*s", fmt_slice(options.runtime_classpath), fmt_slice(options.classpath));
 
-  char *error = init_classpath(&vm->classpath, classpath);
+  char *error = init_classpath(&vm->bootstrap_classpath, classpath);
+  vm->application_classpath = make_heap_str_from(options.classpath);
   if (error) {
     fprintf(stderr, "Classpath error: %s", error);
     free(error);
     return nullptr;
   }
 
-  vm->classes = make_hash_table(free_classdesc, 0.75, 16);
   vm->inchoate_classes = make_hash_table(nullptr, 0.75, 16);
   vm->natives = make_hash_table(free_native_entries, 0.75, 16);
   vm->interned_strings = make_hash_table(nullptr, 0.75, 16);
@@ -635,6 +636,12 @@ vm *create_vm(const vm_options options) {
   vm->heap_used = 0;
   vm->heap_capacity = options.heap_size;
   vm->true_heap_capacity = vm->heap_capacity + OOM_SLOP_BYTES;
+  vm->active_classloaders = nullptr;
+
+  vm->bootstrap_classloader = calloc(1, sizeof(classloader));
+  classloader_init(vm, vm->bootstrap_classloader, nullptr);
+  arrput(vm->active_classloaders, vm->bootstrap_classloader);
+
   vm->active_threads = nullptr;
 
   vm->read_stdin = options.read_stdin;
@@ -689,7 +696,6 @@ void free_zstreams(vm *vm) {
 }
 
 void free_vm(vm *vm) {
-  free_hash_table(vm->classes);
   free_hash_table(vm->natives);
   free_hash_table(vm->inchoate_classes);
   free_hash_table(vm->interned_strings);
@@ -702,8 +708,13 @@ void free_vm(vm *vm) {
     }
   }
 
-  free_classpath(&vm->classpath);
+  for (int i = 0; i < arrlen(vm->active_classloaders); ++i) {
+    classloader_uninit(vm->active_classloaders[i]);
+    free(vm->active_classloaders[i]);
+  }
 
+  free_classpath(&vm->bootstrap_classpath);
+  free_heap_str(vm->application_classpath);
   free(cached_classes(vm));
   // Free all threads, iterate backwards because they remove themselves
   for (int i = arrlen(vm->active_threads) - 1; i >= 0; --i) {
@@ -1424,7 +1435,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
     class->module = get_unnamed_module(thread);
   }
 
-  (void)hash_table_insert(&vm->classes, chars.chars, (int)chars.len, class);
+  (void)hash_table_insert(&vm->bootstrap_classloader->loaded, chars.chars, (int)chars.len, class);
   return class;
 
 error_2:
@@ -1474,7 +1485,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
       chars = subslice_to(chars, 1, chars.len - 1);
       DCHECK(chars.len >= 1);
     }
-    class = hash_table_lookup(&vm->classes, chars.chars, (int)chars.len);
+    class = hash_table_lookup(&vm->bootstrap_classloader->loaded, chars.chars, (int)chars.len);
   }
 
   if (!class) {
@@ -1503,7 +1514,7 @@ classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool
 
     u8 *bytes;
     size_t cf_len;
-    int read_status = lookup_classpath(&vm->classpath, filename, &bytes, &cf_len);
+    int read_status = lookup_classpath(&vm->bootstrap_classpath, filename, &bytes, &cf_len);
     if (read_status) {
       if (!raise_class_not_found) {
         return nullptr;

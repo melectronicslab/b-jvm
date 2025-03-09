@@ -865,6 +865,7 @@ typedef struct classdesc {
 
   module *module;
   void *classloader; // parent classloader (static-ish lifetime)
+  void *defining_loader;  // class loader which defined this class
   void *linkage_error;
 
   vtable vtable;

@@ -11,6 +11,7 @@
 
 #include "classfile.h"
 #include "classpath.h"
+#include "classloader.h"
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
@@ -334,16 +335,18 @@ typedef struct {
 
 struct cached_classdescs;
 typedef struct vm {
-  // Map class name (e.g. "java/lang/String") to classdesc*
-  string_hash_table classes;
   // Classes currently under creation -- used to detect circularity
   string_hash_table inchoate_classes;
 
   // Native methods in javah form
   string_hash_table natives;
 
-  // Bootstrap class loader will look for classes here
-  classpath classpath;
+  // Bootstrap class loader will look for classes here. The application classpath (i.e., the stuff after -cp) is
+  // the "application classpath" below.
+  classpath bootstrap_classpath;
+
+  // Passed to the system classloader via the system property "java.class.path"
+  heap_string application_classpath;
 
   // Main thread group
   obj_header *main_thread_group;
@@ -367,8 +370,12 @@ typedef struct vm {
   // Passed to write_stdout/write_stderr/read_stdin
   void *stdio_override_param;
 
-  // Primitive classes (int.class, etc.)
+  // Primitive classes (int.class, etc.) -- always loaded by the bootstrap class loader
   classdesc *primitive_classes[9];
+
+  // All active class loaders, including the bootstrap class loader
+  classloader **active_classloaders;
+  classloader *bootstrap_classloader;
 
   vm_thread **active_threads;
 
@@ -627,6 +634,7 @@ struct native_MethodType *resolve_method_type(vm_thread *thread, method_descript
 void pop_frame(vm_thread *thr, [[maybe_unused]] const stack_frame *reference);
 
 vm_options default_vm_options();
+void free_classdesc(void *cd);
 
 vm *create_vm(vm_options options);
 
