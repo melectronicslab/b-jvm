@@ -1541,9 +1541,9 @@ DEFINE_ASYNC(lookup_class) {
       AWAIT(call_interpreter, thread, method, method_args);
       object class_mirror = get_async_result(call_interpreter).obj;
       // TODO deal with adversarial loadClass implementations
-      CHECK(class_mirror != nullptr);
-      class = unmirror_class(class_mirror);
-      DCHECK(class);
+      if (thread->current_exception == nullptr) {
+        class = class_mirror ? unmirror_class(class_mirror) : nullptr;
+      }
     }
 
     (void)hash_table_delete(&thread->vm->inchoate_classes, classname.chars, (int)classname.len);
@@ -1572,9 +1572,9 @@ DEFINE_ASYNC(lookup_class) {
       abort();
     }
 
-    if (thread->current_exception == nullptr) {
-      exchange_slashes_and_dots(&classname, classname);
-      // ClassNotFoundException: com.google.DontBeEvil
+    if (thread->current_exception == nullptr) { // let any existing exception propagate
+      // ClassNotFoundException: com/google/DontBeEvil
+      // (For some reason the JVM uses slashes instead of dots)
       raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), classname);
     }
     ASYNC_RETURN(nullptr);

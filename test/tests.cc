@@ -898,6 +898,22 @@ null
 )");
 }
 
+TEST_CASE("Bad classloaders") {
+  auto result = run_test_case("test_files/bad_classloaders", true, "BadClassloaders");
+  REQUIRE(result.stdout_ == R"(Message:java/lang/String
+Caught security exception
+)");
+}
+
+TEST_CASE("Match exception") {
+  auto result = run_test_case("test_files/match_exception", true, "MatchException");
+  REQUIRE(result.stdout_ == R"(java.lang.MatchException
+java.lang.NullPointerException
+A
+B
+)");
+}
+
 #if 0
 TEST_CASE("Print useful trampolines") { print_method_sigs(); }
 #endif

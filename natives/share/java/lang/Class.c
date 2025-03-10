@@ -124,8 +124,8 @@ DECLARE_NATIVE("java/lang", Class, getSuperclass, "()Ljava/lang/Class;") {
 }
 
 DECLARE_NATIVE("java/lang", Class, getClassLoader, "()Ljava/lang/ClassLoader;") {
-  printf("TODO: getClassLoader\n");
-  return value_null(); // TODO
+  classloader *cl = unmirror_class(obj->obj)->classloader;
+  return (stack_value) { .obj = cl->java_mirror };
 }
 
 DECLARE_NATIVE("java/lang", Class, getPermittedSubclasses0, "()[Ljava/lang/Class;") {
@@ -152,33 +152,39 @@ DECLARE_NATIVE("java/lang", Class, forName0,
   obj_header *name_obj = args[0].handle->obj;
   obj_header *classloader = args[2].handle->obj;
 
+  bool should_initialize = args[1].i;
+
   heap_string name_str = AsHeapString(name_obj, oom);
-  for (size_t i = 0; i < name_str.len; ++i) {
-    name_str.chars[i] = name_str.chars[i] == '.' ? '/' : name_str.chars[i];
-  }
+  exchange_slashes_and_dots((slice*) &name_str, hslc(name_str));
   classdesc *c;
-  if (!classloader) {
+  if (classloader == nullptr) {
     c = bootstrap_lookup_class(thread, hslc(name_str));
+    if (thread->current_exception) { // e.g. ClassNotFoundException
+      return value_null();
+    }
   } else {
     // Invoke findClass on the classloader
     cp_method *find_class = method_lookup(classloader->descriptor, STR("loadClass"),
                                           STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
     CHECK(find_class);
-    stack_value args[2] = {{.obj = classloader}, {.obj = name_obj}};
-    stack_value result = call_interpreter_synchronous(thread, find_class, args);
-    if (!result.obj) {
+    stack_value loadClass_args[2] = {{.obj = classloader}, {.obj = name_obj}};
+    stack_value result = call_interpreter_synchronous(thread, find_class, loadClass_args);
+    if (thread->current_exception) {
+      // loadClass threw an exception, propagate it
+      return value_null();
+    }
+    if (result.obj == nullptr) {
+      // Raise ClassNotFoundException. Name uses slashes for some reason
+      raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), hslc(name_str));
       return value_null();
     }
     c = unmirror_class(result.obj);
   }
 
-  if (thread->current_exception)
-    return value_null();
-
   int error = link_class(thread, c);
   CHECK(!error);
 
-  if (c && args[1].i) {
+  if (c && should_initialize) {
     initialize_class_t ctx = {.args = {thread, c}};
     thread->stack.synchronous_depth++;
     future_t f = initialize_class(&ctx);
