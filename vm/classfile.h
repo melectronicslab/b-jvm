@@ -260,6 +260,9 @@ typedef enum : u8 {
 
   /** intrinsics understood by the interpreter */
   insn_pow,  // (FF)F, (DD)D
+  insn_sin,  // (F)F, (D)D
+  insn_cos,  // (F)F, (D)D
+  insn_tan,  // (F)F, (D)D
   insn_sqrt  // (F)F, (D)D
 } insn_code_kind;
 
