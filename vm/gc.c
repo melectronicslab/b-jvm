@@ -189,6 +189,7 @@ static void major_gc_enumerate_gc_roots(gc_ctx *ctx) {
   size_t key_len;
   for (int classloader_i = 0; classloader_i < arrlen(vm->active_classloaders); classloader_i++) {
     classloader *cl = vm->active_classloaders[classloader_i];
+    PUSH_ROOT(&cl->java_mirror);
     it = hash_table_get_iterator(&cl->loaded);
     classdesc *desc;
     while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&desc)) {
