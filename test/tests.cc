@@ -774,7 +774,7 @@ Test
 )");
 }
 
-TEST_CASE("The algorithms") {
+TEST_CASE("[perf test] The algorithms") {
   auto result = run_test_case("test_files/share/assertj-core-3.26.3.jar:"
                               "test_files/share/commons-collections4-4.4.jar:"
                               "test_files/share/commons-lang3-3.17.0.jar:"

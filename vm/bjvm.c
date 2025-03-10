@@ -113,8 +113,6 @@ monitor_data *allocate_monitor_for(vm_thread *thread, obj_header *obj) {
   return data;
 }
 
-#define MAX_CF_NAME_LENGTH 1000
-
 u16 stack_depth(const stack_frame *frame) {
   DCHECK(!is_frame_native(frame), "Can't get stack depth of native frame");
   DCHECK(frame->method, "Can't get stack depth of fake frame");
@@ -459,8 +457,6 @@ int read_string_to_utf8(vm_thread *thread, heap_string *result, obj_header *obj)
   return 0;
 }
 
-int primitive_order(type_kind kind) { return kind; }
-
 classdesc *load_class_of_field_descriptor(vm_thread *thread, slice name) {
   const char *chars = name.chars;
   if (chars[0] == 'L') {
@@ -487,7 +483,7 @@ classdesc *load_class_of_field_descriptor(vm_thread *thread, slice name) {
 
 classdesc *primitive_classdesc(vm_thread *thread, type_kind prim_kind) {
   vm *vm = thread->vm;
-  return vm->primitive_classes[primitive_order(prim_kind)];
+  return vm->primitive_classes[prim_kind];
 }
 
 struct native_Class *primitive_class_mirror(vm_thread *thread, type_kind prim_kind) {
@@ -514,16 +510,15 @@ void vm_init_primitive_classes(vm_thread *thread) {
   if (vm->primitive_classes[0])
     return; // already initialized
 
-  vm->primitive_classes[primitive_order(TYPE_KIND_BOOLEAN)] =
-      make_primitive_classdesc(TYPE_KIND_BOOLEAN, STR("boolean"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_BYTE)] = make_primitive_classdesc(TYPE_KIND_BYTE, STR("byte"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_CHAR)] = make_primitive_classdesc(TYPE_KIND_CHAR, STR("char"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_SHORT)] = make_primitive_classdesc(TYPE_KIND_SHORT, STR("short"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_INT)] = make_primitive_classdesc(TYPE_KIND_INT, STR("int"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_LONG)] = make_primitive_classdesc(TYPE_KIND_LONG, STR("long"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_FLOAT)] = make_primitive_classdesc(TYPE_KIND_FLOAT, STR("float"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_DOUBLE)] = make_primitive_classdesc(TYPE_KIND_DOUBLE, STR("double"));
-  vm->primitive_classes[primitive_order(TYPE_KIND_VOID)] = make_primitive_classdesc(TYPE_KIND_VOID, STR("void"));
+  vm->primitive_classes[TYPE_KIND_BOOLEAN] = make_primitive_classdesc(TYPE_KIND_BOOLEAN, STR("boolean"));
+  vm->primitive_classes[TYPE_KIND_BYTE] = make_primitive_classdesc(TYPE_KIND_BYTE, STR("byte"));
+  vm->primitive_classes[TYPE_KIND_CHAR] = make_primitive_classdesc(TYPE_KIND_CHAR, STR("char"));
+  vm->primitive_classes[TYPE_KIND_SHORT] = make_primitive_classdesc(TYPE_KIND_SHORT, STR("short"));
+  vm->primitive_classes[TYPE_KIND_INT] = make_primitive_classdesc(TYPE_KIND_INT, STR("int"));
+  vm->primitive_classes[TYPE_KIND_LONG] = make_primitive_classdesc(TYPE_KIND_LONG, STR("long"));
+  vm->primitive_classes[TYPE_KIND_FLOAT] = make_primitive_classdesc(TYPE_KIND_FLOAT, STR("float"));
+  vm->primitive_classes[TYPE_KIND_DOUBLE] = make_primitive_classdesc(TYPE_KIND_DOUBLE, STR("double"));
+  vm->primitive_classes[TYPE_KIND_VOID] = make_primitive_classdesc(TYPE_KIND_VOID, STR("void"));
 
   // Set up mirrors
   for (int i = 0; i < 9; ++i) {

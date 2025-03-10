@@ -816,6 +816,8 @@ typedef struct {
 
 typedef struct classloader classloader;
 
+#define MAX_CF_NAME_LENGTH 1000
+
 // Class descriptor. (Roughly equivalent to HotSpot's InstanceKlass)
 typedef struct classdesc {
   classdesc_kind kind;
