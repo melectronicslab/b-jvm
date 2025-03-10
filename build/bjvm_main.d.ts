@@ -220,7 +220,6 @@ interface WasmModule {
   _Class_getDeclaredFields0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Class_getDeclaredConstructors0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Class_getDeclaredMethods0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
-  _Class_getDeclaredClasses0_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Class_isPrimitive_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Class_isInterface_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
   _Class_isAssignableFrom_cb0(_0: number, _1: number, _2: number, _3: number, _4: number): void;
