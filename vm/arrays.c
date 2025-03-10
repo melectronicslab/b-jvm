@@ -10,16 +10,6 @@
 #include <linkage.h>
 #include <stdlib.h>
 
-// Symmetry with make_array_classdesc
-static void free_array_classdesc(classdesc *classdesc) {
-  DCHECK(classdesc->kind == CD_KIND_ORDINARY_ARRAY || classdesc->kind == CD_KIND_PRIMITIVE_ARRAY);
-  if (classdesc->array_type)
-    free_array_classdesc(classdesc->array_type);
-  free_function_tables(classdesc);
-  arena_uninit(&classdesc->arena);
-  free(classdesc);
-}
-
 // Called for both primitive and object arrays
 static void fill_array_classdesc(vm_thread *thread, classdesc *base) {
   base->access_flags = ACCESS_PUBLIC | ACCESS_FINAL | ACCESS_ABSTRACT;
@@ -101,7 +91,6 @@ classdesc *get_or_create_array_classdesc(vm_thread *thread, classdesc *classdesc
     } else {
       classdesc->array_type = ordinary_array_classdesc(thread, classdesc);
     }
-    classdesc->array_type->dtor = free_array_classdesc;
     classdesc->array_type->classloader = classdesc->classloader;
   }
   return classdesc->array_type;

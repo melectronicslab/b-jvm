@@ -379,15 +379,6 @@ void pop_frame(vm_thread *thr, [[maybe_unused]] const stack_frame *reference) {
   thr->stack.top = frame->prev;
 }
 
-// Symmetry with make_primitive_classdesc
-static void free_primitive_classdesc(classdesc *classdesc) {
-  DCHECK(classdesc->kind == CD_KIND_PRIMITIVE);
-  if (classdesc->array_type)
-    classdesc->array_type->dtor(classdesc->array_type);
-  arena_uninit(&classdesc->arena);
-  free(classdesc);
-}
-
 typedef struct {
   slice name;
   slice descriptor;
@@ -513,7 +504,6 @@ classdesc *make_primitive_classdesc(type_kind kind, const slice name) {
   desc->access_flags = ACCESS_PUBLIC | ACCESS_FINAL | ACCESS_ABSTRACT;
   desc->array_type = nullptr;
   desc->primitive_component = kind;
-  desc->dtor = free_primitive_classdesc;
   desc->classloader = nullptr;
 
   return desc;
@@ -568,9 +558,14 @@ vm_options default_vm_options() {
   return options;
 }
 
-void free_classdesc(void *cd) {
-  classdesc *classdesc = cd;
-  classdesc->dtor(classdesc);
+// NOLINTNEXTLINE(misc-no-recursion)
+void free_classdesc(void *cd_) {
+  classdesc *cd = cd_;
+  if (cd->array_type)
+    free_classdesc(cd->array_type);
+  free_classfile(*cd);
+  free_function_tables(cd);
+  free(cd);
 }
 
 void existing_classes_are_javabase(vm *vm, module *module) {
@@ -705,7 +700,7 @@ void free_vm(vm *vm) {
 
   if (vm->primitive_classes[0]) {
     for (int i = 0; i < 9; ++i) {
-      vm->primitive_classes[i]->dtor(vm->primitive_classes[i]);
+      free_classdesc(vm->primitive_classes[i]);
     }
   }
 
@@ -1318,14 +1313,6 @@ DEFINE_ASYNC(resolve_method_handle) {
   ASYNC_END_VOID();
 }
 
-static void free_ordinary_classdesc(classdesc *cd) {
-  if (cd->array_type)
-    cd->array_type->dtor(cd->array_type);
-  free_classfile(*cd);
-  free_function_tables(cd);
-  free(cd);
-}
-
 void class_circularity_error(vm_thread *thread, const classdesc *class) {
   INIT_STACK_STRING(message, 1000);
   message = bprintf(message, "While loading class %.*s", fmt_slice(class->name));
@@ -1441,7 +1428,6 @@ classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u
   }
 
   class->kind = CD_KIND_ORDINARY;
-  class->dtor = free_ordinary_classdesc;
   class->classloader = cl;
   class->self->classdesc = class;
 

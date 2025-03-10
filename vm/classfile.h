@@ -866,8 +866,6 @@ typedef struct classdesc {
   bytecode_insn **indy_insns;    // used to get GC roots to CallSites
   bytecode_insn **sigpoly_insns; // used to get GC roots to MethodTypes
 
-  void (*dtor)(classdesc *); // apoptosis
-
   module *module;
   classloader *classloader; // class loader which defined this class
   void *linkage_error;
