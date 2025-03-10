@@ -811,6 +811,8 @@ typedef struct {
   u16 slots_unscaled[]; // must be scaled up by 4
 } reference_list;
 
+typedef struct classloader classloader;
+
 // Class descriptor. (Roughly equivalent to HotSpot's InstanceKlass)
 typedef struct classdesc {
   classdesc_kind kind;
@@ -864,7 +866,7 @@ typedef struct classdesc {
   void (*dtor)(classdesc *); // apoptosis
 
   module *module;
-  void *classloader; // parent classloader (static-ish lifetime)
+  classloader *classloader; // class loader which defined this class
   void *linkage_error;
 
   vtable vtable;

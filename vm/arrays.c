@@ -93,7 +93,7 @@ static classdesc *ordinary_array_classdesc(vm_thread *thread, classdesc *compone
 
 // Fill in the array_type class descriptor, corresponding to an array of the
 // given component. For example, J -> [J, [[J -> [[[J, Object -> [Object
-classdesc *make_array_classdesc(vm_thread *thread, classdesc *classdesc) {
+classdesc *get_or_create_array_classdesc(vm_thread *thread, classdesc *classdesc) {
   DCHECK(classdesc);
   if (!classdesc->array_type) {
     if (classdesc->kind == CD_KIND_PRIMITIVE) {
@@ -111,7 +111,7 @@ static obj_header *create_1d_primitive_array(vm_thread *thread, type_kind array_
   DCHECK(count >= 0);
 
   int size = sizeof_type_kind(array_type);
-  classdesc *array_desc = make_array_classdesc(thread, primitive_classdesc(thread, array_type));
+  classdesc *array_desc = get_or_create_array_classdesc(thread, primitive_classdesc(thread, array_type));
   DCHECK(array_desc);
 
   size_t allocation_size = kArrayDataOffset + count * size;
@@ -130,7 +130,7 @@ static obj_header *create_1d_object_array(vm_thread *thread, classdesc *cd, int 
   DCHECK(cd);
   DCHECK(count >= 0);
 
-  classdesc *array_desc = make_array_classdesc(thread, cd);
+  classdesc *array_desc = get_or_create_array_classdesc(thread, cd);
   DCHECK(array_desc);
 
   size_t allocation_size = kArrayDataOffset + count * sizeof(object);
@@ -176,12 +176,12 @@ oom:
 }
 
 obj_header *CreateObjectArray1D(vm_thread *thread, classdesc *inner_type, int size) {
-  auto desc = make_array_classdesc(thread, inner_type);
+  auto desc = get_or_create_array_classdesc(thread, inner_type);
   return CreateArray(thread, desc, &size, 1);
 }
 
 obj_header *CreatePrimitiveArray1D(vm_thread *thread, type_kind inner_type, int count) {
-  auto desc = make_array_classdesc(thread, primitive_classdesc(thread, inner_type));
+  auto desc = get_or_create_array_classdesc(thread, primitive_classdesc(thread, inner_type));
   return CreateArray(thread, desc, &count, 1);
 }
 

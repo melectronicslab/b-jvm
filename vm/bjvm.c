@@ -424,7 +424,8 @@ void register_native(vm *vm, slice class, const slice method_name, const slice m
   }
   class = hslc(heap_class);
 
-  classdesc *cd = hash_table_lookup(&vm->classes, class.chars, (int)class.len);
+  // TODO look across all classloaders
+  classdesc *cd = hash_table_lookup(&vm->bootstrap_classloader->loaded, class.chars, (int)class.len);
   CHECK(cd == nullptr, "%.*s: Natives must be registered before class is loaded", fmt_slice(class));
 
   native_entries *existing = hash_table_lookup(&vm->natives, class.chars, (int)class.len);
@@ -567,25 +568,26 @@ vm_options default_vm_options() {
   return options;
 }
 
-static void free_classdesc(void *cd) {
+void free_classdesc(void *cd) {
   classdesc *classdesc = cd;
   classdesc->dtor(classdesc);
 }
 
 void existing_classes_are_javabase(vm *vm, module *module) {
   // Iterate through all bootstrap-loaded classes and assign them to the module
-  hash_table_iterator it = hash_table_get_iterator(&vm->classes);
-  char *key;
-  size_t key_len;
-  classdesc *classdesc;
-  while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&classdesc)) {
-    if (classdesc->classloader == nullptr) {
+  for (int classloader_i = 0; classloader_i < arrlen(vm->active_classloaders); ++classloader_i) {
+    classloader *cl = vm->active_classloaders[classloader_i];
+    hash_table_iterator it = hash_table_get_iterator(&cl->initiating);
+    char *key;
+    size_t key_len;
+    classdesc *classdesc;
+    while (hash_table_iterator_has_next(it, &key, &key_len, (void **)&classdesc)) {
       classdesc->module = module;
       if (classdesc->mirror) {
         classdesc->mirror->module = module->reflection_object;
       }
+      hash_table_iterator_next(&it);
     }
-    hash_table_iterator_next(&it);
   }
 }
 
@@ -616,14 +618,14 @@ vm *create_vm(const vm_options options) {
   INIT_STACK_STRING(classpath, 1000);
   classpath = bprintf(classpath, "%.*s:%.*s", fmt_slice(options.runtime_classpath), fmt_slice(options.classpath));
 
-  char *error = init_classpath(&vm->classpath, classpath);
+  char *error = init_classpath(&vm->bootstrap_classpath, classpath);
+  vm->application_classpath = make_heap_str_from(options.classpath);
   if (error) {
     fprintf(stderr, "Classpath error: %s", error);
     free(error);
     return nullptr;
   }
 
-  vm->classes = make_hash_table(free_classdesc, 0.75, 16);
   vm->inchoate_classes = make_hash_table(nullptr, 0.75, 16);
   vm->natives = make_hash_table(free_native_entries, 0.75, 16);
   vm->interned_strings = make_hash_table(nullptr, 0.75, 16);
@@ -635,6 +637,12 @@ vm *create_vm(const vm_options options) {
   vm->heap_used = 0;
   vm->heap_capacity = options.heap_size;
   vm->true_heap_capacity = vm->heap_capacity + OOM_SLOP_BYTES;
+  vm->active_classloaders = nullptr;
+
+  vm->bootstrap_classloader = calloc(1, sizeof(classloader));
+  classloader_init(vm, vm->bootstrap_classloader, nullptr);
+  arrput(vm->active_classloaders, vm->bootstrap_classloader);
+
   vm->active_threads = nullptr;
 
   vm->read_stdin = options.read_stdin;
@@ -689,7 +697,6 @@ void free_zstreams(vm *vm) {
 }
 
 void free_vm(vm *vm) {
-  free_hash_table(vm->classes);
   free_hash_table(vm->natives);
   free_hash_table(vm->inchoate_classes);
   free_hash_table(vm->interned_strings);
@@ -702,8 +709,14 @@ void free_vm(vm *vm) {
     }
   }
 
-  free_classpath(&vm->classpath);
+  for (int i = 0; i < arrlen(vm->active_classloaders); ++i) {
+    classloader_uninit(vm->active_classloaders[i]);
+    free(vm->active_classloaders[i]);
+  }
+  arrfree(vm->active_classloaders);
 
+  free_classpath(&vm->bootstrap_classpath);
+  free_heap_str(vm->application_classpath);
   free(cached_classes(vm));
   // Free all threads, iterate backwards because they remove themselves
   for (int i = arrlen(vm->active_threads) - 1; i >= 0; --i) {
@@ -1191,6 +1204,7 @@ static handle *make_member_name(vm_thread *thread, cp_field_info *field) {
   call_interpreter_synchronous(thread, make_member,
                                (stack_value[]){{.obj = (void *)member->obj}, {.obj = (void *)f->reflection_field}});
 
+  printf("Module: %p\n", ((struct native_Class*)((struct native_MemberName*) member->obj)->clazz)->module);
   return member;
 }
 
@@ -1341,6 +1355,18 @@ bool is_builtin_class(slice chars) {
 
 // NOLINTNEXTLINE(misc-no-recursion)
 classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *classfile_bytes, size_t classfile_len) {
+  return define_class(thread, thread->vm->bootstrap_classloader, chars, classfile_bytes, classfile_len);
+}
+
+classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes, size_t classfile_len) {
+  // "First, the Java Virtual Machine determines whether it has already recorded that L is an initiating loader of a
+  // class or interface denoted by N. If so, this creation attempt is invalid and loading throws a LinkageError."
+  classdesc *existing = hash_table_lookup(&cl->initiating, chars.chars, (int)chars.len);
+  if (existing) {
+    raise_vm_exception(thread, STR("java/lang/LinkageError"), STR("Class already defined"));
+    return nullptr;
+  }
+
   vm *vm = thread->vm;
   classdesc *class = calloc(1, sizeof(classdesc));
 
@@ -1365,7 +1391,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
       goto error_2;
     }
 
-    int status = resolve_class(thread, class->super_class);
+    int status = resolve_class_impl(thread, class->super_class, cl);
     if (status) {
       // Check whether the current exception is a ClassNotFoundException and
       // if so, raise a NoClassDefFoundError TODO
@@ -1382,7 +1408,7 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
       goto error_2;
     }
 
-    int status = resolve_class(thread, class->interfaces[i]);
+    int status = resolve_class_impl(thread, class->interfaces[i], cl);
     if (status) {
       // Check whether the current exception is a ClassNotFoundException and
       // if so, raise a NoClassDefFoundError TODO
@@ -1416,7 +1442,8 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
 
   class->kind = CD_KIND_ORDINARY;
   class->dtor = free_ordinary_classdesc;
-  class->classloader = nullptr;
+  class->classloader = cl;
+  class->self->classdesc = class;
 
   if (is_builtin_class(chars)) {
     class->module = get_module(vm, STR("java.base"));
@@ -1424,7 +1451,11 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
     class->module = get_unnamed_module(thread);
   }
 
-  (void)hash_table_insert(&vm->classes, chars.chars, (int)chars.len, class);
+  // "The Java Virtual Machine marks C as having L as its defining class loader and records that L is an initiating
+  // loader of C."
+  (void)hash_table_insert(&cl->loaded, chars.chars, (int)chars.len, class);
+  (void)hash_table_insert(&cl->initiating, chars.chars, (int)chars.len, class);
+
   return class;
 
 error_2:
@@ -1437,105 +1468,156 @@ error_1:
 void dump_trace(vm_thread *thread) {
   // Walk frames and print the method/line number
   stack_frame *frame = thread->stack.top;
+  fprintf(stderr, "Start trace:\n");
   while (frame) {
     cp_method *method = frame->method;
     if (is_frame_native(frame)) {
-      printf("  at %.*s.%.*s(Native Method)\n", fmt_slice(method->my_class->name), fmt_slice(method->name));
+      fprintf(stderr, "  at %.*s.%.*s(Native Method)\n", fmt_slice(method->my_class->name), fmt_slice(method->name));
     } else {
       int line = get_line_number(method->code, frame->program_counter);
-      printf("  at %.*s.%.*s(%.*s:%d)\n", fmt_slice(method->my_class->name), fmt_slice(method->name),
+      fprintf(stderr, "  at %.*s.%.*s(%.*s:%d)\n", fmt_slice(method->my_class->name), fmt_slice(method->name),
              fmt_slice(method->my_class->source_file ? method->my_class->source_file->name : null_str()), line);
     }
     frame = frame->prev;
   }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
-classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool raise_class_not_found) {
-  vm *vm = thread->vm;
+static classdesc *bootstrap_load_class_from_fs(vm_thread *thread, slice chars) {
+  // e.g. "java/lang/Object.class"
+  const slice cf_ending = STR(".class");
+  INIT_STACK_STRING(filename, MAX_CF_NAME_LENGTH + 6);
+  memcpy(filename.chars, chars.chars, chars.len);
+  memcpy(filename.chars + chars.len, cf_ending.chars, cf_ending.len);
+  filename.len = chars.len + cf_ending.len;
+
+  u8 *bytes;
+  size_t cf_len;
+  int read_status = lookup_classpath(&thread->vm->bootstrap_classpath, filename, &bytes, &cf_len);
+  if (read_status) {
+    return nullptr;
+  }
+
+  classdesc *class = define_bootstrap_class(thread, chars, bytes, cf_len);
+  free(bytes);
+  return class;
+}
+
+DEFINE_ASYNC(lookup_class) {
+#define cl (self->args.cl)
+#define thread (self->args.thread)
+#define classname (self->chars)
 
   int dimensions = 0;
-  slice chars = name;
-  while (chars.len > 0 && *chars.chars == '[') // munch '[' at beginning
-    dimensions++, chars = subslice(chars, 1);
+  classname = self->args.name;
+  while (classname.len > 0 && *classname.chars == '[') // munch '[' at beginning
+    dimensions++, classname = subslice(classname, 1);
 
   DCHECK(dimensions < 255);
-  DCHECK(chars.len > 0);
+  DCHECK(classname.len > 0);
 
   classdesc *class;
-
-  if (dimensions && *chars.chars != 'L') {
+  if (dimensions && *classname.chars != 'L') {
     // Primitive array type
-    type_kind kind = read_type_kind_char(*chars.chars);
+    type_kind kind = read_type_kind_char(*classname.chars);
     class = primitive_classdesc(thread, kind);
   } else {
     if (dimensions) {
       // Strip L and ;
-      chars = subslice_to(chars, 1, chars.len - 1);
-      DCHECK(chars.len >= 1);
+      DCHECK(classname.len >= 2);
+      classname = subslice_to(classname, 1, classname.len - 1);
     }
-    class = hash_table_lookup(&vm->classes, chars.chars, (int)chars.len);
+    // "First, the Java Virtual Machine determines whether L has already been recorded as an initiating loader of a
+    // class or interface denoted by N. If so, this class or interface is C, and no class creation is necessary."
+    class = hash_table_lookup(&cl->initiating, classname.chars, (int)classname.len);
   }
 
-  if (!class) {
-    // Maybe it's an anonymous class, read the thread stack looking for a
-    // class with a matching name
-    stack_frame *frame = thread->stack.top;
-    while (frame) {
-      classdesc *d = frame->method->my_class;
-      if (utf8_equals_utf8(d->name, chars)) {
-        class = d;
-        break;
+  if (class == nullptr) {
+    // Could not find the existing class, so we need to call loadClass on the user-defined class loader, or perform
+    // a bootstrap class loader lookup.
+
+    // Detect class circularity errors
+    (void)hash_table_insert(&thread->vm->inchoate_classes, classname.chars, (int)classname.len, (void *)1);
+
+    if (cl->is_bootstrap) {
+      class = bootstrap_load_class_from_fs(thread, classname);
+    } else {
+      // (user-defined class loader) "Otherwise, the Java Virtual Machine invokes loadClass(N) on L."
+      // (This is why this method has to be async.)
+
+      object java_mirror = cl->java_mirror;
+      DCHECK(java_mirror);
+      cp_method *method = method_lookup(java_mirror->descriptor, STR("loadClass"),
+        STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
+
+      INIT_STACK_STRING(with_dots, 1024);
+      exchange_slashes_and_dots(&with_dots, classname);
+      object string = MakeJStringFromModifiedUTF8(thread, with_dots, false);
+      if (string == nullptr) {
+        ASYNC_RETURN(nullptr); // oom
       }
-      frame = frame->prev;
+
+      stack_value method_args[2] = { {.obj = cl->java_mirror }, {.obj = string} };
+      AWAIT(call_interpreter, thread, method, method_args);
+      object class_mirror = get_async_result(call_interpreter).obj;
+      // TODO deal with adversarial loadClass implementations
+      CHECK(class_mirror != nullptr);
+      class = unmirror_class(class_mirror);
+      DCHECK(class);
+    }
+
+    (void)hash_table_delete(&thread->vm->inchoate_classes, classname.chars, (int)classname.len);
+
+    if (class) {
+      // Mark all class loaders in the chain from the current class loader to the defining class loader as being
+      // an initiating loader of C
+      classloader *curr = cl;
+      DCHECK(class->classloader);
+      while (curr != class->classloader) {
+        classdesc *existing = hash_table_insert(&curr->initiating, classname.chars, (int)classname.len, class);
+        DCHECK(existing == nullptr || existing == class);
+        curr = curr->parent;
+      }
     }
   }
 
-  if (!class) {
-    (void)hash_table_insert(&vm->inchoate_classes, chars.chars, (int)chars.len, (void *)1);
+  if (class == nullptr) {  // Still couldn't load the class
+    if (!self->args.raise_class_not_found) {
+      ASYNC_RETURN(nullptr);
+    }
 
-    // e.g. "java/lang/Object.class"
-    const slice cf_ending = STR(".class");
-    INIT_STACK_STRING(filename, MAX_CF_NAME_LENGTH + 6);
-    memcpy(filename.chars, chars.chars, chars.len);
-    memcpy(filename.chars + chars.len, cf_ending.chars, cf_ending.len);
-    filename.len = chars.len + cf_ending.len;
+    // If the file is ClassNotFoundException, abort to avoid stack overflow
+    if (utf8_equals(classname, "java/lang/ClassNotFoundException")) {
+      printf("Could not find class %.*s\n", fmt_slice(classname));
+      abort();
+    }
 
-    u8 *bytes;
-    size_t cf_len;
-    int read_status = lookup_classpath(&vm->classpath, filename, &bytes, &cf_len);
-    if (read_status) {
-      if (!raise_class_not_found) {
-        return nullptr;
-      }
-
-      // If the file is ClassNotFoundException, abort to avoid stack overflow
-      if (utf8_equals(chars, "java/lang/ClassNotFoundException")) {
-        printf("Could not find class %.*s\n", fmt_slice(chars));
-        abort();
-      }
-
-      exchange_slashes_and_dots(&chars, chars);
+    if (thread->current_exception == nullptr) {
+      exchange_slashes_and_dots(&classname, classname);
       // ClassNotFoundException: com.google.DontBeEvil
-      raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), chars);
-      return nullptr;
+      raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), classname);
     }
-
-    class = define_bootstrap_class(thread, chars, bytes, cf_len);
-    free(bytes);
-    (void)hash_table_delete(&vm->inchoate_classes, chars.chars, (int)chars.len);
-    if (!class)
-      return nullptr;
+    ASYNC_RETURN(nullptr);
   }
 
   // Derive nth dimension
   classdesc *result = class;
   for (int i = 1; i <= dimensions; ++i) {
-    make_array_classdesc(thread, result);
+    get_or_create_array_classdesc(thread, result);
     result = result->array_type;
   }
 
-  return result;
+#undef thread
+#undef cl
+#undef classname
+  ASYNC_END(result);
+}
+
+// NOLINTNEXTLINE(misc-no-recursion)
+classdesc *bootstrap_lookup_class_impl(vm_thread *thread, const slice name, bool raise_class_not_found) {
+  lookup_class_t init = {.args = {thread, name, thread->vm->bootstrap_classloader, raise_class_not_found}};
+  future_t result = lookup_class(&init);
+  CHECK(result.status == FUTURE_READY);
+  return (classdesc *)init._result;
 }
 
 // name = "java/lang/Object" or "[[J" or "[Ljava/lang/String;"
@@ -1847,12 +1929,7 @@ DEFINE_ASYNC(call_interpreter) {
   ASYNC_END(result);
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
-int resolve_class(vm_thread *thread, cp_class_info *info) {
-  // TODO use current class loader
-  // TODO synchronize on some object, probably the class which this info is a
-  // part of
-
+int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *loader) {
   if (info->classdesc)
     return 0; // already succeeded
   if (info->vm_object) {
@@ -1861,64 +1938,17 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
     return -1;
   }
 
-  // TODO this is rly dumb, review the spec for how this should really work (need to ignore stack frames associated
-  // with reflection n' shit)
-  object loader = nullptr;
-  stack_frame *frame = thread->stack.top;
-  while (frame) {
-    void *candidate = frame->method->my_class->classloader;
-    if (candidate) {
-      loader = candidate;
-      break;
-    }
-    frame = frame->prev;
-  }
-
-  classdesc *existing = bootstrap_lookup_class_impl(thread, info->name, false);
-  if (existing) {
-    info->classdesc = existing;
-    return 0;
-  }
-
-  thread->current_exception = nullptr;
   if (loader) {
-    // First strip off [ so that we only call loadClass on the component type
-    int i = 0;
-    while (info->name.chars[i] == '[') {
-      ++i;
-    }
-    int dims = i;
-    // Then strip the L and ; if it's an array type
-    if (dims && info->name.chars[dims] != 'L') {
-      goto welp;
-    }
-    slice subslice = subslice_to(info->name, dims + (dims != 0), info->name.len - (dims != 0));
-
-    cp_method *loadClass =
-        method_lookup(loader->descriptor, STR("loadClass"), STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
-    INIT_STACK_STRING(s, 1000);
-    exchange_slashes_and_dots(&s, subslice);
-    s.len = subslice.len;
-
-    object name = MakeJStringFromModifiedUTF8(thread, s, false);
-    stack_value result =
-        call_interpreter_synchronous(thread, loadClass, (stack_value[]){{.obj = loader}, {.obj = name}});
-
-    if (thread->current_exception) {
-      thread->current_exception = nullptr;
-      goto welp;
-    }
-
-    info->classdesc = (classdesc *)unmirror_class(result.obj);
-    // Now repeatedly instantiate array classes
-    for (int dim_i = 0; dim_i < dims; ++dim_i) {
-      info->classdesc = make_array_classdesc(thread, info->classdesc);
-    }
-  } else {
-  welp:
-    info->classdesc = bootstrap_lookup_class(thread, info->name);
+    lookup_class_t lookup_class_args = { .args = { thread, info->name, loader, true } };
+    thread->stack.synchronous_depth++;
+    future_t fut = lookup_class(&lookup_class_args);
+    thread->stack.synchronous_depth--;
+    CHECK(fut.status == FUTURE_READY);
+    info->classdesc = (classdesc *)lookup_class_args._result;
   }
+
   if (!info->classdesc) {
+    DCHECK(thread->current_exception);
     info->vm_object = thread->current_exception;
     return -1;
   }
@@ -1926,6 +1956,21 @@ int resolve_class(vm_thread *thread, cp_class_info *info) {
   // TODO check that the class is accessible
 
   return 0;
+}
+
+// TODO make this async
+// NOLINTNEXTLINE(misc-no-recursion)
+int resolve_class(vm_thread *thread, cp_class_info *info) {
+  stack_frame *frame = thread->stack.top;
+  classloader *loader;
+  if (frame) {
+    loader = frame->method->my_class->classloader;
+  } else {
+    loader = thread->vm->bootstrap_classloader;
+  }
+
+  DCHECK(loader);  // Need to find
+  return resolve_class_impl(thread, info, loader);
 }
 
 int resolve_field(vm_thread *thread, cp_field_info *info) {
@@ -2087,8 +2132,9 @@ struct native_Class *get_class_mirror(vm_thread *thread, classdesc *cd) {
 
   if (class_mirror) {
     class_mirror->reflected_class = cd;
-    if (cd->module)
+    if (cd->module) {
       class_mirror->module = cd->module->reflection_object;
+    }
     object componentType = cd->one_fewer_dim ? (void *)get_class_mirror(thread, cd->one_fewer_dim) : nullptr;
     class_mirror->componentType = componentType;
   }
