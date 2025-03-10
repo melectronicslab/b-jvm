@@ -517,6 +517,7 @@ typedef enum {
   ATTRIBUTE_KIND_NEST_HOST,
   ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE,
   ATTRIBUTE_KIND_STACK_MAP_TABLE,
+  ATTRIBUTE_KIND_INNER_CLASSES,
 } attribute_kind;
 
 typedef struct method_descriptor {
@@ -708,6 +709,11 @@ typedef struct {
   slice name;
 } attribute_source_file;
 
+typedef struct {
+  int count;
+  cp_class_info **classes;
+} attribute_inner_classes;
+
 // We leave the attribute unparsed until analysis time (which is technically incorrect I think, but whatever)
 typedef struct {
   uint8_t *data;
@@ -735,6 +741,7 @@ typedef struct attribute {
     attribute_signature signature;
     attribute_local_variable_table lvt;
     attribute_stack_map_table smt;
+    attribute_inner_classes inner_classes;
     cp_class_info *nest_host;
   };
 } attribute;
@@ -841,6 +848,7 @@ typedef struct classdesc {
 
   attribute_bootstrap_methods *bootstrap_methods;
   attribute_source_file *source_file;
+  attribute_inner_classes *inner_classes;
 
   int attributes_count;
   attribute *attributes;

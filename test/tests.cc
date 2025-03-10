@@ -849,6 +849,15 @@ Pfannkuchen(10) = 38
 )");
 }
 
+TEST_CASE("getDeclaredClasses") {
+  auto result = run_test_case("test_files/get_declared_classes/", true, "GetDeclaredClasses");
+  REQUIRE(result.stdout_ == R"(GetDeclaredClasses$Hen
+GetDeclaredClasses$Omelette
+GetDeclaredClasses$Chicken
+GetDeclaredClasses$Egg
+)");
+}
+
 TEST_CASE("Array.get native") {
   auto result = run_test_case("test_files/array_get_native/", true, "ArrayGetNative");
   REQUIRE(result.stdout_ == R"(12345Caught ArrayIndexOutOfBoundsException
