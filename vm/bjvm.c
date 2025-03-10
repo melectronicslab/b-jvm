@@ -1608,6 +1608,7 @@ DEFINE_ASYNC(lookup_class) {
 
 #undef thread
 #undef cl
+#undef classname
   ASYNC_END(result);
 }
 
@@ -1936,9 +1937,6 @@ int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *load
                            info->vm_object); // already failed
     return -1;
   }
-
-  // TODO need to ignore stack frames associated with reflection (?)
-
 
   if (loader) {
     lookup_class_t lookup_class_args = { .args = { thread, info->name, loader, true } };
