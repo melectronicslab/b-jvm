@@ -129,7 +129,28 @@ DECLARE_NATIVE("java/lang", Class, getClassLoader, "()Ljava/lang/ClassLoader;") 
 }
 
 DECLARE_NATIVE("java/lang", Class, getPermittedSubclasses0, "()[Ljava/lang/Class;") {
-  return value_null(); // TODO
+  classdesc *desc = unmirror_class(obj->obj);
+  attribute *attr = find_attribute_by_kind(desc, ATTRIBUTE_KIND_PERMITTED_SUBCLASSES);
+  if (attr == nullptr)
+    return value_null();
+  attribute_permitted_subclasses *permitted = &attr->permitted_subclasses;
+  // Unmirror all classes first in case one of them triggers a GC
+  for (int i = 0; i < permitted->entries_count; ++i) {
+    cp_class_info *info = permitted->entries[i];
+    if (resolve_class(thread, info)) {
+      return value_null();
+    }
+    get_class_mirror(thread, info->classdesc);
+  }
+  // Create an array of the appropriate length and enjoy
+  handle *array = make_handle(thread, CreateObjectArray1D(thread, cached_classes(thread->vm)->klass, permitted->entries_count));
+  if (array->obj == nullptr)
+    return value_null();
+  for (int i = 0; i < permitted->entries_count; ++i) {
+    cp_class_info *info = permitted->entries[i];
+    ((object*)ArrayData(array->obj))[i] = (void *)get_class_mirror(thread, info->classdesc);
+  }
+  return (stack_value){.obj = array->obj};
 }
 
 DECLARE_NATIVE("java/lang", Class, initClassName, "()Ljava/lang/String;") {
@@ -302,7 +323,7 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredMethods0, "(Z)[Ljava/lang/reflect/
   return (stack_value){.obj = result};
 }
 
-DECLARE_ASYNC_NATIVE("java/lang", Class, getDeclaredClasses0, "()[Ljava/lang/Class;", locals(), invoked_methods()) {
+DECLARE_NATIVE("java/lang", Class, getDeclaredClasses0, "()[Ljava/lang/Class;") {
   classdesc *cd = unmirror_class(obj->obj);
   attribute_inner_classes *inner_classes = cd->inner_classes;
   int count = 0;
@@ -323,7 +344,7 @@ DECLARE_ASYNC_NATIVE("java/lang", Class, getDeclaredClasses0, "()[Ljava/lang/Cla
   }
   object result = ret->obj;
   drop_handle(thread, ret);
-  ASYNC_END((stack_value) { .obj = result });
+  return (stack_value) { .obj = result };
 }
 
 DECLARE_NATIVE("java/lang", Class, isPrimitive, "()Z") {
@@ -369,8 +390,9 @@ DECLARE_NATIVE("java/lang", Class, isArray, "()Z") {
   return (stack_value){.i = desc->kind == CD_KIND_ORDINARY_ARRAY || desc->kind == CD_KIND_PRIMITIVE_ARRAY};
 }
 
-DECLARE_NATIVE("java/lang", Class, isHidden, "()Z") { // TODO
-  return (stack_value){.i = 0};
+DECLARE_NATIVE("java/lang", Class, isHidden, "()Z") {
+  bool is_hidden = unmirror_class(obj->obj)->is_hidden;
+  return (stack_value){.i = is_hidden};
 }
 
 DECLARE_NATIVE("java/lang", Class, getNestHost0, "()Ljava/lang/Class;") {

@@ -518,6 +518,7 @@ typedef enum {
   ATTRIBUTE_KIND_LOCAL_VARIABLE_TABLE,
   ATTRIBUTE_KIND_STACK_MAP_TABLE,
   ATTRIBUTE_KIND_INNER_CLASSES,
+  ATTRIBUTE_KIND_PERMITTED_SUBCLASSES,
 } attribute_kind;
 
 typedef struct method_descriptor {
@@ -721,6 +722,11 @@ typedef struct {
   int32_t entries_count;
 } attribute_stack_map_table;
 
+typedef struct {
+  u16 entries_count;
+  cp_class_info **entries;
+} attribute_permitted_subclasses;
+
 typedef struct attribute {
   attribute_kind kind;
   slice name;
@@ -742,6 +748,7 @@ typedef struct attribute {
     attribute_local_variable_table lvt;
     attribute_stack_map_table smt;
     attribute_inner_classes inner_classes;
+    attribute_permitted_subclasses permitted_subclasses;
     cp_class_info *nest_host;
   };
 } attribute;
@@ -828,6 +835,7 @@ typedef struct classloader classloader;
 // Class descriptor. (Roughly equivalent to HotSpot's InstanceKlass)
 typedef struct classdesc {
   classdesc_kind kind;
+  bool is_hidden;  // whether this is a hidden class (added in Java 15)
   classdesc_state state;
   constant_pool *pool;
 

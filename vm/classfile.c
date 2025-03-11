@@ -1501,13 +1501,23 @@ void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *
     u16 enclosing_class_index = reader_next_u16(&attr_reader, "enclosing class index");
     u16 enclosing_method_index = reader_next_u16(&attr_reader, "enclosing method index");
     attr->enclosing_method = (attribute_enclosing_method){
-        enclosing_class_index
-            ? &checked_cp_entry(ctx->cp, enclosing_class_index, CP_KIND_CLASS, "enclosing class")->class_info
-            : nullptr,
-        enclosing_method_index
-            ? &checked_cp_entry(ctx->cp, enclosing_method_index, CP_KIND_NAME_AND_TYPE, "enclosing method")
-                   ->name_and_type
-            : nullptr};
+      enclosing_class_index
+          ? &checked_cp_entry(ctx->cp, enclosing_class_index, CP_KIND_CLASS, "enclosing class")->class_info
+          : nullptr,
+      enclosing_method_index
+          ? &checked_cp_entry(ctx->cp, enclosing_method_index, CP_KIND_NAME_AND_TYPE, "enclosing method")
+                 ->name_and_type
+          : nullptr};
+  } else if (utf8_equals(attr->name, "PermittedSubclasses")) {
+    attr->kind = ATTRIBUTE_KIND_PERMITTED_SUBCLASSES;
+    int count = attr->permitted_subclasses.entries_count = reader_next_u16(&attr_reader, "permitted subclasses count");
+    cp_class_info **entries = attr->permitted_subclasses.entries =
+        arena_alloc(ctx->arena, count, sizeof(cp_class_info *));
+    for (int i = 0; i < count; ++i) {
+      cp_class_info *entry = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "permitted subclass index"),
+                                               CP_KIND_CLASS, "permitted subclass")->class_info;
+      entries[i] = entry;
+    }
   } else if (utf8_equals(attr->name, "SourceFile")) {
     attr->kind = ATTRIBUTE_KIND_SOURCE_FILE;
     attr->source_file.name =
