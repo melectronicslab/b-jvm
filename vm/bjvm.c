@@ -1340,6 +1340,38 @@ classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *clas
   return define_class(thread, thread->vm->bootstrap_classloader, chars, classfile_bytes, classfile_len);
 }
 
+int check_permitted_subclasses(vm_thread *thread, slice name, cp_class_info *super_class) {
+  attribute *attr = find_attribute_by_kind(super_class->classdesc, ATTRIBUTE_KIND_PERMITTED_SUBCLASSES);
+  if (attr) {
+    // "Otherwise, if the class named as the direct superclass of C has a PermittedSubclasses attribute (§4.7.31) and
+    // any of the following is true, derivation throws an IncompatibleClassChangeError:"
+
+    // - The superclass is in a different run-time module than C TODO
+    // "C does not have its ACC_PUBLIC flag set (§4.1) and the superclass is in a different run-time package than C
+    // (§5.3)." TODO
+
+    // "No entry in the classes array of the superclass's PermittedSubclasses attribute refers to a class or interface
+    // with the name N."
+
+    attribute_permitted_subclasses *ps = &attr->permitted_subclasses;
+    for (int i = 0; i < ps->entries_count; ++i) {
+      cp_class_info *candidate = ps->entries[i];
+      if (utf8_equals_utf8(candidate->name, name)) {
+        return 0;
+      }
+    }
+
+    // "class C cannot implement sealed interface I"
+    INIT_STACK_STRING(str, 2048);
+    str = bprintf(str, "class %.*s cannot implement sealed interface %.*s", fmt_slice(name),
+                      fmt_slice(super_class->name));
+    raise_incompatible_class_change_error(thread, str);
+    return 1;
+  }
+  return 0;
+}
+
+
 classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes, size_t classfile_len) {
   // "First, the Java Virtual Machine determines whether it has already recorded that L is an initiating loader of a
   // class or interface denoted by N. If so, this creation attempt is invalid and loading throws a LinkageError."
@@ -1379,6 +1411,10 @@ classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u
       // if so, raise a NoClassDefFoundError TODO
       goto error_2;
     }
+
+    status = check_permitted_subclasses(thread, class->name, class->super_class);
+    if (status)
+      goto error_2;
   }
 
   // 4. If C has any direct superinterfaces, the symbolic references from C to
@@ -1396,6 +1432,10 @@ classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u
       // if so, raise a NoClassDefFoundError TODO
       goto error_2;
     }
+
+    status = check_permitted_subclasses(thread, class->name, sup);
+    if (status)
+      goto error_2;
   }
 
   // Look up in the native methods list and add native handles as appropriate
@@ -1541,9 +1581,9 @@ DEFINE_ASYNC(lookup_class) {
       AWAIT(call_interpreter, thread, method, method_args);
       object class_mirror = get_async_result(call_interpreter).obj;
       // TODO deal with adversarial loadClass implementations
-      CHECK(class_mirror != nullptr);
-      class = unmirror_class(class_mirror);
-      DCHECK(class);
+      if (thread->current_exception == nullptr) {
+        class = class_mirror ? unmirror_class(class_mirror) : nullptr;
+      }
     }
 
     (void)hash_table_delete(&thread->vm->inchoate_classes, classname.chars, (int)classname.len);
@@ -1572,9 +1612,9 @@ DEFINE_ASYNC(lookup_class) {
       abort();
     }
 
-    if (thread->current_exception == nullptr) {
-      exchange_slashes_and_dots(&classname, classname);
-      // ClassNotFoundException: com.google.DontBeEvil
+    if (thread->current_exception == nullptr) { // let any existing exception propagate
+      // ClassNotFoundException: com/google/DontBeEvil
+      // (For some reason the JVM uses slashes instead of dots)
       raise_vm_exception(thread, STR("java/lang/ClassNotFoundException"), classname);
     }
     ASYNC_RETURN(nullptr);

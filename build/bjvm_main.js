@@ -2583,6 +2583,7 @@ var _Class_desiredAssertionStatus0_cb0 = Module['_Class_desiredAssertionStatus0_
 var _Class_getDeclaredFields0_cb0 = Module['_Class_getDeclaredFields0_cb0'] = createExportWrapper('Class_getDeclaredFields0_cb0', 5);
 var _Class_getDeclaredConstructors0_cb0 = Module['_Class_getDeclaredConstructors0_cb0'] = createExportWrapper('Class_getDeclaredConstructors0_cb0', 5);
 var _Class_getDeclaredMethods0_cb0 = Module['_Class_getDeclaredMethods0_cb0'] = createExportWrapper('Class_getDeclaredMethods0_cb0', 5);
+var _Class_getDeclaredClasses0_cb0 = Module['_Class_getDeclaredClasses0_cb0'] = createExportWrapper('Class_getDeclaredClasses0_cb0', 5);
 var _Class_isPrimitive_cb0 = Module['_Class_isPrimitive_cb0'] = createExportWrapper('Class_isPrimitive_cb0', 5);
 var _Class_isInterface_cb0 = Module['_Class_isInterface_cb0'] = createExportWrapper('Class_isInterface_cb0', 5);
 var _Class_isAssignableFrom_cb0 = Module['_Class_isAssignableFrom_cb0'] = createExportWrapper('Class_isAssignableFrom_cb0', 5);

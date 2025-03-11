@@ -50,7 +50,8 @@ stack_value define_class_shared_impl(vm_thread *thread, handle *loader, handle *
       name_str.chars[i] = '/';
 
   INIT_STACK_STRING(cf_name, 1000);
-  if (flags & FLAG_HIDDEN_CLASS) {
+  bool is_hidden = flags & FLAG_HIDDEN_CLASS;
+  if (is_hidden) {
     cf_name = bprintf(cf_name, "%.*s.%d", fmt_slice(name_str), incr++);
   } else {
     cf_name = bprintf(cf_name, "%.*s", fmt_slice(name_str));
@@ -69,6 +70,7 @@ stack_value define_class_shared_impl(vm_thread *thread, handle *loader, handle *
   }
 
   if (result) {
+    result->is_hidden = is_hidden;
     return (stack_value){.obj = (void *)get_class_mirror(thread, result)};
   }
 
