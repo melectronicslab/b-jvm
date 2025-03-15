@@ -1843,7 +1843,13 @@ __attribute__((noinline)) static s64 invokevirtual_impl_void(ARGS_VOID) {
   if (method_info->resolved->is_signature_polymorphic) {
     insn->kind = insn_invokesigpoly;
     insn->ic = method_info->resolved;
-    insn->ic2 = resolve_method_type(thread, method_info->descriptor);
+
+    resolve_method_type_t resolve = { .args = {thread, get_current_classloader(thread), method_info->descriptor }};
+    thread->stack.synchronous_depth++;
+    future_t fut = resolve_method_type(&resolve);
+    CHECK(fut.status == FUTURE_READY);
+    thread->stack.synchronous_depth--;
+    insn->ic2 = resolve._result;
 
     arrput(frame->method->my_class->sigpoly_insns, insn); // so GC can move around ic2
     JMP_VOID

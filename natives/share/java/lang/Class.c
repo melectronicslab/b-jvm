@@ -243,7 +243,11 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredFields0, "(Z)[Ljava/lang/reflect/F
   for (int i = 0; i < class->fields_count; ++i) {
     cp_field *field = class->fields + i;
     if (include_field(field, public_only)) {
-      reflect_initialize_field(thread, class, field);
+      reflect_initialize_field_t ctx = {.args = {thread, class, field}};
+      thread->stack.synchronous_depth++;
+      future_t f = reflect_initialize_field(&ctx);
+      CHECK(f.status == FUTURE_READY);
+      thread->stack.synchronous_depth--;
       ++fields;
     }
   }
@@ -274,7 +278,11 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredConstructors0, "(Z)[Ljava/lang/ref
   for (int i = 0; i < class->methods_count; ++i) {
     cp_method *method = class->methods + i;
     if (include_ctor(method, public_only)) {
-      reflect_initialize_constructor(thread, class, method);
+      reflect_initialize_constructor_t ctx = {.args = {thread, class, method}};
+      thread->stack.synchronous_depth++;
+      future_t f = reflect_initialize_constructor(&ctx);
+      CHECK(f.status == FUTURE_READY);
+      thread->stack.synchronous_depth--;
       ++ctors;
     }
   }
@@ -306,7 +314,11 @@ DECLARE_NATIVE("java/lang", Class, getDeclaredMethods0, "(Z)[Ljava/lang/reflect/
   for (int i = 0; i < class->methods_count; ++i) {
     cp_method *method = class->methods + i;
     if (include_method(method, public_only)) {
-      reflect_initialize_method(thread, class, method);
+      reflect_initialize_method_t ctx = {.args = {thread, class, method}};
+      thread->stack.synchronous_depth++;
+      future_t f = reflect_initialize_method(&ctx);
+      CHECK(f.status == FUTURE_READY);
+      thread->stack.synchronous_depth--;
       ++methods;
     }
   }
