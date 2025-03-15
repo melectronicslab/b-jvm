@@ -499,7 +499,7 @@ struct native_Class *primitive_class_mirror(vm_thread *thread, type_kind prim_ki
   return primitive_classdesc(thread, prim_kind)->mirror;
 }
 
-classdesc *make_primitive_classdesc(type_kind kind, const slice name) {
+classdesc *make_primitive_classdesc(vm *vm, type_kind kind, const slice name) {
   classdesc *desc = calloc(1, sizeof(classdesc));
 
   desc->kind = CD_KIND_PRIMITIVE;
@@ -509,7 +509,7 @@ classdesc *make_primitive_classdesc(type_kind kind, const slice name) {
   desc->access_flags = ACCESS_PUBLIC | ACCESS_FINAL | ACCESS_ABSTRACT;
   desc->array_type = nullptr;
   desc->primitive_component = kind;
-  desc->classloader = nullptr;
+  desc->classloader = vm->bootstrap_classloader;
 
   return desc;
 }
@@ -519,15 +519,15 @@ void vm_init_primitive_classes(vm_thread *thread) {
   if (vm->primitive_classes[0])
     return; // already initialized
 
-  vm->primitive_classes[TYPE_KIND_BOOLEAN] = make_primitive_classdesc(TYPE_KIND_BOOLEAN, STR("boolean"));
-  vm->primitive_classes[TYPE_KIND_BYTE] = make_primitive_classdesc(TYPE_KIND_BYTE, STR("byte"));
-  vm->primitive_classes[TYPE_KIND_CHAR] = make_primitive_classdesc(TYPE_KIND_CHAR, STR("char"));
-  vm->primitive_classes[TYPE_KIND_SHORT] = make_primitive_classdesc(TYPE_KIND_SHORT, STR("short"));
-  vm->primitive_classes[TYPE_KIND_INT] = make_primitive_classdesc(TYPE_KIND_INT, STR("int"));
-  vm->primitive_classes[TYPE_KIND_LONG] = make_primitive_classdesc(TYPE_KIND_LONG, STR("long"));
-  vm->primitive_classes[TYPE_KIND_FLOAT] = make_primitive_classdesc(TYPE_KIND_FLOAT, STR("float"));
-  vm->primitive_classes[TYPE_KIND_DOUBLE] = make_primitive_classdesc(TYPE_KIND_DOUBLE, STR("double"));
-  vm->primitive_classes[TYPE_KIND_VOID] = make_primitive_classdesc(TYPE_KIND_VOID, STR("void"));
+  vm->primitive_classes[TYPE_KIND_BOOLEAN] = make_primitive_classdesc(vm, TYPE_KIND_BOOLEAN, STR("boolean"));
+  vm->primitive_classes[TYPE_KIND_BYTE] = make_primitive_classdesc(vm, TYPE_KIND_BYTE, STR("byte"));
+  vm->primitive_classes[TYPE_KIND_CHAR] = make_primitive_classdesc(vm, TYPE_KIND_CHAR, STR("char"));
+  vm->primitive_classes[TYPE_KIND_SHORT] = make_primitive_classdesc(vm, TYPE_KIND_SHORT, STR("short"));
+  vm->primitive_classes[TYPE_KIND_INT] = make_primitive_classdesc(vm, TYPE_KIND_INT, STR("int"));
+  vm->primitive_classes[TYPE_KIND_LONG] = make_primitive_classdesc(vm, TYPE_KIND_LONG, STR("long"));
+  vm->primitive_classes[TYPE_KIND_FLOAT] = make_primitive_classdesc(vm, TYPE_KIND_FLOAT, STR("float"));
+  vm->primitive_classes[TYPE_KIND_DOUBLE] = make_primitive_classdesc(vm, TYPE_KIND_DOUBLE, STR("double"));
+  vm->primitive_classes[TYPE_KIND_VOID] = make_primitive_classdesc(vm, TYPE_KIND_VOID, STR("void"));
 
   // Set up mirrors
   for (int i = 0; i < 9; ++i) {
@@ -2152,6 +2152,7 @@ struct native_Class *get_class_mirror(vm_thread *thread, classdesc *cd) {
     }
     object componentType = cd->one_fewer_dim ? (void *)get_class_mirror(thread, cd->one_fewer_dim) : nullptr;
     class_mirror->componentType = componentType;
+    class_mirror->classLoader = cd->classloader->java_mirror;
   }
   struct native_Class *result = class_mirror;
   drop_handle(thread, cm_handle);
