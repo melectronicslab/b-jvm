@@ -457,28 +457,22 @@ int read_string_to_utf8(vm_thread *thread, heap_string *result, obj_header *obj)
   return 0;
 }
 
-classdesc *load_class_of_field_descriptor(vm_thread *thread, slice name) {
+DEFINE_ASYNC(load_class_of_field_descriptor) {
+#define name (self->args.name)
+#define thread (self->args.thread)
   const char *chars = name.chars;
   if (chars[0] == 'L') {
     name = subslice_to(name, 1, name.len - 1);
-    return bootstrap_lookup_class(thread, name);
+    AWAIT(lookup_class, thread, name, self->args.cl);
+    ASYNC_RETURN(get_async_result(lookup_class));
   }
-  if (chars[0] == '[')
-    return bootstrap_lookup_class(thread, name);
-  switch (chars[0]) {
-  case 'Z':
-  case 'B':
-  case 'C':
-  case 'S':
-  case 'I':
-  case 'J':
-  case 'F':
-  case 'D':
-  case 'V':
-    return primitive_classdesc(thread, read_type_kind_char(chars[0]));
-  default:
-    UNREACHABLE();
+  if (chars[0] == '[') {
+    AWAIT(lookup_class, thread, name, self->args.cl);
+    ASYNC_RETURN(get_async_result(lookup_class));
   }
+  ASYNC_END(primitive_classdesc(thread, read_type_kind_char(chars[0])));
+#undef thread
+#undef name
 }
 
 classdesc *primitive_classdesc(vm_thread *thread, type_kind prim_kind) {
@@ -490,7 +484,7 @@ struct native_Class *primitive_class_mirror(vm_thread *thread, type_kind prim_ki
   return primitive_classdesc(thread, prim_kind)->mirror;
 }
 
-classdesc *make_primitive_classdesc(type_kind kind, const slice name) {
+classdesc *make_primitive_classdesc(vm *vm, type_kind kind, const slice name) {
   classdesc *desc = calloc(1, sizeof(classdesc));
 
   desc->kind = CD_KIND_PRIMITIVE;
@@ -500,7 +494,7 @@ classdesc *make_primitive_classdesc(type_kind kind, const slice name) {
   desc->access_flags = ACCESS_PUBLIC | ACCESS_FINAL | ACCESS_ABSTRACT;
   desc->array_type = nullptr;
   desc->primitive_component = kind;
-  desc->classloader = nullptr;
+  desc->classloader = vm->bootstrap_classloader;
 
   return desc;
 }
@@ -510,15 +504,15 @@ void vm_init_primitive_classes(vm_thread *thread) {
   if (vm->primitive_classes[0])
     return; // already initialized
 
-  vm->primitive_classes[TYPE_KIND_BOOLEAN] = make_primitive_classdesc(TYPE_KIND_BOOLEAN, STR("boolean"));
-  vm->primitive_classes[TYPE_KIND_BYTE] = make_primitive_classdesc(TYPE_KIND_BYTE, STR("byte"));
-  vm->primitive_classes[TYPE_KIND_CHAR] = make_primitive_classdesc(TYPE_KIND_CHAR, STR("char"));
-  vm->primitive_classes[TYPE_KIND_SHORT] = make_primitive_classdesc(TYPE_KIND_SHORT, STR("short"));
-  vm->primitive_classes[TYPE_KIND_INT] = make_primitive_classdesc(TYPE_KIND_INT, STR("int"));
-  vm->primitive_classes[TYPE_KIND_LONG] = make_primitive_classdesc(TYPE_KIND_LONG, STR("long"));
-  vm->primitive_classes[TYPE_KIND_FLOAT] = make_primitive_classdesc(TYPE_KIND_FLOAT, STR("float"));
-  vm->primitive_classes[TYPE_KIND_DOUBLE] = make_primitive_classdesc(TYPE_KIND_DOUBLE, STR("double"));
-  vm->primitive_classes[TYPE_KIND_VOID] = make_primitive_classdesc(TYPE_KIND_VOID, STR("void"));
+  vm->primitive_classes[TYPE_KIND_BOOLEAN] = make_primitive_classdesc(vm, TYPE_KIND_BOOLEAN, STR("boolean"));
+  vm->primitive_classes[TYPE_KIND_BYTE] = make_primitive_classdesc(vm, TYPE_KIND_BYTE, STR("byte"));
+  vm->primitive_classes[TYPE_KIND_CHAR] = make_primitive_classdesc(vm, TYPE_KIND_CHAR, STR("char"));
+  vm->primitive_classes[TYPE_KIND_SHORT] = make_primitive_classdesc(vm, TYPE_KIND_SHORT, STR("short"));
+  vm->primitive_classes[TYPE_KIND_INT] = make_primitive_classdesc(vm, TYPE_KIND_INT, STR("int"));
+  vm->primitive_classes[TYPE_KIND_LONG] = make_primitive_classdesc(vm, TYPE_KIND_LONG, STR("long"));
+  vm->primitive_classes[TYPE_KIND_FLOAT] = make_primitive_classdesc(vm, TYPE_KIND_FLOAT, STR("float"));
+  vm->primitive_classes[TYPE_KIND_DOUBLE] = make_primitive_classdesc(vm, TYPE_KIND_DOUBLE, STR("double"));
+  vm->primitive_classes[TYPE_KIND_VOID] = make_primitive_classdesc(vm, TYPE_KIND_VOID, STR("void"));
 
   // Set up mirrors
   for (int i = 0; i < 9; ++i) {
@@ -1028,31 +1022,32 @@ void free_thread(vm_thread *thread) {
   free(thread);
 }
 
-classdesc *load_class_of_field(vm_thread *thread, const field_descriptor *field) {
-  classdesc *result = load_class_of_field_descriptor(thread, field->unparsed);
-  return result;
-}
-
-struct native_MethodType *resolve_method_type(vm_thread *thread, method_descriptor *method) {
+DEFINE_ASYNC(resolve_method_type) {
   // Resolve each class in the arguments list, as well as the return type if it
   // exists
+#define thread (self->args.thread)
+#define method (self->args.method)
+
   DCHECK(method);
 
   classdesc *Class = cached_classes(thread->vm)->klass;
-  handle *ptypes = make_handle(thread, CreateObjectArray1D(thread, Class, method->args_count));
+  self->ptypes = make_handle(thread, CreateObjectArray1D(thread, Class, method->args_count));
 
   for (int i = 0; i < method->args_count; ++i) {
-    classdesc *arg_desc = load_class_of_field_descriptor(thread, method->args[i].unparsed);
+    AWAIT(load_class_of_field_descriptor, thread, self->args.cl, method->args[i].unparsed);
 
+    classdesc *arg_desc = get_async_result(load_class_of_field_descriptor);
     if (!arg_desc)
-      return nullptr;
+      ASYNC_RETURN(nullptr);
+
     object mirror = (void *)get_class_mirror(thread, arg_desc);
-    *((struct native_Class **)ArrayData(ptypes->obj) + i) = (void *)mirror;
+    *((struct native_Class **)ArrayData(self->ptypes->obj) + i) = (void *)mirror;
   }
 
-  classdesc *ret_desc = load_class_of_field_descriptor(thread, method->return_type.unparsed);
+  AWAIT(load_class_of_field_descriptor, thread, self->args.cl, method->return_type.unparsed);
+  classdesc *ret_desc = get_async_result(load_class_of_field_descriptor);
   if (!ret_desc)
-    return nullptr;
+    ASYNC_RETURN(nullptr);
   struct native_Class *rtype = get_class_mirror(thread, ret_desc);
   // Call <init>(Ljava/lang/Class;[Ljava/lang/Class;Z)V
   classdesc *MethodType = cached_classes(thread->vm)->method_type;
@@ -1062,10 +1057,12 @@ struct native_MethodType *resolve_method_type(vm_thread *thread, method_descript
                                   false, false);
 
   stack_value result = call_interpreter_synchronous(
-      thread, init, (stack_value[]){{.obj = (void *)rtype}, {.obj = ptypes->obj}, {.i = 1 /* trusted */}});
+      thread, init, (stack_value[]){{.obj = (void *)rtype}, {.obj = self->ptypes->obj}, {.i = 1 /* trusted */}});
   CHECK(!thread->current_exception);
-  drop_handle(thread, ptypes);
-  return (void *)result.obj;
+  drop_handle(thread, self->ptypes);
+  ASYNC_END((void *)result.obj);
+#undef method
+#undef thread
 }
 
 [[maybe_unused]] static bool mh_handle_supported(method_handle_kind kind) {
@@ -1082,67 +1079,55 @@ struct native_MethodType *resolve_method_type(vm_thread *thread, method_descript
   }
 }
 
-typedef struct {
-  classdesc *rtype;
-  classdesc **ptypes;
-  u32 ptypes_count;
-} mh_type_info_t;
+DEFINE_ASYNC(compute_mh_type_info) {
+  self->rtype = nullptr;
+  self->ptypes = nullptr;
 
-static int compute_mh_type_info(vm_thread *thread, cp_method_handle_info *info, mh_type_info_t *result) {
-  classdesc *rtype = nullptr;
-  classdesc **ptypes = nullptr;
-
-  switch (info->handle_kind) {
-  case MH_KIND_GET_FIELD: {
+#define info (self->args.info)
+#define thread (self->args.thread)
+  if (info->handle_kind == MH_KIND_GET_FIELD) {
     // MT should be of the form (C)T, where C is the class the field is found on
     cp_field_info *field = &info->reference->field;
-    arrput(ptypes, field->class_info->classdesc);
-    rtype = load_class_of_field(thread, field->parsed_descriptor);
-    break;
-  }
-
-  case MH_KIND_INVOKE_STATIC:
-    [[fallthrough]];
-  case MH_KIND_INVOKE_VIRTUAL:
-    [[fallthrough]];
-  case MH_KIND_INVOKE_SPECIAL:
-    [[fallthrough]];
-  case MH_KIND_INVOKE_INTERFACE: {
+    arrput(self->ptypes, field->class_info->classdesc);
+    AWAIT(load_class_of_field_descriptor, thread, self->args.cl, field->parsed_descriptor->unparsed);
+    self->rtype = get_async_result(load_class_of_field_descriptor);
+  } else if (info->handle_kind == MH_KIND_INVOKE_STATIC || info->handle_kind == MH_KIND_INVOKE_VIRTUAL ||
+    info->handle_kind == MH_KIND_INVOKE_SPECIAL || info->handle_kind == MH_KIND_INVOKE_INTERFACE) {
     // MT should be of the form (C,A*)T, where C is the class the method is
     // found on, A* is the list of argument types, and T is the return type
-    cp_method_info *method = &info->reference->methodref;
+    self->method = &info->reference->methodref;
 
     if (info->handle_kind != MH_KIND_INVOKE_STATIC) {
-      arrput(ptypes, method->class_info->classdesc);
+      arrput(self->ptypes, self->method->class_info->classdesc);
     }
 
-    for (int i = 0; i < method->descriptor->args_count; ++i) {
-      field_descriptor *arg = method->descriptor->args + i;
-      arrput(ptypes, load_class_of_field(thread, arg));
+    for (int i = 0; i < self->method->descriptor->args_count; ++i) {
+      field_descriptor *arg = self->method->descriptor->args + i;
+      AWAIT(load_class_of_field_descriptor, thread, self->args.cl, arg->unparsed);
+      arrput(self->ptypes, get_async_result(load_class_of_field_descriptor));
     }
 
-    rtype = load_class_of_field(thread, &method->descriptor->return_type);
-    break;
-  }
-  case MH_KIND_NEW_INVOKE_SPECIAL: {
+    AWAIT(load_class_of_field_descriptor, thread, self->args.cl, self->method->descriptor->return_type.unparsed);
+    self->rtype = get_async_result(load_class_of_field_descriptor);
+  } else if (info->handle_kind == MH_KIND_NEW_INVOKE_SPECIAL) {
     // MT should be of the form (A*)T, where A* is the list of argument types,
-    cp_method_info *method = &info->reference->methodref;
+    self->method = &info->reference->methodref;
 
-    for (int i = 0; i < method->descriptor->args_count; ++i) {
-      field_descriptor *arg = method->descriptor->args + i;
-      arrput(ptypes, load_class_of_field(thread, arg));
+    for (int i = 0; i < self->method->descriptor->args_count; ++i) {
+      field_descriptor *arg = self->method->descriptor->args + i;
+      AWAIT(load_class_of_field_descriptor, thread, self->args.cl, arg->unparsed);
+      arrput(self->ptypes, get_async_result(load_class_of_field_descriptor));
     }
 
-    rtype = method->class_info->classdesc;
-    break;
-  }
-
-  default:
+    self->rtype = self->method->class_info->classdesc;
+  } else {
     UNREACHABLE();
   }
 
-  *result = (mh_type_info_t){.rtype = rtype, .ptypes = ptypes, .ptypes_count = arrlen(ptypes)};
-  return 0;
+  *self->args.result = (mh_type_info_t){.rtype = self->rtype, .ptypes = self->ptypes, .ptypes_count = arrlen(self->ptypes)};
+#undef thread
+#undef info
+  ASYNC_END(0);
 }
 
 DEFINE_ASYNC(resolve_mh_mt) {
@@ -1157,8 +1142,8 @@ DEFINE_ASYNC(resolve_mh_mt) {
   AWAIT(initialize_class, args->thread, required_type->classdesc);
 
   mh_type_info_t info = {};
-  int err = compute_mh_type_info(args->thread, args->info, &info);
-  CHECK(err == 0);
+  AWAIT(compute_mh_type_info, args->thread, args->cl, args->info, &info);
+  CHECK(get_async_result(compute_mh_type_info) == 0);
 
   // Call MethodType.makeImpl(rtype, ptypes, true)
   cp_method *make = method_lookup(cached_classes(args->thread->vm)->method_type, STR("makeImpl"),
@@ -1183,21 +1168,6 @@ DEFINE_ASYNC(resolve_mh_mt) {
   ASYNC_END((void *)result.obj);
 }
 
-static handle *make_member_name(vm_thread *thread, cp_field_info *field) {
-  classdesc *MemberName = LoadClassSynchronous(thread, "java/lang/invoke/MemberName");
-
-  cp_field *f = field_lookup(field->class_info->classdesc, field->nat->name, field->nat->descriptor);
-  reflect_initialize_field(thread, field->class_info->classdesc, f);
-  handle *member = make_handle(thread, new_object(thread, MemberName));
-  cp_method *make_member = method_lookup(MemberName, STR("<init>"), STR("(Ljava/lang/reflect/Field;)V"), false, false);
-
-  call_interpreter_synchronous(thread, make_member,
-                               (stack_value[]){{.obj = (void *)member->obj}, {.obj = (void *)f->reflection_field}});
-
-  printf("Module: %p\n", ((struct native_Class*)((struct native_MemberName*) member->obj)->clazz)->module);
-  return member;
-}
-
 DEFINE_ASYNC(resolve_mh_vh) {
 #define info (args)->info
 #define thread (args->thread)
@@ -1211,7 +1181,16 @@ DEFINE_ASYNC(resolve_mh_vh) {
 
   classdesc *DirectMethodHandle = LoadClassSynchronous(thread, "java/lang/invoke/DirectMethodHandle");
 
-  handle *member = make_member_name(thread, field);
+  classdesc *MemberName = LoadClassSynchronous(thread, "java/lang/invoke/MemberName");
+
+  cp_field *f = field_lookup(field->class_info->classdesc, field->nat->name, field->nat->descriptor);
+  AWAIT(reflect_initialize_field, thread, field->class_info->classdesc, f);
+  handle *member = make_handle(thread, new_object(thread, MemberName));
+  cp_method *make_member = method_lookup(MemberName, STR("<init>"), STR("(Ljava/lang/reflect/Field;)V"), false, false);
+
+  call_interpreter_synchronous(thread, make_member,
+                               (stack_value[]){{.obj = (void *)member->obj}, {.obj = (void *)f->reflection_field}});
+
   cp_method *make = method_lookup(DirectMethodHandle, STR("make"),
                                   STR("(Ljava/lang/invoke/MemberName;)Ljava/lang/"
                                       "invoke/DirectMethodHandle;"),
@@ -1237,9 +1216,9 @@ DEFINE_ASYNC(resolve_mh_invoke) {
 
   m = method_lookup(method->class_info->classdesc, method->nat->name, method->nat->descriptor, true, true);
   if (MH_KIND_NEW_INVOKE_SPECIAL == info->handle_kind) {
-    reflect_initialize_constructor(thread, method->class_info->classdesc, m);
+    AWAIT(reflect_initialize_constructor, thread, method->class_info->classdesc, m);
   } else {
-    reflect_initialize_method(thread, method->class_info->classdesc, m);
+    AWAIT(reflect_initialize_method, thread, method->class_info->classdesc, m);
   }
 
   classdesc *MemberName = LoadClassSynchronous(thread, "java/lang/invoke/MemberName");
@@ -1288,8 +1267,7 @@ DEFINE_ASYNC(resolve_mh_invoke) {
 DEFINE_ASYNC(resolve_method_handle) {
 #define info (args)->info
 #define thread (args->thread)
-
-  AWAIT(resolve_mh_mt, thread, info);
+  AWAIT(resolve_mh_mt, thread, info, args->cl);
   info->resolved_mt = get_async_result(resolve_mh_mt);
 
   if (mh_is_vh(info->handle_kind)) {
@@ -1979,17 +1957,18 @@ int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *load
   return 0;
 }
 
+classloader *get_current_classloader(vm_thread * thread) {
+  stack_frame *frame = thread->stack.top;
+  if (frame) {
+    return frame->method->my_class->classloader;
+  }
+  return thread->vm->bootstrap_classloader;
+}
+
 // TODO make this async
 // NOLINTNEXTLINE(misc-no-recursion)
 int resolve_class(vm_thread *thread, cp_class_info *info) {
-  stack_frame *frame = thread->stack.top;
-  classloader *loader;
-  if (frame) {
-    loader = frame->method->my_class->classloader;
-  } else {
-    loader = thread->vm->bootstrap_classloader;
-  }
-
+  classloader *loader = get_current_classloader(thread);
   DCHECK(loader);  // Need to find
   return resolve_class_impl(thread, info, loader);
 }
@@ -2158,6 +2137,7 @@ struct native_Class *get_class_mirror(vm_thread *thread, classdesc *cd) {
     }
     object componentType = cd->one_fewer_dim ? (void *)get_class_mirror(thread, cd->one_fewer_dim) : nullptr;
     class_mirror->componentType = componentType;
+    class_mirror->classLoader = cd->classloader->java_mirror;
   }
   struct native_Class *result = class_mirror;
   drop_handle(thread, cm_handle);
@@ -2541,13 +2521,14 @@ DEFINE_ASYNC(resolve_indy_static_argument) {
 
   if (ent->kind == CP_KIND_METHOD_TYPE) {
     if (!ent->method_type.resolved_mt) {
-      ent->method_type.resolved_mt = resolve_method_type(thread, ent->method_type.parsed_descriptor);
+      AWAIT(resolve_method_type, thread, self->args.cl, ent->method_type.parsed_descriptor);
+      ent->method_type.resolved_mt = get_async_result(resolve_method_type);
     }
     ASYNC_RETURN((stack_value){.obj = (void *)ent->method_type.resolved_mt});
   }
 
   if (ent->kind == CP_KIND_METHOD_HANDLE) {
-    AWAIT(resolve_method_handle, thread, &ent->method_handle);
+    AWAIT(resolve_method_handle, thread, &ent->method_handle, args->cl);
     ASYNC_RETURN((stack_value){.obj = (void *)get_async_result(resolve_method_handle)});
   }
 
@@ -2568,7 +2549,7 @@ DEFINE_ASYNC(indy_resolve) {
 #define m (indy->method)
 
   // e.g. LambdaMetafactory.metafactory
-  AWAIT(resolve_method_handle, thread, indy->method->ref);
+  AWAIT(resolve_method_handle, thread, indy->method->ref, get_current_classloader(thread));
   if (thread->current_exception) {
     ASYNC_RETURN(1);
   }
@@ -2587,14 +2568,14 @@ DEFINE_ASYNC(indy_resolve) {
   self->static_i = 0;
   for (; self->static_i < m->args_count; ++self->static_i) {
     cp_entry *arg = m->args[self->static_i];
-    AWAIT(resolve_indy_static_argument, thread, arg);
+    AWAIT(resolve_indy_static_argument, thread, arg, get_current_classloader(thread));
     ReferenceArrayStore(self->invoke_array->obj, self->static_i + 3,
                         get_async_result(resolve_indy_static_argument).obj);
   }
 
   handle *name = make_handle(thread, MakeJStringFromModifiedUTF8(thread, indy->name_and_type->name, true));
-  indy->resolved_mt = resolve_method_type(thread, indy->method_descriptor);
-
+  AWAIT(resolve_method_type, thread, get_current_classloader(thread), indy->method_descriptor);
+  indy->resolved_mt = get_async_result(resolve_method_type);
   ReferenceArrayStore(self->invoke_array->obj, 0, lookup_handle->obj);
   drop_handle(thread, lookup_handle);
   ReferenceArrayStore(self->invoke_array->obj, 1, name->obj);

@@ -37,7 +37,7 @@ DECLARE_NATIVE("java/lang", ClassLoader, findBuiltinLib, "(Ljava/lang/String;)Lj
 
 static int incr = 0;
 
-enum { FLAG_HIDDEN_CLASS = 8 };
+enum { FLAG_HIDDEN_CLASS = 2 };
 
 stack_value define_class_shared_impl(vm_thread *thread, handle *loader, handle *parent_class, handle *name, u8 *data_bytes,
                          int offset, int length, handle *pd, bool initialize, int flags, handle *source) {

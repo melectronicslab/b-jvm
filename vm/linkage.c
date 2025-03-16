@@ -22,7 +22,7 @@ static size_t allocate_field(size_t *current, type_kind kind) {
   }
   case TYPE_KIND_CHAR:
   case TYPE_KIND_SHORT: {
-    *current = (*current + 1) & ~1;
+    *current = align_up(*current, 2);
     result = *current;
     *current += 2;
     break;
@@ -32,7 +32,7 @@ static size_t allocate_field(size_t *current, type_kind kind) {
 #if SIZEOF_POINTER == 4
   case TYPE_KIND_REFERENCE:
 #endif
-    *current = (*current + 3) & ~3;
+    *current = align_up(*current, 4);
     result = *current;
     *current += 4;
     break;
@@ -41,7 +41,7 @@ static size_t allocate_field(size_t *current, type_kind kind) {
 #if SIZEOF_POINTER == 8
   case TYPE_KIND_REFERENCE:
 #endif
-    *current = (*current + 7) & ~7;
+    *current = align_up(*current, 8);
     result = *current;
     *current += 8;
     break;
