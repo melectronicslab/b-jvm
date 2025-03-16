@@ -1511,7 +1511,7 @@ static int extended_npe_phase2(const cp_method *method, stack_variable_source *s
     if (source->index == 0 && !(method->access_flags & ACCESS_STATIC)) {
       string_builder_append(builder, "this");
     } else {
-      if (lvt && ((ent = lvt_lookup(source->index, original_pc, lvt)))) {
+      if (lvt && ((ent = local_variable_table_lookup(source->index, original_pc, lvt)))) {
         string_builder_append(builder, "%.*s", fmt_slice(*ent));
       } else {
         string_builder_append(builder, "<parameter%d>", source->index);
@@ -1523,7 +1523,7 @@ static int extended_npe_phase2(const cp_method *method, stack_variable_source *s
     DCHECK(index >= 0 && index < method->code->insn_count);
     bytecode_insn *insn = method->code->code + index;
 
-    if (lvt && ((ent = lvt_lookup(insn->index, original_pc, lvt)))) {
+    if (lvt && ((ent = local_variable_table_lookup(insn->index, original_pc, lvt)))) {
       string_builder_append(builder, "%.*s", fmt_slice(*ent));
     } else {
       string_builder_append(builder, "<local%d>", insn->index);

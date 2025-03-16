@@ -566,7 +566,7 @@ typedef struct {
 
 // Look up an entry in the local variable table, according to a swizzled local index but the original instruction
 // program counter.
-const slice *lvt_lookup(int index, int original_pc, const attribute_local_variable_table *table);
+const slice *local_variable_table_lookup(int index, int original_pc, const attribute_local_variable_table *table);
 
 typedef struct {
   slice name;

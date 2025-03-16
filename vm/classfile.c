@@ -12,7 +12,7 @@
 #include "util.h"
 #include "bjvm.h"
 
-type_kind kind_to_representable_kind(type_kind kind) {
+static type_kind kind_to_representable_kind(type_kind kind) {
   switch (kind) {
   case TYPE_KIND_BOOLEAN:
   case TYPE_KIND_CHAR:
@@ -52,9 +52,12 @@ type_kind read_type_kind_char(char c) {
   }
 }
 
-char type_kind_to_char(type_kind kind) { return "ZCFDBSIJVL"[kind]; }
+char type_kind_to_char(type_kind kind) {
+  DCHECK(kind <= TYPE_KIND_REFERENCE);
+  return "ZCFDBSIJVL"[kind];
+}
 
-void free_method(cp_method *method) { free_code_analysis(method->code_analysis); }
+static void free_method(cp_method *method) { free_code_analysis(method->code_analysis); }
 
 void free_classfile(classdesc cf) {
   for (int i = 0; i < cf.methods_count; ++i)
@@ -64,7 +67,7 @@ void free_classfile(classdesc cf) {
   arena_uninit(&cf.arena);
 }
 
-cp_entry *get_constant_pool_entry(constant_pool *pool, int index) {
+static cp_entry *get_constant_pool_entry(constant_pool *pool, int index) {
   DCHECK(index >= 0 && index < pool->entries_len);
   return &pool->entries[index];
 }
@@ -79,13 +82,13 @@ _Thread_local jmp_buf format_error_jmp_buf;
 _Thread_local char *format_error_msg = nullptr;
 _Thread_local bool format_error_needs_free = false;
 
-_Noreturn void format_error_static(const char *reason) {
+static [[noreturn]] void format_error_static(const char *reason) {
   format_error_msg = (char *)reason;
   format_error_needs_free = false;
   longjmp(format_error_jmp_buf, 1);
 }
 
-_Noreturn void format_error_dynamic(char *reason) {
+static [[noreturn]] void format_error_dynamic(char *reason) {
   format_error_msg = reason;
   format_error_needs_free = true;
   longjmp(format_error_jmp_buf, 1);
@@ -129,7 +132,7 @@ PUN_READER_NEXT_IMPL(64, f64);
 #undef READER_NEXT_IMPL
 #undef PUN_READER_NEXT_IMPL
 
-cf_byteslice reader_get_slice(cf_byteslice *reader, size_t len, const char *reason) {
+static cf_byteslice reader_get_slice(cf_byteslice *reader, size_t len, const char *reason) {
   if (unlikely(reader->len < len)) {
     char *msg = malloc(strlen(reason) + 100);
     strcpy(stpcpy(msg, "End of slice while reading "), reason);
@@ -149,7 +152,7 @@ typedef struct {
 } classfile_parse_ctx;
 
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
-slice parse_modified_utf8(const u8 *bytes, int len, arena *arena) {
+static slice parse_modified_utf8(const u8 *bytes, int len, arena *arena) {
   char *result = arena_alloc(arena, len + 1, sizeof(char));
   memcpy(result, bytes, len);
   result[len] = '\0';
@@ -172,7 +175,7 @@ cp_entry *check_cp_entry(cp_entry *entry, cp_kind expected_kinds, const char *re
   format_error_dynamic(strdup(buf));
 }
 
-const slice *lvt_lookup(int index, int original_pc, const attribute_local_variable_table *table) {
+const slice *local_variable_table_lookup(int index, int original_pc, const attribute_local_variable_table *table) {
   // Linear scan throught the whole array
   for (int i = 0; i < table->entries_count; ++i) {
     attribute_lvt_entry *entry = table->entries + i;
@@ -183,7 +186,7 @@ const slice *lvt_lookup(int index, int original_pc, const attribute_local_variab
   return nullptr;
 }
 
-cp_entry *checked_cp_entry(constant_pool *pool, int index, cp_kind expected_kinds, const char *reason) {
+static cp_entry *checked_cp_entry(constant_pool *pool, int index, cp_kind expected_kinds, const char *reason) {
   DCHECK(reason);
   if (!(index >= 0 && index < pool->entries_len)) {
     char buf[256] = {0};
@@ -194,11 +197,11 @@ cp_entry *checked_cp_entry(constant_pool *pool, int index, cp_kind expected_kind
   return check_cp_entry(&pool->entries[index], expected_kinds, reason);
 }
 
-slice checked_get_utf8(constant_pool *pool, int index, const char *reason) {
+static slice checked_get_utf8(constant_pool *pool, int index, const char *reason) {
   return checked_cp_entry(pool, index, CP_KIND_UTF8, reason)->utf8;
 }
 
-char *parse_complete_field_descriptor(const slice entry, field_descriptor *result, classfile_parse_ctx *ctx) {
+static char *parse_complete_field_descriptor(const slice entry, field_descriptor *result, classfile_parse_ctx *ctx) {
   const char *chars = entry.chars;
   char *error = parse_field_descriptor(&chars, entry.len, result, ctx->arena);
   if (error)
@@ -223,7 +226,7 @@ enum cp_resolution_pass {
  * @param pass Whether we're reading or linking. UTF-8 entries are
  * @return The resolved entry.
  */
-cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ctx, enum cp_resolution_pass pass) {
+static cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ctx, enum cp_resolution_pass pass) {
   bool skip_linking = pass == READ;
   enum { // given by the spec
     CONSTANT_Utf8 = 1,
@@ -366,13 +369,13 @@ cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ct
   }
 }
 
-constant_pool *init_constant_pool(u16 count, arena *arena) {
+static constant_pool *init_constant_pool(u16 count, arena *arena) {
   constant_pool *pool = arena_alloc(arena, 1, sizeof(constant_pool) + (count + 1) * sizeof(cp_entry));
   pool->entries_len = count + 1;
   return pool;
 }
 
-void finish_constant_pool_entry(cp_entry *entry, classfile_parse_ctx *ctx) {
+static void finish_constant_pool_entry(cp_entry *entry, classfile_parse_ctx *ctx) {
   switch (entry->kind) {
   case CP_KIND_FIELD_REF: {
     field_descriptor *parsed_descriptor = nullptr;
@@ -424,7 +427,7 @@ void finish_constant_pool_entry(cp_entry *entry, classfile_parse_ctx *ctx) {
  * Parse the constant pool from the given byteslice. Basic validation is
  * performed for format checking, i.e., all within-pool pointers are resolved.
  */
-constant_pool *parse_constant_pool(cf_byteslice *reader, classfile_parse_ctx *ctx) {
+static constant_pool *parse_constant_pool(cf_byteslice *reader, classfile_parse_ctx *ctx) {
   u16 cp_count = reader_next_u16(reader, "constant pool count");
 
   constant_pool *pool = init_constant_pool(cp_count, ctx->arena);
@@ -461,7 +464,7 @@ constant_pool *parse_constant_pool(cf_byteslice *reader, classfile_parse_ctx *ct
   return pool;
 }
 
-int checked_pc(u32 insn_pc, int offset, classfile_parse_ctx *ctx) {
+static int checked_pc(u32 insn_pc, int offset, classfile_parse_ctx *ctx) {
   int target;
   int overflow = __builtin_add_overflow(insn_pc, offset, &target);
   if (overflow || target < 0 || target >= ctx->current_code_max_pc) {
@@ -470,7 +473,7 @@ int checked_pc(u32 insn_pc, int offset, classfile_parse_ctx *ctx) {
   return target;
 }
 
-bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, classfile_parse_ctx *ctx) {
+static bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, classfile_parse_ctx *ctx) {
   int original_pc = pc++;
 
   // consume u8s until pc = 0 mod 4
@@ -502,7 +505,7 @@ bytecode_insn parse_tableswitch_insn(cf_byteslice *reader, int pc, classfile_par
   return (bytecode_insn){.kind = insn_tableswitch, .original_pc = original_pc, .tableswitch = data};
 }
 
-bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, classfile_parse_ctx *ctx) {
+static bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, classfile_parse_ctx *ctx) {
   int original_pc = pc++;
   while (pc % 4 != 0) {
     reader_next_u8(reader, "tableswitch padding");
@@ -533,7 +536,7 @@ bytecode_insn parse_lookupswitch_insn(cf_byteslice *reader, int pc, classfile_pa
   return (bytecode_insn){.kind = insn_lookupswitch, .original_pc = original_pc, .lookupswitch = data};
 }
 
-type_kind parse_atype(u8 atype) {
+static type_kind parse_atype(u8 atype) {
   switch (atype) {
   case 4:
     return TYPE_KIND_BOOLEAN;
@@ -559,7 +562,7 @@ type_kind parse_atype(u8 atype) {
   }
 }
 
-bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx *ctx) {
+static bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx *ctx) {
   /** Raw instruction codes (to be canonicalized). */
   enum {
     nop = 0x00,
@@ -1279,13 +1282,13 @@ bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_parse_ctx 
  * Parse an instruction at the given program counter and advance the reader.
  * @return The parsed instruction.
  */
-bytecode_insn parse_insn(cf_byteslice *reader, u32 pc, classfile_parse_ctx *ctx) {
+static bytecode_insn parse_insn(cf_byteslice *reader, u32 pc, classfile_parse_ctx *ctx) {
   bytecode_insn insn = parse_insn_impl(reader, pc, ctx);
   insn.original_pc = pc;
   return insn;
 }
 
-int convert_pc_to_insn(int pc, int *pc_to_insn, u32 max_pc) {
+static int convert_pc_to_insn(int pc, int *pc_to_insn, u32 max_pc) {
   DCHECK(pc < (int)max_pc && pc >= 0); // checked pc should have caught this earlier
   int insn = pc_to_insn[pc];
   if (insn == -1) {
@@ -1296,7 +1299,7 @@ int convert_pc_to_insn(int pc, int *pc_to_insn, u32 max_pc) {
   return insn;
 }
 
-void convert_pc_offsets_to_insn_offsets(bytecode_insn *code, int insn_count, int *pc_to_insn, u32 max_pc) {
+static void convert_pc_offsets_to_insn_offsets(bytecode_insn *code, int insn_count, int *pc_to_insn, u32 max_pc) {
   for (int i = 0; i < insn_count; ++i) {
     bytecode_insn *insn = &code[i];
     if (insn->kind == insn_tableswitch) {
@@ -1318,7 +1321,7 @@ void convert_pc_offsets_to_insn_offsets(bytecode_insn *code, int insn_count, int
   }
 }
 
-void parse_bootstrap_methods_attribute(cf_byteslice attr_reader, attribute *attr, classfile_parse_ctx *ctx) {
+static void parse_bootstrap_methods_attribute(cf_byteslice attr_reader, attribute *attr, classfile_parse_ctx *ctx) {
   attr->kind = ATTRIBUTE_KIND_BOOTSTRAP_METHODS;
   u16 count = attr->bootstrap_methods.count = reader_next_u16(&attr_reader, "bootstrap methods count");
   bootstrap_method *methods = attr->bootstrap_methods.methods =
@@ -1341,9 +1344,10 @@ void parse_bootstrap_methods_attribute(cf_byteslice attr_reader, attribute *attr
   }
 }
 
-void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *attr);
+static void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *attr);
 
-attribute_code parse_code_attribute(cf_byteslice attr_reader, classfile_parse_ctx *ctx) {
+// NOLINTNEXTLINE(misc-no-recursion)
+static attribute_code parse_code_attribute(cf_byteslice attr_reader, classfile_parse_ctx *ctx) {
   u16 max_stack = reader_next_u16(&attr_reader, "max stack");
   u16 max_locals = reader_next_u16(&attr_reader, "max locals");
   u32 code_length = reader_next_u32(&attr_reader, "code length");
@@ -1430,7 +1434,7 @@ attribute_code parse_code_attribute(cf_byteslice attr_reader, classfile_parse_ct
 }
 
 // 4.2.2. Unqualified Names
-void check_unqualified_name(slice name, bool is_method, const char *reading) {
+static void check_unqualified_name(slice name, bool is_method, const char *reading) {
   // "An unqualified name must contain at least one Unicode code point and must
   // not contain any of the ASCII characters . ; [ /"
   // "Method names are further constrained so that ... they must not contain
@@ -1454,7 +1458,7 @@ void check_unqualified_name(slice name, bool is_method, const char *reading) {
   }
 }
 
-void parse_inner_classes_attribute(cf_byteslice attr_reader, attribute * attr, classfile_parse_ctx * ctx) {
+static void parse_inner_classes_attribute(cf_byteslice attr_reader, attribute * attr, classfile_parse_ctx * ctx) {
   attr->kind = ATTRIBUTE_KIND_INNER_CLASSES;
   u16 count = attr->inner_classes.count = reader_next_u16(&attr_reader, "inner classes count");
   cp_class_info **classes = attr->inner_classes.classes = arena_alloc(ctx->arena, count, sizeof(cp_class_info *));
@@ -1471,8 +1475,8 @@ void parse_inner_classes_attribute(cf_byteslice attr_reader, attribute * attr, c
   }
 }
 
-
-void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *attr) {
+// NOLINTNEXTLINE(misc-no-recursion)
+static void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *attr) {
   u16 index = reader_next_u16(reader, "method attribute name");
   attr->name = checked_get_utf8(ctx->cp, index, "method attribute name");
   attr->length = reader_next_u32(reader, "method attribute length");
@@ -1566,6 +1570,7 @@ void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attribute *
     BYTE_ARRAY_ANNOTATION(ATTRIBUTE_KIND_RUNTIME_VISIBLE_TYPE_ANNOTATIONS, type_annotations);
   } else if (utf8_equals(attr->name, "AnnotationDefault")) {
     BYTE_ARRAY_ANNOTATION(ATTRIBUTE_KIND_ANNOTATION_DEFAULT, annotation_default);
+#undef BYTE_ARRAY_ANNOTATION
   } else if (utf8_equals(attr->name, "Signature")) {
     attr->kind = ATTRIBUTE_KIND_SIGNATURE;
     attr->signature.utf8 =
@@ -1608,7 +1613,7 @@ attribute *find_attribute_by_kind(classdesc *desc, attribute_kind kind) {
 /**
  * Parse a method in a classfile.
  */
-cp_method parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx) {
+static cp_method parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx) {
   cp_method method = {0};
   method.access_flags = reader_next_u16(reader, "method access flags");
   method.name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "method name"), "method name");
@@ -1635,7 +1640,7 @@ cp_method parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx) {
   return method;
 }
 
-cp_field read_field(cf_byteslice *reader, classfile_parse_ctx *ctx) {
+static cp_field read_field(cf_byteslice *reader, classfile_parse_ctx *ctx) {
   cp_field field = {.access_flags = reader_next_u16(reader, "field access flags"),
                     .name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "field name"), "field name"),
                     .descriptor =
@@ -1754,7 +1759,7 @@ char *parse_method_descriptor(const slice entry, method_descriptor *result, aren
 }
 
 // Go through the InvokeDynamic entries and link their bootstrap method pointers
-void link_bootstrap_methods(classdesc *cf) {
+static void link_bootstrap_methods(classdesc *cf) {
   constant_pool *cp = cf->pool;
   for (int i = 1; i < cp->entries_len; i++) {
     if (cp->entries[i].kind == CP_KIND_INVOKE_DYNAMIC) {
@@ -1771,7 +1776,7 @@ void link_bootstrap_methods(classdesc *cf) {
   }
 }
 
-int no_smt_found(attribute_code *code) {
+static int no_smt_found(attribute_code *code) {
   for (int i = 0; i < code->attributes_count; i++)
     if (code->attributes[i].kind == ATTRIBUTE_KIND_STACK_MAP_TABLE)
       return 0;
