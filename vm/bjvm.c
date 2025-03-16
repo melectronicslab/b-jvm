@@ -470,22 +470,7 @@ DEFINE_ASYNC(load_class_of_field_descriptor) {
     AWAIT(lookup_class, thread, name, self->args.cl);
     ASYNC_RETURN(get_async_result(lookup_class));
   }
-  switch (chars[0]) {
-  case 'Z':
-  case 'B':
-  case 'C':
-  case 'S':
-  case 'I':
-  case 'J':
-  case 'F':
-  case 'D':
-  case 'V':
-    ASYNC_RETURN(primitive_classdesc(thread, read_type_kind_char(chars[0])));
-  default:
-    UNREACHABLE();
-  }
-
-  ASYNC_END(nullptr);
+  ASYNC_END(primitive_classdesc(thread, read_type_kind_char(chars[0])));
 #undef thread
 #undef name
 }

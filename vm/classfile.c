@@ -82,13 +82,13 @@ _Thread_local jmp_buf format_error_jmp_buf;
 _Thread_local char *format_error_msg = nullptr;
 _Thread_local bool format_error_needs_free = false;
 
-static [[noreturn]] void format_error_static(const char *reason) {
+static _Noreturn void format_error_static(const char *reason) {
   format_error_msg = (char *)reason;
   format_error_needs_free = false;
   longjmp(format_error_jmp_buf, 1);
 }
 
-static [[noreturn]] void format_error_dynamic(char *reason) {
+static _Noreturn void format_error_dynamic(char *reason) {
   format_error_msg = reason;
   format_error_needs_free = true;
   longjmp(format_error_jmp_buf, 1);
