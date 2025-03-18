@@ -167,7 +167,8 @@ void drop_js_handle(vm *vm, int index) {
   vm->js_handles[index] = nullptr;
 }
 
-handle *make_handle_impl(vm_thread *thread, obj_header *obj, const char *file_name, int line_no) {
+handle *make_handle_impl(vm_thread *thread, obj_header *obj, [[maybe_unused]] const char *file_name,
+                         [[maybe_unused]] int line_no) {
   if (!obj)
     return &thread->null_handle;
   for (int i = 0; i < thread->handles_capacity; ++i) {
@@ -276,7 +277,9 @@ __attribute__((noinline)) static stack_frame *raise_abstract_method_error_tramp(
 
 // See push_plain_frame
 __attribute__((noinline)) static stack_frame *raise_exception_object_tramp(vm_thread *thread,
-  [[maybe_unused]] cp_method *method, [[maybe_unused]] stack_value *args, [[maybe_unused]] u8 argc) {
+                                                                           [[maybe_unused]] cp_method *method,
+                                                                           [[maybe_unused]] stack_value *args,
+                                                                           [[maybe_unused]] u8 argc) {
   raise_exception_object(thread, thread->stack_overflow_error);
   return nullptr;
 }
@@ -292,7 +295,7 @@ stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value 
   DCHECK(argc <= code->max_locals);
 
   stack_frame *restrict frame = (stack_frame *)(args + code->max_locals);
-  if ((uintptr_t)((char*)frame + code->frame_size) > (uintptr_t)thread->stack.frame_buffer_end) {
+  if ((uintptr_t)((char *)frame + code->frame_size) > (uintptr_t)thread->stack.frame_buffer_end) {
     // allows the above check to become a tail call
     return raise_exception_object_tramp(thread, method, args, argc);
   }
@@ -304,9 +307,7 @@ stack_frame *push_plain_frame(vm_thread *thread, cp_method *method, stack_value 
   thread->stack.top = frame;
 
   constexpr size_t copy_sz = sizeof(stack_frame) - offsetof(stack_frame, kind);
-  memcpy(&frame->kind /* member following prev */,
-    &((stack_frame *)method->template_frame)->kind,
-    copy_sz);
+  memcpy(&frame->kind /* member following prev */, &((stack_frame *)method->template_frame)->kind, copy_sz);
 
   // Not necessary, but possibly helpful when looking at debug dumps
   // memset(frame_stack(frame), 0x0, code->max_stack * sizeof(stack_value));
@@ -1092,7 +1093,7 @@ DEFINE_ASYNC(compute_mh_type_info) {
     AWAIT(load_class_of_field_descriptor, thread, self->args.cl, field->parsed_descriptor->unparsed);
     self->rtype = get_async_result(load_class_of_field_descriptor);
   } else if (info->handle_kind == MH_KIND_INVOKE_STATIC || info->handle_kind == MH_KIND_INVOKE_VIRTUAL ||
-    info->handle_kind == MH_KIND_INVOKE_SPECIAL || info->handle_kind == MH_KIND_INVOKE_INTERFACE) {
+             info->handle_kind == MH_KIND_INVOKE_SPECIAL || info->handle_kind == MH_KIND_INVOKE_INTERFACE) {
     // MT should be of the form (C,A*)T, where C is the class the method is
     // found on, A* is the list of argument types, and T is the return type
     self->method = &info->reference->methodref;
@@ -1124,7 +1125,8 @@ DEFINE_ASYNC(compute_mh_type_info) {
     UNREACHABLE();
   }
 
-  *self->args.result = (mh_type_info_t){.rtype = self->rtype, .ptypes = self->ptypes, .ptypes_count = arrlen(self->ptypes)};
+  *self->args.result =
+      (mh_type_info_t){.rtype = self->rtype, .ptypes = self->ptypes, .ptypes_count = arrlen(self->ptypes)};
 #undef thread
 #undef info
   ASYNC_END(0);
@@ -1342,15 +1344,15 @@ int check_permitted_subclasses(vm_thread *thread, slice name, cp_class_info *sup
     // "class C cannot implement sealed interface I"
     INIT_STACK_STRING(str, 2048);
     str = bprintf(str, "class %.*s cannot implement sealed interface %.*s", fmt_slice(name),
-                      fmt_slice(super_class->name));
+                  fmt_slice(super_class->name));
     raise_incompatible_class_change_error(thread, str);
     return 1;
   }
   return 0;
 }
 
-
-classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes, size_t classfile_len) {
+classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes,
+                        size_t classfile_len) {
   // "First, the Java Virtual Machine determines whether it has already recorded that L is an initiating loader of a
   // class or interface denoted by N. If so, this creation attempt is invalid and loading throws a LinkageError."
   classdesc *existing = hash_table_lookup(&cl->initiating, chars.chars, (int)chars.len);
@@ -1475,7 +1477,7 @@ void dump_trace(vm_thread *thread) {
     } else {
       int line = get_line_number(method->code, frame->program_counter);
       fprintf(stderr, "  at %.*s.%.*s(%.*s:%d)\n", fmt_slice(method->my_class->name), fmt_slice(method->name),
-             fmt_slice(method->my_class->source_file ? method->my_class->source_file->name : null_str()), line);
+              fmt_slice(method->my_class->source_file ? method->my_class->source_file->name : null_str()), line);
     }
     frame = frame->prev;
   }
@@ -1546,7 +1548,7 @@ DEFINE_ASYNC(lookup_class) {
       object java_mirror = cl->java_mirror;
       DCHECK(java_mirror);
       cp_method *method = method_lookup(java_mirror->descriptor, STR("loadClass"),
-        STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
+                                        STR("(Ljava/lang/String;)Ljava/lang/Class;"), true, false);
 
       INIT_STACK_STRING(with_dots, 1024);
       exchange_slashes_and_dots(&with_dots, classname);
@@ -1555,7 +1557,7 @@ DEFINE_ASYNC(lookup_class) {
         ASYNC_RETURN(nullptr); // oom
       }
 
-      stack_value method_args[2] = { {.obj = cl->java_mirror }, {.obj = string} };
+      stack_value method_args[2] = {{.obj = cl->java_mirror}, {.obj = string}};
       AWAIT(call_interpreter, thread, method, method_args);
       object class_mirror = get_async_result(call_interpreter).obj;
       // TODO deal with adversarial loadClass implementations
@@ -1579,7 +1581,7 @@ DEFINE_ASYNC(lookup_class) {
     }
   }
 
-  if (class == nullptr) {  // Still couldn't load the class
+  if (class == nullptr) { // Still couldn't load the class
     if (!self->args.raise_class_not_found) {
       ASYNC_RETURN(nullptr);
     }
@@ -1938,7 +1940,7 @@ int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *load
   }
 
   if (loader) {
-    lookup_class_t lookup_class_args = { .args = { thread, info->name, loader, true } };
+    lookup_class_t lookup_class_args = {.args = {thread, info->name, loader, true}};
     thread->stack.synchronous_depth++;
     future_t fut = lookup_class(&lookup_class_args);
     thread->stack.synchronous_depth--;
@@ -1957,7 +1959,7 @@ int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *load
   return 0;
 }
 
-classloader *get_current_classloader(vm_thread * thread) {
+classloader *get_current_classloader(vm_thread *thread) {
   stack_frame *frame = thread->stack.top;
   if (frame) {
     return frame->method->my_class->classloader;
@@ -1969,7 +1971,7 @@ classloader *get_current_classloader(vm_thread * thread) {
 // NOLINTNEXTLINE(misc-no-recursion)
 int resolve_class(vm_thread *thread, cp_class_info *info) {
   classloader *loader = get_current_classloader(thread);
-  DCHECK(loader);  // Need to find
+  DCHECK(loader); // Need to find
   return resolve_class_impl(thread, info, loader);
 }
 

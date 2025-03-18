@@ -151,8 +151,8 @@ DEFINE_ASYNC(reflect_initialize_method) {
       goto oom;
   }
 
-  object parameterTypes = CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Class")),
-                                              method->descriptor->args_count);
+  object parameterTypes =
+      CreateObjectArray1D(thread, cached_classes(thread->vm)->klass, method->descriptor->args_count);
   M->parameterTypes = parameterTypes;
   for (int i = 0; i < method->descriptor->args_count; ++i) {
     slice desc = method->descriptor->args[i].unparsed;
@@ -165,7 +165,7 @@ DEFINE_ASYNC(reflect_initialize_method) {
   AWAIT(load_class_of_field_descriptor, thread, get_current_classloader(thread), ret_desc);
   mirror = (void *)get_class_mirror(thread, get_async_result(load_class_of_field_descriptor));
   M->returnType = mirror;
-  object exceptionTypes = CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Class")), 0);
+  object exceptionTypes = CreateObjectArray1D(thread, cached_classes(thread->vm)->klass, 0);
   M->exceptionTypes = exceptionTypes;
   M->slot = (s32)method->my_index;
   // TODO parse these ^^

@@ -213,7 +213,7 @@ static void calculate_local_modifying_insn_delta(bytecode_insn *insn, const stru
 }
 
 // Calculate the delta field for branches (besides *switch)
-static void calculate_branch_delta(bytecode_insn * insn, int curr_index) {
+static void calculate_branch_delta(bytecode_insn *insn, int curr_index) {
   insn->delta = ((s32)insn->index - (s32)curr_index) * (s32)sizeof(bytecode_insn);
 }
 
