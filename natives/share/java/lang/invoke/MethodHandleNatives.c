@@ -102,14 +102,14 @@ void fill_mn_with_method(vm_thread *thread, handle *mn, cp_method *method, bool 
   CHECK(method);
   classdesc *search_on = method->my_class;
   if (method->is_ctor) {
-    reflect_initialize_constructor_t ctx = { .args = {thread, search_on, method}};
+    reflect_initialize_constructor_t ctx = {.args = {thread, search_on, method}};
     thread->stack.synchronous_depth++;
     future_t fut = reflect_initialize_constructor(&ctx);
     CHECK(fut.status == FUTURE_READY);
     thread->stack.synchronous_depth--;
     M->flags |= MN_IS_CONSTRUCTOR;
   } else {
-    reflect_initialize_method_t ctx = { .args = {thread, search_on, method}};
+    reflect_initialize_method_t ctx = {.args = {thread, search_on, method}};
     thread->stack.synchronous_depth++;
     future_t fut = reflect_initialize_method(&ctx);
     CHECK(fut.status == FUTURE_READY);
@@ -153,7 +153,7 @@ method_resolve_result resolve_mn(vm_thread *thread, handle *mn) {
       break;
     }
     found = true;
-    fill_mn_with_field_t ctx = { .args = {thread, mn, field}};
+    fill_mn_with_field_t ctx = {.args = {thread, mn, field}};
     thread->stack.synchronous_depth++;
     future_t fut = fill_mn_with_field(&ctx);
     CHECK(fut.status == FUTURE_READY);
@@ -220,14 +220,14 @@ DECLARE_ASYNC_NATIVE("java/lang/invoke", MethodHandleNatives, getMemberVMInfo,
   DCHECK(argc == 1);
 #define mn ((struct native_MemberName *)args[0].handle->obj)
 
-  classdesc *Long = bootstrap_lookup_class(thread, STR("java/lang/Long"));
+  classdesc *Long = cached_classes(thread->vm)->long_;
   cp_method *valueOf = method_lookup(Long, STR("valueOf"), STR("(J)Ljava/lang/Long;"), false, false);
 
   AWAIT(call_interpreter, thread, valueOf, (stack_value[]){{.l = mn->vmindex}});
   handle *vmindex_long = make_handle(thread, get_async_result(call_interpreter).obj);
   // todo: check exception
 
-  obj_header *array = CreateObjectArray1D(thread, bootstrap_lookup_class(thread, STR("java/lang/Object")), 2);
+  obj_header *array = CreateObjectArray1D(thread, cached_classes(thread->vm)->klass, 2);
   // todo check exception (out of memory error)
 
   obj_header **data = ArrayData(array);
@@ -271,7 +271,7 @@ DECLARE_NATIVE("java/lang/invoke", MethodHandleNatives, init, "(Ljava/lang/invok
     M->flags |= MH_KIND_NEW_INVOKE_SPECIAL << 24;
   } else if (utf8_equals(s, "java/lang/reflect/Field")) {
     cp_field *field = *unmirror_field(target);
-    fill_mn_with_field_t ctx = { .args = {thread, mn, field}};
+    fill_mn_with_field_t ctx = {.args = {thread, mn, field}};
     thread->stack.synchronous_depth++;
     future_t fut = fill_mn_with_field(&ctx);
     CHECK(fut.status == FUTURE_READY);

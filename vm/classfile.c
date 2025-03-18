@@ -8,9 +8,9 @@
 #include <stdlib.h>
 
 #include "analysis.h"
+#include "bjvm.h"
 #include "classfile.h"
 #include "util.h"
-#include "bjvm.h"
 
 static type_kind kind_to_representable_kind(type_kind kind) {
   switch (kind) {
@@ -153,10 +153,7 @@ typedef struct {
 
 // See: 4.4.7. The CONSTANT_Utf8_info Structure
 static slice parse_modified_utf8(const u8 *bytes, int len, arena *arena) {
-  char *result = arena_alloc(arena, len + 1, sizeof(char));
-  memcpy(result, bytes, len);
-  result[len] = '\0';
-  return (slice){.chars = result, .len = len};
+  return arena_make_str(arena, (char *)bytes, len);
 }
 
 cp_entry *check_cp_entry(cp_entry *entry, cp_kind expected_kinds, const char *reason) {
@@ -226,7 +223,8 @@ enum cp_resolution_pass {
  * @param pass Whether we're reading or linking. UTF-8 entries are
  * @return The resolved entry.
  */
-static cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ctx, enum cp_resolution_pass pass) {
+static cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_ctx *ctx,
+                                          enum cp_resolution_pass pass) {
   bool skip_linking = pass == READ;
   enum { // given by the spec
     CONSTANT_Utf8 = 1,
@@ -360,7 +358,7 @@ static cp_entry parse_constant_pool_entry(cf_byteslice *reader, classfile_parse_
 
     // The "method" will be converted into an actual pointer to the method in link_bootstrap_methods
     return (cp_entry){.kind = (kind == CONSTANT_Dynamic) ? CP_KIND_DYNAMIC_CONSTANT : CP_KIND_INVOKE_DYNAMIC,
-                      .indy_info = {.method = (void *)(uintptr_t)bootstrap_method_attr_index,
+                      .indy_info = {._method_index = bootstrap_method_attr_index,
                                     .name_and_type = name_and_type,
                                     .method_descriptor = nullptr}};
   }
@@ -1458,20 +1456,21 @@ static void check_unqualified_name(slice name, bool is_method, const char *readi
   }
 }
 
-static void parse_inner_classes_attribute(cf_byteslice attr_reader, attribute * attr, classfile_parse_ctx * ctx) {
+static void parse_inner_classes_attribute(cf_byteslice attr_reader, attribute *attr, classfile_parse_ctx *ctx) {
   attr->kind = ATTRIBUTE_KIND_INNER_CLASSES;
   u16 count = attr->inner_classes.count = reader_next_u16(&attr_reader, "inner classes count");
   cp_class_info **classes = attr->inner_classes.classes = arena_alloc(ctx->arena, count, sizeof(cp_class_info *));
   for (int i = 0; i < count; ++i) {
-    cp_class_info *inner = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "inner class index"), CP_KIND_CLASS,
-                                            "inner class")->class_info;
+    cp_class_info *inner =
+        &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "inner class index"), CP_KIND_CLASS, "inner class")
+             ->class_info;
     classes[i] = inner;
     u16 outer_index = reader_next_u16(&attr_reader, "outer class index");
     u16 inner_name_index = reader_next_u16(&attr_reader, "inner class name index");
     u16 access_flags = reader_next_u16(&attr_reader, "inner class access flags");
     (void)outer_index;
     (void)inner_name_index;
-    (void)access_flags;  // TODO are these useful?
+    (void)access_flags; // TODO are these useful?
   }
 }
 
@@ -1505,13 +1504,13 @@ static void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attr
     u16 enclosing_class_index = reader_next_u16(&attr_reader, "enclosing class index");
     u16 enclosing_method_index = reader_next_u16(&attr_reader, "enclosing method index");
     attr->enclosing_method = (attribute_enclosing_method){
-      enclosing_class_index
-          ? &checked_cp_entry(ctx->cp, enclosing_class_index, CP_KIND_CLASS, "enclosing class")->class_info
-          : nullptr,
-      enclosing_method_index
-          ? &checked_cp_entry(ctx->cp, enclosing_method_index, CP_KIND_NAME_AND_TYPE, "enclosing method")
-                 ->name_and_type
-          : nullptr};
+        enclosing_class_index
+            ? &checked_cp_entry(ctx->cp, enclosing_class_index, CP_KIND_CLASS, "enclosing class")->class_info
+            : nullptr,
+        enclosing_method_index
+            ? &checked_cp_entry(ctx->cp, enclosing_method_index, CP_KIND_NAME_AND_TYPE, "enclosing method")
+                   ->name_and_type
+            : nullptr};
   } else if (utf8_equals(attr->name, "PermittedSubclasses")) {
     attr->kind = ATTRIBUTE_KIND_PERMITTED_SUBCLASSES;
     int count = attr->permitted_subclasses.entries_count = reader_next_u16(&attr_reader, "permitted subclasses count");
@@ -1519,7 +1518,8 @@ static void parse_attribute(cf_byteslice *reader, classfile_parse_ctx *ctx, attr
         arena_alloc(ctx->arena, count, sizeof(cp_class_info *));
     for (int i = 0; i < count; ++i) {
       cp_class_info *entry = &checked_cp_entry(ctx->cp, reader_next_u16(&attr_reader, "permitted subclass index"),
-                                               CP_KIND_CLASS, "permitted subclass")->class_info;
+                                               CP_KIND_CLASS, "permitted subclass")
+                                  ->class_info;
       entries[i] = entry;
     }
   } else if (utf8_equals(attr->name, "SourceFile")) {
@@ -1613,31 +1613,29 @@ attribute *find_attribute_by_kind(classdesc *desc, attribute_kind kind) {
 /**
  * Parse a method in a classfile.
  */
-static cp_method parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx) {
-  cp_method method = {0};
-  method.access_flags = reader_next_u16(reader, "method access flags");
-  method.name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "method name"), "method name");
-  method.unparsed_descriptor =
+static void parse_method(cf_byteslice *reader, classfile_parse_ctx *ctx, cp_method *method) {
+  memset(method, 0, sizeof(*method));
+  method->access_flags = reader_next_u16(reader, "method access flags");
+  method->name = checked_get_utf8(ctx->cp, reader_next_u16(reader, "method name"), "method name");
+  method->unparsed_descriptor =
       checked_get_utf8(ctx->cp, reader_next_u16(reader, "method descriptor"), "method descriptor");
-  method.attributes_count = reader_next_u16(reader, "method attributes count");
-  method.attributes = arena_alloc(ctx->arena, method.attributes_count, sizeof(attribute));
-  method.descriptor = arena_alloc(ctx->arena, 1, sizeof(method_descriptor));
-  method.is_ctor = utf8_equals(method.name, "<init>");
-  method.is_clinit = utf8_equals(method.name, "<clinit>");
-  char *error = parse_method_descriptor(method.unparsed_descriptor, method.descriptor, ctx->arena);
+  method->attributes_count = reader_next_u16(reader, "method attributes count");
+  method->attributes = arena_alloc(ctx->arena, method->attributes_count, sizeof(attribute));
+  method->descriptor = arena_alloc(ctx->arena, 1, sizeof(method_descriptor));
+  method->is_ctor = utf8_equals(method->name, "<init>");
+  method->is_clinit = utf8_equals(method->name, "<clinit>");
+  char *error = parse_method_descriptor(method->unparsed_descriptor, method->descriptor, ctx->arena);
   if (error) {
     format_error_dynamic(error);
   }
 
-  for (int i = 0; i < method.attributes_count; i++) {
-    attribute *attrib = &method.attributes[i];
+  for (int i = 0; i < method->attributes_count; i++) {
+    attribute *attrib = &method->attributes[i];
     parse_attribute(reader, ctx, attrib);
     if (attrib->kind == ATTRIBUTE_KIND_CODE) {
-      method.code = &attrib->code;
+      method->code = &attrib->code;
     }
   }
-
-  return method;
 }
 
 static cp_field read_field(cf_byteslice *reader, classfile_parse_ctx *ctx) {
@@ -1764,7 +1762,7 @@ static void link_bootstrap_methods(classdesc *cf) {
   for (int i = 1; i < cp->entries_len; i++) {
     if (cp->entries[i].kind == CP_KIND_INVOKE_DYNAMIC) {
       cp_indy_info *indy = &cp->entries[i].indy_info;
-      int index = (int)(uintptr_t)indy->method;
+      int index = (int)indy->_method_index;
       if (!cf->bootstrap_methods) {
         format_error_static("Missing BootstrapMethods attribute");
       }
@@ -1790,7 +1788,7 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
   classfile_parse_ctx ctx = {.arena = &cf->arena, .cp = nullptr};
 
   if (setjmp(format_error_jmp_buf)) {
-    arena_uninit(&cf->arena); // clean up our shit
+    arena_uninit(&cf->arena);
     free(ctx.temp_allocation);
     if (error) {
       *error = make_heap_str_from((slice){.chars = format_error_msg, .len = strlen(format_error_msg)});
@@ -1832,7 +1830,7 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
   bool is_primordial_object = utf8_equals(cf->name, "java/lang/Object");
 
   u16 super_class = reader_next_u16(&reader, "super class");
-  cf->super_class = ((cf->access_flags & ACCESS_MODULE) | is_primordial_object)
+  cf->super_class = ((cf->access_flags & ACCESS_MODULE) || is_primordial_object)
                         ? nullptr
                         : &checked_cp_entry(cf->pool, super_class, CP_KIND_CLASS, "super class")->class_info;
 
@@ -1869,7 +1867,7 @@ parse_result_t parse_classfile(const u8 *bytes, size_t len, classdesc *result, h
       utf8_equals(cf->name, "java/lang/invoke/MethodHandle") || utf8_equals(cf->name, "java/lang/invoke/VarHandle");
   for (int i = 0; i < cf->methods_count; ++i) {
     cp_method *method = cf->methods + i;
-    *method = parse_method(&reader, &ctx);
+    parse_method(&reader, &ctx, method);
     method->my_class = result;
     method->missing_smt = maybe_missing_smt && method->code && no_smt_found(method->code);
     method->my_index = i;

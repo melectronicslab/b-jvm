@@ -10,8 +10,8 @@
 #include <wchar.h>
 
 #include "classfile.h"
-#include "classpath.h"
 #include "classloader.h"
+#include "classpath.h"
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
@@ -270,7 +270,6 @@ DECLARE_ASYNC(struct native_MethodType *, resolve_method_type,
   invoked_methods(
     invoked_method(load_class_of_field_descriptor)
   ));
-
 
 DECLARE_ASYNC(int, compute_mh_type_info,
   locals(classdesc *rtype; classdesc **ptypes; cp_method_info *method; ),
@@ -738,7 +737,8 @@ classdesc *bootstrap_lookup_class(vm_thread *thread, slice name);
 
 classdesc *bootstrap_lookup_class_impl(vm_thread *thread, slice name, bool raise_class_not_found);
 classdesc *define_bootstrap_class(vm_thread *thread, slice chars, const u8 *classfile_bytes, size_t classfile_len);
-classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes, size_t classfile_len);
+classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes,
+                        size_t classfile_len);
 cp_method *method_lookup(classdesc *classdesc, const slice name, const slice descriptor, bool superclasses,
                          bool superinterfaces);
 
