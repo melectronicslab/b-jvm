@@ -91,7 +91,7 @@ static void enumerate_reflection_roots(gc_ctx *ctx, classdesc *desc) {
   }
 
   // Push all CallSite objects
-  for (int i = 0; i < arrlen(desc->indy_insns); ++i) {
+  for (int i = 0; i < desc->indy_insns_count; ++i) {
     bytecode_insn *insn = desc->indy_insns[i];
     PUSH_ROOT(&insn->ic);
   }

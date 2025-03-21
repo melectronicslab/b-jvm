@@ -24,22 +24,6 @@
 #include <profiler.h>
 #include <sys/mman.h>
 
-/// Looks up a class and initializes it if it needs to be initialized.
-/// This will abort() if the class's <clinit> either throws an excpetion or
-/// tries to suspend -- so be VERY careful when calling this.
-#define LoadClassSynchronous(thread, name)                                                                             \
-  ({                                                                                                                   \
-    obj_header *exception = thread->current_exception;                                                                 \
-    thread->current_exception = nullptr;                                                                               \
-    classdesc *c = bootstrap_lookup_class(thread, STR(name));                                                          \
-    AWAIT_READY(initialize_class, thread, c);                                                                          \
-    if (unlikely(thread->current_exception)) {                                                                         \
-      UNREACHABLE("exception thrown in LoadClassSynchronous");                                                         \
-    }                                                                                                                  \
-    thread->current_exception = exception;                                                                             \
-    c;                                                                                                                 \
-  })
-
 DECLARE_ASYNC(int, init_cached_classdescs,
   locals(
     classdesc * *cached_classdescs;
@@ -727,7 +711,7 @@ thread_options default_thread_options() {
 /// to suspend.
 stack_value call_interpreter_synchronous(vm_thread *thread, cp_method *method, stack_value *args) {
   if (args == nullptr) {
-    assert(method->descriptor->args_count == 0 && "No arguments provided for method with arguments");
+    DCHECK(method->descriptor->args_count == 0 && "No arguments provided for method with arguments");
     args = (stack_value[]){};
   }
 
@@ -798,7 +782,7 @@ static void init_unsafe_constants(vm_thread *thread) {
 
   DCHECK(address_size && page_size && unaligned_access, "UnsafeConstants fields not found!");
   set_static_field(address_size, (stack_value){.i = sizeof(void *)});
-  set_static_field(page_size, (stack_value){.i = 4096});
+  set_static_field(page_size, (stack_value){.i = 4096}); // ;)
   set_static_field(unaligned_access, (stack_value){.i = 1});
 }
 
@@ -872,7 +856,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
     stack_value ret;
     for (unsigned i = 0; i < sizeof(phases) / sizeof(*phases); ++i) {
       method = method_lookup(cached_classes(vm)->system, phases[i], signatures[i], false, false);
-      assert(method);
+      DCHECK(method);
       stack_value args[2] = {{.i = 1}, {.i = 1}};
       call_interpreter_synchronous(thr, method, args); // void methods, no result
 
@@ -880,7 +864,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
         // Failed to initialize
         method = method_lookup(thr->current_exception->descriptor, STR("getMessage"), STR("()Ljava/lang/String;"), true,
                                true);
-        assert(method);
+        DCHECK(method);
 
         stack_value get_message_args[] = {{.obj = thr->current_exception}};
         stack_value obj = call_interpreter_synchronous(thr, method, get_message_args);
@@ -895,7 +879,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
 
       method = method_lookup(cached_classes(vm)->system, STR("getProperty"),
                              STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
-      assert(method);
+      DCHECK(method);
       stack_value args2[1] = {{.obj = (void *)MakeJStringFromCString(thr, "java.home", true)}};
       ret = call_interpreter_synchronous(thr, method, args2); // returns a String
 
@@ -965,7 +949,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
     stack_value ret;
     for (size_t i = 0; i < sizeof(phases) / sizeof(*phases); i++) {
       method = method_lookup(cached_classes(vm)->system, phases[i], signatures[i], false, false);
-      assert(method);
+      DCHECK(method);
       stack_value args[2] = {{.i = 1}, {.i = 1}};
       call_interpreter_synchronous(thr, method, args); // void methods, no result
 
@@ -973,7 +957,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
         // Failed to initialize
         method = method_lookup(thr->current_exception->descriptor, STR("getMessage"), STR("()Ljava/lang/String;"), true,
                                true);
-        assert(method);
+        DCHECK(method);
 
         stack_value get_message_args[] = {{.obj = thr->current_exception}};
         stack_value obj = call_interpreter_synchronous(thr, method, get_message_args);
@@ -988,7 +972,7 @@ vm_thread *create_vm_thread(vm *vm, vm_thread *creator_thread, struct native_Thr
 
       method = method_lookup(cached_classes(vm)->system, STR("getProperty"),
                              STR("(Ljava/lang/String;)Ljava/lang/String;"), false, false);
-      assert(method);
+      DCHECK(method);
       stack_value args2[1] = {{.obj = (void *)MakeJStringFromCString(thr, "java.home", true)}};
       ret = call_interpreter_synchronous(thr, method, args2); // returns a String
 
@@ -1170,6 +1154,19 @@ DEFINE_ASYNC(resolve_mh_mt) {
   ASYNC_END((void *)result.obj);
 }
 
+static classdesc *get_DMH_class(vm_thread *thread) {
+  // It'd be nice to load this in the cache, but one of the transitive <clinit> depends on System.getProperties, which
+  // isn't available early in VM boot
+  classdesc *c = bootstrap_lookup_class(thread, STR("java/lang/invoke/DirectMethodHandle"));
+  thread->stack.synchronous_depth++;
+  AWAIT_READY(initialize_class, thread, c);
+  thread->stack.synchronous_depth--;
+  if (unlikely(thread->current_exception)) {
+    UNREACHABLE("Exception thrown while loading DirectMethodHandle");
+  }
+  return c;
+}
+
 DEFINE_ASYNC(resolve_mh_vh) {
 #define info (args)->info
 #define thread (args->thread)
@@ -1181,9 +1178,8 @@ DEFINE_ASYNC(resolve_mh_vh) {
   AWAIT(initialize_class, thread, field->class_info->classdesc);
   field = &info->reference->field; // reload because of the await
 
-  classdesc *DirectMethodHandle = LoadClassSynchronous(thread, "java/lang/invoke/DirectMethodHandle");
-
-  classdesc *MemberName = LoadClassSynchronous(thread, "java/lang/invoke/MemberName");
+  classdesc *DirectMethodHandle = get_DMH_class(thread);
+  classdesc *MemberName = cached_classes(thread->vm)->member_name;
 
   cp_field *f = field_lookup(field->class_info->classdesc, field->nat->name, field->nat->descriptor);
   AWAIT(reflect_initialize_field, thread, field->class_info->classdesc, f);
@@ -1223,7 +1219,7 @@ DEFINE_ASYNC(resolve_mh_invoke) {
     AWAIT(reflect_initialize_method, thread, method->class_info->classdesc, m);
   }
 
-  classdesc *MemberName = LoadClassSynchronous(thread, "java/lang/invoke/MemberName");
+  classdesc *MemberName = cached_classes(thread->vm)->member_name;
 
   // Call DirectMethodHandle.make(method, true)
   member = make_handle(thread, new_object(thread, MemberName));
@@ -1235,7 +1231,7 @@ DEFINE_ASYNC(resolve_mh_invoke) {
         (stack_value[]){{.obj = (void *)member->obj},
                         {.obj = is_ctor ? (void *)m->reflection_ctor : (void *)m->reflection_method}});
 
-  classdesc *DirectMethodHandle = LoadClassSynchronous(thread, "java/lang/invoke/DirectMethodHandle");
+  classdesc *DirectMethodHandle = get_DMH_class(thread);
   cp_method *make = method_lookup(DirectMethodHandle, STR("make"),
                                   STR("(Ljava/lang/invoke/MemberName;)Ljava/lang/"
                                       "invoke/DirectMethodHandle;"),
@@ -1247,18 +1243,14 @@ DEFINE_ASYNC(resolve_mh_invoke) {
   // Now if the member is a variable arity constructor/method, call withVarargs(true) and return the resulting
   // MethodHandle.
   if (m->access_flags & ACCESS_VARARGS) {
-    DirectMethodHandle = LoadClassSynchronous(thread, "java/lang/invoke/DirectMethodHandle");
-    cp_method *with_varargs =
+    DirectMethodHandle = get_DMH_class(thread);
+    cp_method *withVarargs =
         method_lookup(DirectMethodHandle, STR("withVarargs"), STR("(Z)Ljava/lang/invoke/MethodHandle;"), true, false);
-    AWAIT(call_interpreter, thread, with_varargs, (stack_value[]){{.obj = (void *)result.obj}, {.i = 1}});
-    stack_value result2 = get_async_result(call_interpreter);
-    ASYNC_RETURN((void *)result2.obj);
-  } else {
-    ASYNC_RETURN((void *)result.obj);
+    AWAIT(call_interpreter, thread, withVarargs, (stack_value[]){{.obj = (void *)result.obj}, {.i = 1}});
+    result = get_async_result(call_interpreter);
   }
 
-  UNREACHABLE();
-  ASYNC_END_VOID();
+  ASYNC_END((void *)result.obj);
 
 #undef info
 #undef thread
@@ -1275,12 +1267,12 @@ DEFINE_ASYNC(resolve_method_handle) {
   if (mh_is_vh(info->handle_kind)) {
     AWAIT(resolve_mh_vh, thread, info);
     ASYNC_RETURN((void *)get_async_result(resolve_mh_vh));
-  } else if (mh_is_invoke(info->handle_kind)) {
+  }
+  if (mh_is_invoke(info->handle_kind)) {
     AWAIT(resolve_mh_invoke, thread, info);
     ASYNC_RETURN((void *)get_async_result(resolve_mh_vh));
-  } else {
-    UNREACHABLE();
   }
+  UNREACHABLE();
 
 #undef info
 #undef thread
@@ -1697,16 +1689,16 @@ bool initialize_constant_value_fields(vm_thread *thread, classdesc *classdesc) {
 
       switch (ent->kind) {
       case CP_KIND_INTEGER:
-        store_stack_value(p, (stack_value){.i = (int)ent->integral.value}, TYPE_KIND_INT);
+        store_stack_value(p, (stack_value){.i = (int)ent->number.ivalue}, TYPE_KIND_INT);
         break;
       case CP_KIND_FLOAT:
-        store_stack_value(p, (stack_value){.f = (float)ent->floating.value}, TYPE_KIND_FLOAT);
+        store_stack_value(p, (stack_value){.f = (float)ent->number.dvalue}, TYPE_KIND_FLOAT);
         break;
       case CP_KIND_LONG:
-        store_stack_value(p, (stack_value){.l = ent->integral.value}, TYPE_KIND_LONG);
+        store_stack_value(p, (stack_value){.l = ent->number.ivalue}, TYPE_KIND_LONG);
         break;
       case CP_KIND_DOUBLE:
-        store_stack_value(p, (stack_value){.d = ent->floating.value}, TYPE_KIND_DOUBLE);
+        store_stack_value(p, (stack_value){.d = ent->number.dvalue}, TYPE_KIND_DOUBLE);
         break;
       case CP_KIND_STRING:
         obj_header *str = MakeJStringFromModifiedUTF8(thread, ent->string.chars, true);
@@ -1891,17 +1883,16 @@ cp_method *method_lookup(classdesc *descriptor, const slice name, const slice me
   return nullptr;
 }
 
+// Get where to place a new interpreter frame, assuming we're not doing a shared-locals optimization.
 static char *get_next_frame_start(vm_thread *thread) {
-  if (thread->stack.top) {
-    return (char *)thread->stack.top + sizeof(stack_frame) + thread->stack.top->max_stack * sizeof(stack_value);
-  }
-  return thread->stack.frame_buffer;
+  stack_frame *top = thread->stack.top;
+  return likely(top) ? (char *)top + sizeof(stack_frame) + top->max_stack * sizeof(stack_value) : thread->stack.frame_buffer;
 }
 
-// Returns true on failure to initialize the context
-static bool initialize_async_ctx(async_run_ctx *ctx, vm_thread *thread, cp_method *method, stack_value *args) {
-  assert(method && "Method is null");
-  memset(ctx, 0, sizeof(*ctx));
+// Returns nonzero on failure to initialize the context
+static int initialize_interpreter_call(interpret_t *state, vm_thread *thread, cp_method *method, stack_value *args) {
+  DCHECK(method && "Method is null");
+  memset(state, 0, sizeof(*state));
 
   u8 argc = method_argc(method);
   stack_value *stack_top = (stack_value *)get_next_frame_start(thread);
@@ -1914,20 +1905,17 @@ static bool initialize_async_ctx(async_run_ctx *ctx, vm_thread *thread, cp_metho
   size_t args_size = argc * sizeof(stack_value);
   memcpy(stack_top, args, args_size);
 
-  ctx->thread = thread;
-  ctx->frame = push_frame(thread, method, stack_top, argc);
-  return !ctx->frame; // true on failure to allocate
+  stack_frame *frame = push_frame(thread, method, stack_top, argc);
+  state->args.thread = thread;
+  state->args.raw_frame = frame;
+  return frame == nullptr; // nonzere on failure to allocate
 }
 
 DEFINE_ASYNC(call_interpreter) {
-  if (initialize_async_ctx(&self->ctx, args->thread, args->method, args->args))
+  if (initialize_interpreter_call(&self->state, args->thread, args->method, args->args) != 0)
     ASYNC_RETURN((stack_value){.l = 0});
-
-  self->ctx.interpreter_state.args = (struct interpret_args){args->thread, self->ctx.frame};
-  AWAIT_FUTURE_EXPR(interpret(&self->ctx.interpreter_state));
-
-  stack_value result = self->ctx.interpreter_state._result;
-  ASYNC_END(result);
+  AWAIT_FUTURE_EXPR(interpret(&self->state));
+  ASYNC_END(self->state._result);
 }
 
 int resolve_class_impl(vm_thread *thread, cp_class_info *info, classloader *loader) {
@@ -2157,9 +2145,9 @@ bool instanceof_interface(const classdesc *o, const classdesc *target) {
 }
 
 bool instanceof_super(const classdesc *o, const classdesc *target) {
-  assert(target->hierarchy_len > 0 && "Invalid hierarchy length");
-  assert(target->state >= CD_STATE_LINKED && "Target class not linked");
-  assert(o->state >= CD_STATE_LINKED && "Source class not linked");
+  DCHECK(target->hierarchy_len > 0 && "Invalid hierarchy length");
+  DCHECK(target->state >= CD_STATE_LINKED && "Target class not linked");
+  DCHECK(o->state >= CD_STATE_LINKED && "Source class not linked");
 
   return target->hierarchy_len <= o->hierarchy_len             // target is at or higher than o in its chain
          && o->hierarchy[target->hierarchy_len - 1] == target; // it is a superclass!
@@ -2168,8 +2156,8 @@ bool instanceof_super(const classdesc *o, const classdesc *target) {
 // Returns true if o is an instance of target
 // NOLINTNEXTLINE(misc-no-recursion)
 bool instanceof(const classdesc *o, const classdesc *target) {
-  assert(o->kind != CD_KIND_PRIMITIVE && "instanceof not intended for primitives");
-  assert(target->kind != CD_KIND_PRIMITIVE && "instanceof not intended for primitives");
+  DCHECK(o->kind != CD_KIND_PRIMITIVE && "instanceof not intended for primitives");
+  DCHECK(target->kind != CD_KIND_PRIMITIVE && "instanceof not intended for primitives");
 
   // TODO compare class loaders too
   if (o == target)
@@ -2275,7 +2263,7 @@ doit:
   if (!mh->reflected_mh) {
     // MethodHandle!
     struct native_MethodType *targ = (void *)mh->type;
-    assert(targ && "Method type must be non-null");
+    DCHECK(targ && "Method type must be non-null");
 
     bool mts_are_same = method_types_compatible(provider_mt, targ);
     bool is_invoke_exact = utf8_equals_utf8(args->method->name, STR("invokeExact"));
@@ -2474,26 +2462,26 @@ int multianewarray(vm_thread *thread, stack_frame *frame, struct multianewarray_
 static stack_value box_cp_integral(vm_thread *thread, cp_kind kind, cp_entry *ent) {
   switch (kind) {
   case CP_KIND_INTEGER: {
-    stack_value args[1] = {{.i = (jint)ent->integral.value}};
+    stack_value args[1] = {{.i = (jint)ent->number.ivalue}};
     // Call Integer.valueOf
     cp_method *valueOf =
         method_lookup(cached_classes(thread->vm)->integer, STR("valueOf"), STR("(I)Ljava/lang/Integer;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   case CP_KIND_FLOAT: {
-    stack_value args[1] = {{.f = (jfloat)ent->floating.value}};
+    stack_value args[1] = {{.f = (jfloat)ent->number.dvalue}};
     cp_method *valueOf =
         method_lookup(cached_classes(thread->vm)->float_, STR("valueOf"), STR("(F)Ljava/lang/Float;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   case CP_KIND_LONG: {
-    stack_value args[1] = {{.l = (jlong)ent->integral.value}};
+    stack_value args[1] = {{.l = (jlong)ent->number.ivalue}};
     cp_method *valueOf =
         method_lookup(cached_classes(thread->vm)->long_, STR("valueOf"), STR("(J)Ljava/lang/Long;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
   }
   case CP_KIND_DOUBLE: {
-    stack_value args[1] = {{.d = (jdouble)ent->floating.value}};
+    stack_value args[1] = {{.d = (jdouble)ent->number.dvalue}};
     cp_method *valueOf =
         method_lookup(cached_classes(thread->vm)->double_, STR("valueOf"), STR("(D)Ljava/lang/Double;"), true, false);
     return call_interpreter_synchronous(thread, valueOf, args);
@@ -2501,6 +2489,10 @@ static stack_value box_cp_integral(vm_thread *thread, cp_kind kind, cp_entry *en
   default:
     UNREACHABLE();
   }
+}
+
+static bool cp_kind_is_primitive(cp_kind kind) {
+  return kind == CP_KIND_INTEGER || kind == CP_KIND_FLOAT || kind == CP_KIND_LONG || kind == CP_KIND_DOUBLE;
 }
 
 DEFINE_ASYNC(resolve_indy_static_argument) {
