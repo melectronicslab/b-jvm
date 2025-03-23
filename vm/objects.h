@@ -131,6 +131,8 @@ GeneratePrimitiveLoadField(Boolean, jboolean, i, Z);
 #undef GenerateStoreField
 #undef GeneratePrimitiveLoadField
 
+obj_header *make_jstring_modified_utf8(vm_thread *thread, slice string);
+
 #ifdef __cplusplus
 }
 #endif

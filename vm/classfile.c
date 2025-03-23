@@ -629,7 +629,7 @@ static bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_par
   case ldc_w: {
     int index = opcode == ldc ? reader_next_u8(reader, "ldc index") : reader_next_u16(reader, "ldc_w index");
     cp_entry *ent = checked_cp_entry(ctx->cp, index, CP_KIND_INTEGER | CP_KIND_FLOAT | CP_KIND_STRING | CP_KIND_CLASS,
-                                                  "ldc/ldc_w index");
+                                     "ldc/ldc_w index");
     if (ent->kind == CP_KIND_INTEGER) {
       return (bytecode_insn){.kind = insn_iconst, .integer_imm = ent->number.ivalue};
     }
@@ -639,10 +639,10 @@ static bytecode_insn parse_insn_impl(cf_byteslice *reader, u32 pc, classfile_par
     return (bytecode_insn){.kind = insn_ldc, .cp = ent};
   }
   case ldc2_w: {
-    cp_entry *ent = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc2_w index"),
-                                                  CP_KIND_DOUBLE | CP_KIND_LONG, "ldc2_w index");
+    cp_entry *ent = checked_cp_entry(ctx->cp, reader_next_u16(reader, "ldc2_w index"), CP_KIND_DOUBLE | CP_KIND_LONG,
+                                     "ldc2_w index");
     if (ent->kind == CP_KIND_DOUBLE) {
-      return (bytecode_insn){.kind = insn_dconst, .d_imm = ent->number.dvalue };
+      return (bytecode_insn){.kind = insn_dconst, .d_imm = ent->number.dvalue};
     }
     return (bytecode_insn){.kind = insn_lconst, .integer_imm = ent->number.ivalue};
   }

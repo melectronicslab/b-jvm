@@ -325,7 +325,7 @@ char *cp_entry_to_string(const cp_entry *ent) {
     snprintf(result, sizeof(result), "%" PRId64 "L", ent->number.ivalue);
     break;
   case CP_KIND_DOUBLE:
-    snprintf(result, sizeof(result), "%.15gd", (float)ent->number.dvalue);
+    snprintf(result, sizeof(result), "%.15gd", ent->number.dvalue);
     break;
   case CP_KIND_MODULE:
     [[fallthrough]];

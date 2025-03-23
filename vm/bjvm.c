@@ -579,8 +579,6 @@ module *get_module(vm *vm, slice module_name) {
   return hash_table_lookup(&vm->modules, module_name.chars, (int)module_name.len);
 }
 
-#define OOM_SLOP_BYTES (1 << 12)
-
 vm *create_vm(const vm_options options) {
   vm *vm = calloc(1, sizeof(*vm));
 
@@ -605,7 +603,6 @@ vm *create_vm(const vm_options options) {
   vm->heap = aligned_alloc(4096, options.heap_size);
   vm->heap_used = 0;
   vm->heap_capacity = options.heap_size;
-  vm->true_heap_capacity = vm->heap_capacity + OOM_SLOP_BYTES;
   vm->active_classloaders = nullptr;
 
   vm->bootstrap_classloader = calloc(1, sizeof(classloader));
@@ -796,7 +793,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
   thr->stack.frame_buffer = calloc(1, thr->stack.frame_buffer_capacity = options.stack_space);
   thr->stack.frame_buffer_end = thr->stack.frame_buffer + options.stack_space;
   thr->js_jit_enabled = options.js_jit_enabled;
-  const int HANDLES_CAPACITY = 200;
+  constexpr int HANDLES_CAPACITY = 200; // expand this as necessary for the VM to run
   thr->handles = calloc(1, sizeof(handle) * HANDLES_CAPACITY);
   thr->handles_capacity = HANDLES_CAPACITY;
 
@@ -828,7 +825,7 @@ vm_thread *create_main_thread(vm *vm, thread_options options) {
 #define java_thr ((struct native_Thread *)java_thread->obj)
   thr->thread_obj = java_thr;
 
-  java_thr->eetop = (uintptr_t)thr;
+  java_thr->eetop = (s64)(uintptr_t)thr;
   object name = MakeJStringFromCString(thr, "main", true);
   java_thr->name = name;
 
@@ -1176,7 +1173,7 @@ DEFINE_ASYNC(resolve_mh_vh) {
   cp_field_info *field = &info->reference->field;
   resolve_class(thread, field->class_info);
   AWAIT(initialize_class, thread, field->class_info->classdesc);
-  field = &info->reference->field; // reload because of the await
+  field = &info->reference->field; // reload because of the AWAIT
 
   classdesc *DirectMethodHandle = get_DMH_class(thread);
   classdesc *MemberName = cached_classes(thread->vm)->member_name;
@@ -1210,7 +1207,7 @@ DEFINE_ASYNC(resolve_mh_invoke) {
   cp_method_info *method = &info->reference->methodref;
   resolve_class(thread, method->class_info);
   AWAIT(initialize_class, thread, info->reference->methodref.class_info->classdesc);
-  method = &info->reference->methodref; // reload because of the await
+  method = &info->reference->methodref; // reload because of the AWAIT
 
   m = method_lookup(method->class_info->classdesc, method->nat->name, method->nat->descriptor, true, true);
   if (MH_KIND_NEW_INVOKE_SPECIAL == info->handle_kind) {
@@ -1343,6 +1340,7 @@ int check_permitted_subclasses(vm_thread *thread, slice name, cp_class_info *sup
   return 0;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 classdesc *define_class(vm_thread *thread, classloader *cl, slice chars, const u8 *classfile_bytes,
                         size_t classfile_len) {
   // "First, the Java Virtual Machine determines whether it has already recorded that L is an initiating loader of a
@@ -1475,6 +1473,7 @@ void dump_trace(vm_thread *thread) {
   }
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 static classdesc *bootstrap_load_class_from_fs(vm_thread *thread, slice chars) {
   // e.g. "java/lang/Object.class"
   const slice cf_ending = STR(".class");
@@ -1620,24 +1619,10 @@ classdesc *bootstrap_lookup_class(vm_thread *thread, const slice name) {
 }
 
 void out_of_memory(vm_thread *thread) {
-  vm *vm = thread->vm;
-  thread->current_exception = nullptr;
-  if (vm->heap_capacity == vm->true_heap_capacity) {
-    // We're currently calling fillInStackTrace on the OOM instance, just
-    // shut up
-    return;
-  }
-
-  // temporarily expand the valid heap so that we can allocate the OOM error and
-  // its constituents
-  size_t original_capacity = vm->heap_capacity;
-  vm->heap_capacity = vm->true_heap_capacity;
+  thread->current_exception = nullptr; // ignore the currently propagating exception
 
   obj_header *oom = thread->out_of_mem_error;
-  // TODO call fillInStackTrace
   raise_exception_object(thread, oom);
-
-  vm->heap_capacity = original_capacity;
 }
 
 void *bump_allocate(vm_thread *thread, size_t bytes) {
@@ -1886,7 +1871,8 @@ cp_method *method_lookup(classdesc *descriptor, const slice name, const slice me
 // Get where to place a new interpreter frame, assuming we're not doing a shared-locals optimization.
 static char *get_next_frame_start(vm_thread *thread) {
   stack_frame *top = thread->stack.top;
-  return likely(top) ? (char *)top + sizeof(stack_frame) + top->max_stack * sizeof(stack_value) : thread->stack.frame_buffer;
+  return likely(top) ? (char *)top + sizeof(stack_frame) + top->max_stack * sizeof(stack_value)
+                     : thread->stack.frame_buffer;
 }
 
 // Returns nonzero on failure to initialize the context
@@ -2579,6 +2565,7 @@ DEFINE_ASYNC(indy_resolve) {
   // Invoke the bootstrap method using invokeWithArguments
   cp_method *invokeWithArguments = method_lookup(self->bootstrap_handle->obj->descriptor, STR("invokeWithArguments"),
                                                  STR("([Ljava/lang/Object;)Ljava/lang/Object;"), true, false);
+  DCHECK(invokeWithArguments, "Method not found");
 
   object bh = self->bootstrap_handle->obj, invoke_array = self->invoke_array->obj;
   drop_handle(thread, self->bootstrap_handle);
@@ -2600,14 +2587,6 @@ DEFINE_ASYNC(indy_resolve) {
 #undef m
 #undef thread
 #undef indy
-}
-
-int max_calls = 4251;
-
-EMSCRIPTEN_KEEPALIVE
-int set_max_calls(int calls) {
-  max_calls = calls;
-  return 0;
 }
 
 DEFINE_ASYNC(run_native) {

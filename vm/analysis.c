@@ -644,7 +644,7 @@ int analyze_instruction(bytecode_insn *insn, int insn_index, struct method_analy
     break;
   }
   case insn_ldc: {
-    PUSH_ENTRY(insn_source(TYPE_KIND_REFERENCE, insn_index))  // iconst and fconst got rewritten at parse time
+    PUSH_ENTRY(insn_source(TYPE_KIND_REFERENCE, insn_index)) // iconst and fconst got rewritten at parse time
     break;
   }
   case insn_dload: {
