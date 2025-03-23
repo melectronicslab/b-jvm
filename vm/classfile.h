@@ -411,7 +411,7 @@ typedef struct {
 typedef struct {
   union {
     bootstrap_method *method;
-    u16 _method_index; // used only when parsing, linked later
+    u16 _method_index; // used only when parsing, linked later in link_bootstrap_methods
   };
   cp_name_and_type *name_and_type;
   method_descriptor *method_descriptor;
@@ -516,9 +516,9 @@ typedef enum {
 } attribute_kind;
 
 typedef struct method_descriptor {
-  field_descriptor *args;
-  int args_count;
+  field_descriptor *args __counted_by(args_count);
   field_descriptor return_type;
+  int args_count;
 } method_descriptor;
 
 typedef struct {
@@ -839,7 +839,7 @@ typedef struct classdesc {
   u16 methods_count;
   u16 attributes_count;
   access_flags access_flags;
-  u8 dimensions;                // array types only
+  u8 dimensions;  // array types only
   bool is_hidden; // whether this is a hidden class (added in Java 15)
 
   cp_class_info **interfaces;

@@ -38,6 +38,14 @@ DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getDoubleAt0, "(Ljava/lang/
   return (stack_value){.d = entry->number.dvalue};
 }
 
+DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getFloatAt0, "(Ljava/lang/Object;I)F") {
+  cp_entry *entry = lookup_entry(obj->obj, args[1].i, CP_KIND_FLOAT);
+  if (!entry) {
+    return (stack_value){.obj = nullptr};
+  }
+  return (stack_value){.f = (float)entry->number.dvalue};
+}
+
 DECLARE_NATIVE("jdk/internal/reflect", ConstantPool, getLongAt0, "(Ljava/lang/Object;I)J") {
   cp_entry *entry = lookup_entry(obj->obj, args[1].i, CP_KIND_LONG);
   if (!entry) {
