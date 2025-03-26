@@ -516,7 +516,7 @@ typedef enum {
 } attribute_kind;
 
 typedef struct method_descriptor {
-  field_descriptor *args __counted_by(args_count);
+  field_descriptor *args;
   field_descriptor return_type;
   int args_count;
 } method_descriptor;
