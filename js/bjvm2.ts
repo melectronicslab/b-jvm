@@ -648,7 +648,7 @@ export class BovineVM<Classes> {
         this.boundOnStdout = this.onStdout.bind(this);
 
         this.ptr = this._module._ffi_create_vm(classpath, options.heapSize ?? DEFAULT_HEAP_SIZE,
-            this._module.addFunction(this.boundOnStderr, 'viii'), this._module.addFunction(this.boundOnStdout, 'viii'));
+            this._module.addFunction(this.boundOnStdout, 'viii'), this._module.addFunction(this.boundOnStderr, 'viii'));
         this._module._free(classpath);
         if (this.ptr === 0) {
             throw new Error("Failed to create VM");
