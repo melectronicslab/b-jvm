@@ -156,7 +156,7 @@ class BovineThread<Classes> {
                 }
             }
             for (let i = 0; i < stringIndices.length; ++i) {
-                args[stringIndices[i]]!.drop();
+                args[stringIndices[i]!]!.drop();
             }
 
             const promise = (async () => {
@@ -269,15 +269,13 @@ class BovineThread<Classes> {
 type ValidClassName<Classes> = string & keyof Classes;
 type LoadClass<C> = any & { new(): C };
 
-function buffered(call: (text: string) => void): (text: Uint8Array) => void {
-    let buffer = "";
+function forwardBytes(call: (text: string) => void): (text: Uint8Array) => void {
     return (text: Uint8Array) => {
-        buffer += String.fromCharCode.apply(null, text as unknown as number[]);
-        let idx: number;
-        while ((idx = buffer.indexOf('\n')) != -1) {
-            call(buffer.slice(0, idx + 1));
-            buffer = buffer.slice(idx + 1);
+        let buffer = "";
+        for (let i = 0; i < text.length; ++i) {
+            buffer += String.fromCharCode(text[i]!);
         }
+        call(buffer);
     }
 }
 
@@ -658,8 +656,8 @@ export class BovineVM<Classes> {
         this.primordialThread = this.createThread();
         this.activeThread = this.primordialThread;
 
-        this.stderr = os.options.stderr ?? buffered((x) => console.error(x));
-        this.stdout = os.options.stdout ?? buffered((x) => console.log(x));
+        this.stderr = os.options.stderr ?? forwardBytes(x => console.error(x));
+        this.stdout = os.options.stdout ?? forwardBytes(x => console.log(x));
     }
 
     setPreemptionFrequencyUs(us: number) {
@@ -896,9 +894,9 @@ export async function makeBovineOS(options: BovineOSOptions): Promise<BovineOS> 
             if (done)
                 break;
             try {
-              data.set(value, loaded);
+                data.set(value, loaded);
             } catch (e) {
-              console.log(`failed to load ${file}`)
+                console.log(`failed to load ${file}`)
             }
             loaded += value.length;
             totalLoaded += value.length;
