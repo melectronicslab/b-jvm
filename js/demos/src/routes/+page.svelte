@@ -1,2 +1,5 @@
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<script>
+	import GameOfLife from '../demo_page_components/game_of_life.svelte';
+</script>
+
+<GameOfLife></GameOfLife>
