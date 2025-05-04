@@ -1,3 +1,7 @@
+<script lang="ts">
+	import { makeBovineOS } from '../lib/bjvm_links/bjvm_interface/bjvm2.ts';
+</script>
+
 <div id="wrapper">
 	<div id="app">
 		<h1>bjvm</h1>
