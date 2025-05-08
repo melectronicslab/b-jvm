@@ -5,7 +5,6 @@
 
 	import { BovineOS, makeBovineOS } from '../lib/bjvm_links/bjvm_interface/bjvm2';
 	import { caExample } from './game-of-life';
-
 	onMount(() => {
 		const progress = document.createElement('p');
 
@@ -13,7 +12,7 @@
 		(async () => {
 			const os = await makeBovineOS({
 				runtimeUrl: '/assets/jre',
-				wasmLocation: '/assets/bjvm_main.wasm',
+				wasmLocation: '/bjvm_links/bjvm_main.wasm',
 				additionalRuntimeFiles: [],
 				progress: (loaded) =>
 					(progress.innerText = `loading... (${(loaded / 555608.03).toFixed(2)}%)`)
