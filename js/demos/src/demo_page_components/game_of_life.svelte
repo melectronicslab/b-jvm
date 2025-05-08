@@ -1,5 +1,24 @@
 <script lang="ts">
-	import { makeBovineOS } from '../lib/bjvm_links/bjvm_interface/bjvm2.ts';
+	import { BovineOS, makeBovineOS } from '../lib/bjvm_links/bjvm_interface/bjvm2';
+	import { caExample } from './game-of-life';
+
+	const app = document.getElementById('app')!;
+
+	const progress = document.createElement('p');
+	app.appendChild(progress);
+	(async () => {
+		const os = await makeBovineOS({
+			runtimeUrl: '/assets/jre',
+			wasmLocation: '/assets/bjvm_main.wasm',
+			additionalRuntimeFiles: [],
+			progress: (loaded) =>
+				(progress.innerText = `loading... (${(loaded / 555608.03).toFixed(2)}%)`)
+		});
+
+		progress.remove();
+
+		caExample(os, app);
+	})();
 </script>
 
 <div id="wrapper">
