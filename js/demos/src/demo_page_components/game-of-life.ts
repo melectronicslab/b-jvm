@@ -4,7 +4,7 @@ import { BovineOS } from '$lib/bjvm_links/bjvm_interface/bjvm2';
  * Cellular automaton example featuring Conway's Game of Life
  */
 export const caExample = async (os: BovineOS, app: HTMLElement) => {
-	const CellularAutomaton = await loadJar(os, 'Conway2D');
+	const CellularAutomaton = await loadJar(os, 'demo_jars/game-of-life/Conway2D.jar');
 
 	const canvas = document.createElement('canvas');
 	app.appendChild(canvas);

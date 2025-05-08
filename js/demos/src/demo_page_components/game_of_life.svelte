@@ -11,7 +11,7 @@
 		app.appendChild(progress);
 		(async () => {
 			const os = await makeBovineOS({
-				runtimeUrl: '/assets/jre',
+				runtimeUrl: '/jre',
 				wasmLocation: '/bjvm_links/bjvm_main.wasm',
 				additionalRuntimeFiles: [],
 				progress: (loaded) =>
