@@ -1,28 +1,33 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
+	let app: HTMLElement;
+
 	import { BovineOS, makeBovineOS } from '../lib/bjvm_links/bjvm_interface/bjvm2';
 	import { caExample } from './game-of-life';
 
-	const app = document.getElementById('app')!;
+	onMount(() => {
+		const progress = document.createElement('p');
 
-	const progress = document.createElement('p');
-	app.appendChild(progress);
-	(async () => {
-		const os = await makeBovineOS({
-			runtimeUrl: '/assets/jre',
-			wasmLocation: '/assets/bjvm_main.wasm',
-			additionalRuntimeFiles: [],
-			progress: (loaded) =>
-				(progress.innerText = `loading... (${(loaded / 555608.03).toFixed(2)}%)`)
-		});
+		app.appendChild(progress);
+		(async () => {
+			const os = await makeBovineOS({
+				runtimeUrl: '/assets/jre',
+				wasmLocation: '/assets/bjvm_main.wasm',
+				additionalRuntimeFiles: [],
+				progress: (loaded) =>
+					(progress.innerText = `loading... (${(loaded / 555608.03).toFixed(2)}%)`)
+			});
 
-		progress.remove();
+			progress.remove();
 
-		caExample(os, app);
-	})();
+			caExample(os, app);
+		})();
+	});
 </script>
 
 <div id="wrapper">
-	<div id="app">
+	<div id="app" bind:this={app}>
 		<h1>bjvm</h1>
 		<p>Bring back the applet!</p>
 	</div>
